@@ -1,0 +1,81 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import { AgencyProvider } from './context/AgencyContext'
+import { ViewingProvider } from './context/ViewingContext'
+import { ThemeProvider } from './context/ThemeContext'
+import ProtectedRoute from './routes/ProtectedRoute'
+import AppLayout from './components/AppLayout'
+import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
+import AcceptInvite from './pages/AcceptInvite'
+import Dashboard from './pages/Dashboard'
+import PoliciesPage from './pages/PoliciesPage'
+import OnboardingPage from './pages/OnboardingPage'
+import LapsePage from './pages/LapsePage'
+import MonthlyMetricsPage from './pages/MonthlyMetricsPage'
+import WeeklyMetricsPage from './pages/WeeklyMetricsPage'
+import MonthlyAgentTotalsPage from './pages/MonthlyAgentTotalsPage'
+import AgentsPage from './pages/AgentsPage'
+import CoachingPage from './pages/CoachingPage'
+import ActivityPage from './pages/ActivityPage'
+import LeadsPage from './pages/LeadsPage'
+import Admin from './pages/Admin'
+
+export default function App() {
+  return (
+    <ThemeProvider>
+    <AuthProvider>
+      <AgencyProvider>
+      <ViewingProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/accept-invite" element={<AcceptInvite />} />
+
+            {/* All authenticated users */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard"       element={<Dashboard />} />
+                <Route path="/policies"        element={<PoliciesPage />} />
+                <Route path="/lapse"           element={<LapsePage />} />
+                <Route path="/monthly-metrics" element={<MonthlyMetricsPage />} />
+                <Route path="/weekly-metrics"  element={<WeeklyMetricsPage />} />
+                <Route path="/activity"        element={<ActivityPage />} />
+                <Route path="/leads"           element={<LeadsPage />} />
+              </Route>
+            </Route>
+
+            {/* Leader, Owner, Director, Admin */}
+            <Route element={<ProtectedRoute allowedRoles={['leader', 'owner', 'director', 'super_admin']} />}>
+              <Route element={<AppLayout />}>
+                <Route path="/onboarding"           element={<OnboardingPage />} />
+                <Route path="/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
+                <Route path="/coaching"             element={<CoachingPage />} />
+              </Route>
+            </Route>
+
+            {/* Owner + Admin */}
+            <Route element={<ProtectedRoute allowedRoles={['owner', 'super_admin']} />}>
+              <Route element={<AppLayout />}>
+                <Route path="/agents" element={<AgentsPage />} />
+              </Route>
+            </Route>
+
+            {/* Admin only */}
+            <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+              <Route element={<AppLayout />}>
+                <Route path="/admin" element={<Admin />} />
+              </Route>
+            </Route>
+
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ViewingProvider>
+      </AgencyProvider>
+    </AuthProvider>
+    </ThemeProvider>
+  )
+}

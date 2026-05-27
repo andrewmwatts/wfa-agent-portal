@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Color palette — expressed as bare RGB components so Tailwind's opacity
+  modifier syntax (bg-accent/20) works: rgb(var(--color-accent) / 0.2)
+  These defaults are overridden at runtime by AgencyContext.
+*/
+:root {
+  --color-primary:         0 83 101;    /* #005365 */
+  --color-primary-light:   0 109 132;   /* #006d84 */
+  --color-primary-dark:    0 61 74;     /* #003d4a */
+  --color-secondary:       0 53 57;     /* #003539 */
+  --color-secondary-light: 0 74 79;     /* #004a4f */
+  --color-secondary-dark:  0 34 37;     /* #002225 */
+  --color-accent:          238 38 102;  /* #EE2666 */
+  --color-accent-light:    242 77 128;  /* #f24d80 */
+  --color-accent-dark:     196 29 84;   /* #c41d54 */
+}
+
+/* Light mode default — dark mode overridden by AppLayout wrapper classes */
+body {
+  background-color: #f5f8f9;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark mode body background (before React hydrates, prevents flash) */
+html.dark body {
+  background-color: rgb(var(--color-secondary));
+  color: white;
+}
+
+/* Native <option> element backgrounds for dark mode selects */
+html.dark option {
+  background-color: rgb(var(--color-secondary));
+  color: #fff;
+}
