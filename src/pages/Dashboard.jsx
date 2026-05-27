@@ -8,7 +8,7 @@ import PendingBusinessSection from '../components/sections/PendingBusinessSectio
 async function fetchAppsData(prs) {
   const sfgIds = prs.map(p => p.sfg_id)
   if (!sfgIds.length) return { pending: [], incomplete: [], lapse: [], metrics: null, detail: null }
-  const res = await fetch(`/api/apps-policies?sfg_ids=${sfgIds.join(',')}`)
+  const res = await fetch(`/api/policies?type=apps&sfg_ids=${sfgIds.join(',')}`)
   return res.ok ? await res.json() : {}
 }
 
@@ -42,8 +42,8 @@ export default function Dashboard() {
     try {
       if (isDir) {
         const [masterRes, baseshopRes] = await Promise.all([
-          fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`),
-          fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}`),
+          fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`),
+          fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`),
         ])
         const masterPrs   = masterRes.ok   ? await masterRes.json()   : []
         const baseshopPrs = baseshopRes.ok ? await baseshopRes.json() : []
@@ -59,7 +59,7 @@ export default function Dashboard() {
         setAppsData(masterApps)
         setBaseshopAppsData(baseshopApps)
       } else {
-        const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}`)
+        const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`)
         const prs = res.ok ? await res.json() : []
         setPersonnel(prs)
         setBaseshopPersonnel(prs)
@@ -81,7 +81,7 @@ export default function Dashboard() {
     setLoading(true)
     try {
       const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
       const prs = res.ok ? await res.json() : []
       setPersonnel(prs)
       const apps = await fetchAppsData(prs)

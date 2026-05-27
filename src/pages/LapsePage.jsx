@@ -100,7 +100,7 @@ export default function LapsePage() {
   async function initLoad(sfgId) {
     try {
       // Always fetch master first — detects director AND reuses data so no second fetch needed
-      const masterRes = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`)
+      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
       const masterPersonnel = masterRes.ok ? await masterRes.json() : []
 
       const root  = sfgId.toLowerCase()
@@ -124,7 +124,7 @@ export default function LapsePage() {
     setLoading(true)
     try {
       const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
       const personnel = res.ok ? await res.json() : []
       await loadPolicies(personnel)
     } catch { /* ignore */ } finally {
@@ -546,7 +546,7 @@ function LapseModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
     setRemoving(true)
     setSaveError(null)
     try {
-      const res = await fetch('/api/update-policy', {
+      const res = await fetch('/api/policies', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -579,7 +579,7 @@ function LapseModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
       }
       // Boolean fields handled separately
       updates.chargeback_exempt = !!draft.chargeback_exempt
-      const res = await fetch('/api/update-policy', {
+      const res = await fetch('/api/policies', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: draft.id, updates }),

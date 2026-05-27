@@ -61,7 +61,7 @@ export default function AddPolicyModal({ personnel, onClose, onPolicyAdded }) {
     setSaving(true)
     setApiError('')
     try {
-      const res = await fetch('/api/add-policy', {
+      const res = await fetch('/api/policies', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

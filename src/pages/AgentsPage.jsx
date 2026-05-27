@@ -114,7 +114,7 @@ export default function AgentsPage() {
 
   async function initLoad(sfgId) {
     try {
-      const masterRes = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`)
+      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
       const masterPersonnel = masterRes.ok ? await masterRes.json() : []
 
       const root  = sfgId.toLowerCase()
@@ -134,7 +134,7 @@ export default function AgentsPage() {
     setLoading(true)
     try {
       const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
       const data = res.ok ? await res.json() : []
       setPersonnel(data)
     } catch { /* ignore */ } finally {
@@ -148,7 +148,7 @@ export default function AgentsPage() {
     setLoading(true)
     try {
       const modeParam = mode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
       const data = res.ok ? await res.json() : []
       setPersonnel(data)
     } catch { /* ignore */ } finally {
@@ -485,7 +485,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
         return
       }
 
-      const res = await fetch('/api/update-personnel', {
+      const res = await fetch('/api/personnel', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sfg_id: p.sfg_id, updates }),

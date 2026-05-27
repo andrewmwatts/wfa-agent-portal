@@ -8,76 +8,21 @@ loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 /**
- * Leads API
+ * Leads API  (consolidated: leads + lead-activity + lead-scripts)
  *
- * GET   /api/leads?sfg_id=X              → { leads: [...] }
- * POST  /api/leads                        → { lead }     (create)
- * PATCH /api/leads?id=X                  → { lead }     (update any fields)
+ * Leads
+ *   GET    /api/leads?sfg_id=X
+ *   POST   /api/leads
+ *   PATCH  /api/leads?id=X
  *
- * Required Supabase tables — run once:
+ * Lead Activity  (?resource=activity)
+ *   GET    /api/leads?resource=activity&lead_id=X
+ *   POST   /api/leads?resource=activity
  *
- * CREATE TABLE public.leads (
- *   id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- *   sfg_id             text NOT NULL,
- *   name               text NOT NULL,
- *   phone              text,
- *   email              text,
- *   state              text,
- *   zip                text,
- *   gender             text,
- *   age                smallint,
- *   type               text NOT NULL DEFAULT 'Life Insurance - Standard',
- *   coverage           text,
- *   motivation         text,
- *   beneficiary        text,
- *   employment         text,
- *   income             text,
- *   smoker             boolean NOT NULL DEFAULT false,
- *   medical            boolean NOT NULL DEFAULT false,
- *   hobby              text,
- *   source             text,
- *   status             text NOT NULL DEFAULT 'new',
- *   callback_at        timestamptz,
- *   last_contact       date,
- *   last_activity_text text,
- *   last_activity_at   timestamptz,
- *   notes              text,
- *   added              date NOT NULL DEFAULT CURRENT_DATE,
- *   created_at         timestamptz NOT NULL DEFAULT now(),
- *   updated_at         timestamptz NOT NULL DEFAULT now()
- * );
- * ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "leads_auth" ON public.leads FOR ALL TO authenticated USING (true) WITH CHECK (true);
- * GRANT ALL ON public.leads TO authenticated;
- * GRANT USAGE, SELECT ON SEQUENCE leads_id_seq TO authenticated;
- *
- * CREATE TABLE public.lead_activity (
- *   id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- *   lead_id    bigint NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
- *   sfg_id     text NOT NULL,
- *   type       text NOT NULL,
- *   body       text NOT NULL,
- *   note       text,
- *   created_at timestamptz NOT NULL DEFAULT now()
- * );
- * ALTER TABLE public.lead_activity ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "lead_activity_auth" ON public.lead_activity FOR ALL TO authenticated USING (true) WITH CHECK (true);
- * GRANT ALL ON public.lead_activity TO authenticated;
- * GRANT USAGE, SELECT ON SEQUENCE lead_activity_id_seq TO authenticated;
- *
- * CREATE TABLE public.lead_scripts (
- *   id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- *   sfg_id     text NOT NULL,
- *   category   text NOT NULL DEFAULT 'General',
- *   title      text NOT NULL,
- *   body       text NOT NULL,
- *   tag        text,
- *   created_at timestamptz NOT NULL DEFAULT now()
- * );
- * ALTER TABLE public.lead_scripts ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "lead_scripts_auth" ON public.lead_scripts FOR ALL TO authenticated USING (true) WITH CHECK (true);
- * GRANT ALL ON public.lead_scripts TO authenticated;
- * GRANT USAGE, SELECT ON SEQUENCE lead_scripts_id_seq TO authenticated;
+ * Lead Scripts  (?resource=scripts)
+ *   GET    /api/leads?resource=scripts&sfg_id=X
+ *   POST   /api/leads?resource=scripts
+ *   DELETE /api/leads?resource=scripts&id=X
  */
 
 const sb = createClient(
@@ -85,11 +30,6 @@ const sb = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 )
 
-/**
- * Resolve the caller's SFG ID from their Bearer token.
- * In dev bypass mode, falls back to the client-supplied value.
- * Returns the SFG ID string, or null if auth fails.
- */
 async function resolveCallerSfgId(req, fallback) {
   if (process.env.VITE_BYPASS_AUTH === 'true') {
     return fallback ? String(fallback).trim().toUpperCase() : null
@@ -103,7 +43,136 @@ async function resolveCallerSfgId(req, fallback) {
 }
 
 export default async function handler(req, res) {
-  // ── GET — list leads ───────────────────────────────────────────────────────
+  const { resource } = req.query
+
+  // ── LEAD ACTIVITY ─────────────────────────────────────────────────────────
+  if (resource === 'activity') {
+    if (req.method === 'GET') {
+      const { lead_id } = req.query
+      if (!lead_id) return res.status(400).json({ error: 'lead_id required' })
+
+      const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+      if (!bypass) {
+        const sfgId = await resolveCallerSfgId(req, null)
+        if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+        const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
+        if (!lead || lead.sfg_id !== sfgId) return res.status(403).json({ error: 'Forbidden' })
+      }
+
+      const { data, error } = await sb
+        .from('lead_activity')
+        .select('*')
+        .eq('lead_id', lead_id)
+        .order('created_at', { ascending: false })
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ activity: data ?? [] })
+    }
+
+    if (req.method === 'POST') {
+      const { lead_id, sfg_id, activity_type, body, note, update_lead } = req.body ?? {}
+      if (!lead_id || !activity_type || !body) {
+        return res.status(400).json({ error: 'lead_id, activity_type, and body are required' })
+      }
+
+      const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+      if (!bypass) {
+        const callerSfgId = await resolveCallerSfgId(req, sfg_id)
+        if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+        const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
+        if (!lead || lead.sfg_id !== callerSfgId) return res.status(403).json({ error: 'Forbidden' })
+      }
+
+      const { data: entry, error: entryErr } = await sb
+        .from('lead_activity')
+        .insert({ lead_id, sfg_id: sfg_id ?? '', activity_type, body, note: note || null })
+        .select()
+        .single()
+
+      if (entryErr) return res.status(500).json({ error: entryErr.message })
+
+      const activityPatch = {
+        last_activity_text: body,
+        last_activity_at:   entry.created_at,
+        updated_at:         new Date().toISOString(),
+      }
+
+      if (update_lead && Object.keys(update_lead).length) {
+        await sb.from('leads').update({ ...update_lead, ...activityPatch }).eq('id', lead_id)
+      } else {
+        await sb.from('leads').update(activityPatch).eq('id', lead_id)
+      }
+
+      return res.status(201).json({ entry })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  // ── LEAD SCRIPTS ──────────────────────────────────────────────────────────
+  if (resource === 'scripts') {
+    if (req.method === 'GET') {
+      const sfgId = await resolveCallerSfgId(req, req.query.sfg_id)
+      if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+
+      const { data, error } = await sb
+        .from('lead_scripts')
+        .select('*')
+        .eq('sfg_id', sfgId)
+        .order('category')
+        .order('created_at')
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ scripts: data ?? [] })
+    }
+
+    if (req.method === 'POST') {
+      const body = req.body ?? {}
+      const sfgId = await resolveCallerSfgId(req, body.sfg_id)
+      if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+
+      const { category, title, body: scriptBody, tag } = body
+      if (!title?.trim() || !scriptBody?.trim()) {
+        return res.status(400).json({ error: 'title and body are required' })
+      }
+
+      const { data, error } = await sb
+        .from('lead_scripts')
+        .insert({
+          sfg_id:   sfgId,
+          category: category?.trim() || 'General',
+          title:    title.trim(),
+          body:     scriptBody.trim(),
+          tag:      tag?.trim() || null,
+        })
+        .select()
+        .single()
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(201).json({ script: data })
+    }
+
+    if (req.method === 'DELETE') {
+      const { id } = req.query
+      if (!id) return res.status(400).json({ error: 'id required' })
+
+      const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+      if (!bypass) {
+        const sfgId = await resolveCallerSfgId(req, null)
+        if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+        const { data: script } = await sb.from('lead_scripts').select('sfg_id').eq('id', id).single()
+        if (!script || script.sfg_id !== sfgId) return res.status(403).json({ error: 'Forbidden' })
+      }
+
+      const { error } = await sb.from('lead_scripts').delete().eq('id', id)
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(204).end()
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  // ── LEADS ─────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
     const sfgId = await resolveCallerSfgId(req, req.query.sfg_id)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
@@ -119,22 +188,19 @@ export default async function handler(req, res) {
     return res.status(200).json({ leads: data ?? [] })
   }
 
-  // ── POST — create lead ─────────────────────────────────────────────────────
   if (req.method === 'POST') {
     const body = req.body ?? {}
     const sfgId = await resolveCallerSfgId(req, body.sfg_id)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
 
     const { name, ...fields } = body
-    if (!name?.trim()) {
-      return res.status(400).json({ error: 'name is required' })
-    }
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
 
     const { data, error } = await sb
       .from('leads')
       .insert({
-        sfg_id: sfgId,
-        name:   name.trim(),
+        sfg_id:     sfgId,
+        name:       name.trim(),
         ...fields,
         added:      fields.added || new Date().toISOString().slice(0, 10),
         created_at: new Date().toISOString(),
@@ -147,28 +213,26 @@ export default async function handler(req, res) {
     return res.status(201).json({ lead: data })
   }
 
-  // ── PATCH — update lead fields ─────────────────────────────────────────────
   if (req.method === 'PATCH') {
     const { id } = req.query
     if (!id) return res.status(400).json({ error: 'id required' })
 
-    // In prod, verify ownership by scoping the update to the caller's sfg_id
     const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+    const patch = { ...req.body }
+    delete patch.id
+    delete patch.sfg_id
+    delete patch.created_at
+    patch.updated_at = new Date().toISOString()
+
     if (!bypass) {
       const sfgId = await resolveCallerSfgId(req, null)
       if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
-
-      const patch = { ...req.body }
-      delete patch.id
-      delete patch.sfg_id
-      delete patch.created_at
-      patch.updated_at = new Date().toISOString()
 
       const { data, error } = await sb
         .from('leads')
         .update(patch)
         .eq('id', id)
-        .eq('sfg_id', sfgId)   // ← ownership guard
+        .eq('sfg_id', sfgId)
         .select()
         .single()
 
@@ -176,13 +240,6 @@ export default async function handler(req, res) {
       if (!data)  return res.status(404).json({ error: 'Lead not found' })
       return res.status(200).json({ lead: data })
     }
-
-    // Dev bypass — no ownership check
-    const patch = { ...req.body }
-    delete patch.id
-    delete patch.sfg_id
-    delete patch.created_at
-    patch.updated_at = new Date().toISOString()
 
     const { data, error } = await sb
       .from('leads')

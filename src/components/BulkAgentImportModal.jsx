@@ -275,7 +275,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
       }))
 
     try {
-      const res  = await fetch('/api/import-agents', {
+      const res  = await fetch('/api/personnel', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ rows: payload }),

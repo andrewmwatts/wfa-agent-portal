@@ -160,7 +160,7 @@ export default function LeadsPage() {
 
   const loadScripts = useCallback(async () => {
     if (!sfgId) return
-    const res = await fetch(`/api/lead-scripts?sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
+    const res = await fetch(`/api/leads?resource=scripts&sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
     if (res.ok) { const { scripts: d } = await res.json(); setScripts(d) }
   }, [sfgId])
 
@@ -173,7 +173,7 @@ export default function LeadsPage() {
     setNoteText('')
     setActLoading(true)
     try {
-      const res = await fetch(`/api/lead-activity?lead_id=${lead.id}`, { headers: authHeaders() })
+      const res = await fetch(`/api/leads?resource=activity&lead_id=${lead.id}`, { headers: authHeaders() })
       if (res.ok) { const { activity: d } = await res.json(); setActivity(d) }
     } finally { setActLoading(false) }
   }
@@ -198,7 +198,7 @@ export default function LeadsPage() {
     const update = { last_contact: today }
     if (selected.status === 'new') update.status = 'attempted'
 
-    const res = await fetch('/api/lead-activity', {
+    const res = await fetch('/api/leads?resource=activity', {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'call', body, update_lead: update }),
     })
@@ -220,7 +220,7 @@ export default function LeadsPage() {
     const update = { last_contact: today }
     if (selected.status === 'new' || selected.status === 'attempted') update.status = 'textvm'
 
-    const res = await fetch('/api/lead-activity', {
+    const res = await fetch('/api/leads?resource=activity', {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'text', body, note: templateNote || null, update_lead: update }),
     })
@@ -238,7 +238,7 @@ export default function LeadsPage() {
   async function saveNote() {
     if (!selected || !noteText.trim()) return
     const body = '📝 Note added'
-    const res = await fetch('/api/lead-activity', {
+    const res = await fetch('/api/leads?resource=activity', {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'note', body, note: noteText.trim() }),
     })
@@ -256,7 +256,7 @@ export default function LeadsPage() {
     setStatusSaving(true)
     const body = `🔄 Status → ${statusCfg(newStatus).label}`
     const [actRes, leadRes] = await Promise.all([
-      fetch('/api/lead-activity', {
+      fetch('/api/leads?resource=activity', {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'status', body, update_lead: { status: newStatus } }),
       }),
@@ -288,7 +288,7 @@ export default function LeadsPage() {
     })
     if (val) {
       const body = `📅 Callback scheduled: ${fmtDateTime(val)}`
-      const res = await fetch('/api/lead-activity', {
+      const res = await fetch('/api/leads?resource=activity', {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'callback', body }),
       })
@@ -311,7 +311,7 @@ export default function LeadsPage() {
   }
 
   async function handleAddScript(data) {
-    const res = await fetch('/api/lead-scripts', {
+    const res = await fetch('/api/leads?resource=scripts', {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ sfg_id: sfgId, ...data }),
     })
@@ -324,7 +324,7 @@ export default function LeadsPage() {
   }
 
   async function handleDeleteScript(id) {
-    await fetch(`/api/lead-scripts?id=${id}`, { method: 'DELETE', headers: authHeaders() })
+    await fetch(`/api/leads?resource=scripts&id=${id}`, { method: 'DELETE', headers: authHeaders() })
     setScripts(prev => prev.filter(s => s.id !== id))
   }
 

@@ -70,7 +70,7 @@ export function AuthProvider({ children }) {
       // during registration (handles email-confirmation delay race condition).
       const meta = data.user.user_metadata ?? {}
       if (meta.sfg_id) {
-        const res = await fetch('/api/provision-user', {
+        const res = await fetch('/api/users?action=provision', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -112,7 +112,7 @@ export function AuthProvider({ children }) {
     }
     // 2. Create the public.users row via service-role endpoint
     //    (user_id is available immediately even before email confirmation)
-    const res = await fetch('/api/provision-user', {
+    const res = await fetch('/api/users?action=provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

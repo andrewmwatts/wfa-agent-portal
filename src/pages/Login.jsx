@@ -32,7 +32,7 @@ export default function Login() {
         navigate('/dashboard', { replace: true })
       } else if (mode === 'register') {
         // Step 1: validate SFG ID against Personnel sheet
-        const validation = await fetch('/api/validate-agent', {
+        const validation = await fetch('/api/users?action=validate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sfg_id: sfgId, email }),

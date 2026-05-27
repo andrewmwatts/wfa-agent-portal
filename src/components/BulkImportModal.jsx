@@ -379,7 +379,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
 
   // Load crosswalk once on mount
   useEffect(() => {
-    fetch('/api/policy-crosswalk')
+    fetch('/api/policies?type=crosswalk')
       .then(r => r.json())
       .then(data => setCrosswalk(Array.isArray(data) ? data : []))
       .catch(() => setCrosswalk([]))
@@ -445,7 +445,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
     }))
 
     try {
-      const res  = await fetch('/api/import-policies', {
+      const res  = await fetch('/api/policies?type=import', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ rows: payload }),

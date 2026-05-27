@@ -161,7 +161,7 @@ export default function MonthlyMetricsPage() {
 
   async function initLoad(sfgId) {
     try {
-      const masterRes = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`)
+      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
       const masterPersonnel = masterRes.ok ? await masterRes.json() : []
 
       const root  = sfgId.toLowerCase()
@@ -181,7 +181,7 @@ export default function MonthlyMetricsPage() {
     setLoading(true)
     try {
       const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
       const personnel = res.ok ? await res.json() : []
       await loadPolicies(personnel)
     } catch { /* ignore */ } finally {

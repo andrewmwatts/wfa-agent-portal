@@ -123,7 +123,7 @@ export default function OnboardingPage() {
 
   async function load(sfgId) {
     try {
-      const res = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`)
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
       if (!res.ok) throw new Error('Failed to load personnel data')
       const rows = await res.json()
 
@@ -175,7 +175,7 @@ export default function OnboardingPage() {
 
     // Fire-and-forget API call
     if (!userProfile?.id) return
-    fetch('/api/user-settings', {
+    fetch('/api/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -569,7 +569,7 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
         return
       }
 
-      const res = await fetch('/api/update-personnel', {
+      const res = await fetch('/api/personnel', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sfg_id: agent.sfg_id, updates }),

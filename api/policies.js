@@ -7,6 +7,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
+/**
+ * Policies API  (consolidated: policies + add-policy + update-policy +
+ *                policy-crosswalk + apps-policies + import-policies)
+ *
+ *   GET  /api/policies?sfg_ids=X         → list policies
+ *   GET  /api/policies?type=apps&...     → apps/pending-business dashboard
+ *   GET  /api/policies?type=crosswalk    → policy crosswalk table
+ *   POST /api/policies                   → add single policy
+ *   POST /api/policies?type=import       → bulk import policies
+ *   PUT  /api/policies                   → update policy fields
+ */
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
 const POLICY_COLS = [
   'id', 'sfg_id', 'applicant', 'carrier', 'policy_name', 'policy_number',
   'face_amount', 'submitted_apv', 'issued_apv', 'status',
@@ -16,14 +30,12 @@ const POLICY_COLS = [
   'snapshot_chargeback_month', 'snapshot_chargeback_apv',
 ].join(', ')
 
-// Fetch rows for a set of sfg_ids, paginating past the 1000-row PostgREST limit.
-// Filters server-side so we never transfer rows we don't need.
 async function fetchPolicies(supabase, sfgIds) {
   const PAGE = 1000
   const results = []
   let from = 0
   while (true) {
-    let q = supabase.from('policies').select(POLICY_COLS)
+    let q = supabase.from('policies').select(POLICY_COLS).order('id')
     if (sfgIds?.length) q = q.in('sfg_id', sfgIds.map(id => id.toUpperCase()))
     const { data, error } = await q.range(from, from + PAGE - 1)
     if (error) throw error
@@ -34,7 +46,20 @@ async function fetchPolicies(supabase, sfgIds) {
   return results
 }
 
-// Format a stored "YYYY-MM-01" chargeback month back to "Month YYYY" for display
+async function fetchAll(supabase, table, columns) {
+  const PAGE = 1000
+  const results = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase.from(table).select(columns).range(from, from + PAGE - 1)
+    if (error) throw error
+    results.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+    from += PAGE
+  }
+  return results
+}
+
 function formatCbMonth(dateStr) {
   if (!dateStr) return ''
   const m = String(dateStr).match(/^(\d{4})-(\d{2})-\d{2}/)
@@ -46,70 +71,448 @@ function formatCbMonth(dateStr) {
   return `${MONTHS[monthIdx]} ${parseInt(m[1])}`
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
+function parseNum(val) {
+  if (val === '' || val == null) return null
+  const n = parseFloat(String(val).replace(/[$,]/g, ''))
+  return isNaN(n) ? null : n
+}
+
+function parseDate(val) {
+  if (!val || String(val).trim() === '') return null
+  return String(val).trim()
+}
+
+// ── update-policy coercion helpers ───────────────────────────────────────────
+
+const NUMERIC_COLS  = new Set(['submitted_apv', 'issued_apv', 'face_amount', 'snapshot_chargeback_apv'])
+const BOOLEAN_COLS  = new Set(['not_in_opt', 'split_reset', 'chargeback_exempt', 'first_time'])
+const DATE_COLS     = new Set(['submit_date', 'submit_week', 'issue_date', 'last_update', 'conservation_date', 'snapshot_chargeback_month'])
+const CB_MONTH_NAMES = {
+  january:1, february:2, march:3, april:4, may:5, june:6,
+  july:7, august:8, september:9, october:10, november:11, december:12,
+}
+
+function coerce(col, val) {
+  if (BOOLEAN_COLS.has(col)) {
+    const v = String(val ?? '').trim().toLowerCase()
+    return ['true', '1', 'yes', 'x'].includes(v)
   }
-
-  const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''
-  const requestedIds = raw
-    ? raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-    : []
-
-  try {
-    const supabase = createClient(
-      process.env.VITE_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    )
-
-    const [rows, people] = await Promise.all([
-      fetchPolicies(supabase, requestedIds.length ? requestedIds : null),
-      supabase.from('personnel').select('sfg_id, preferred_name, opt_name').then(r => { if (r.error) throw r.error; return r.data ?? [] }),
-    ])
-
-    // Build sfg_id → { name, email } from live personnel data
-    const personLookup = {}
-    for (const p of people) {
-      const id = p.sfg_id?.toLowerCase()
-      if (id) personLookup[id] = {
-        name: p.preferred_name?.trim() || p.opt_name?.trim() || '',
+  if (col === 'snapshot_chargeback_month') {
+    if (!val || String(val).trim() === '') return null
+    const s = String(val).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    const lower = s.toLowerCase()
+    for (const [name, num] of Object.entries(CB_MONTH_NAMES)) {
+      if (lower.includes(name)) {
+        const yearMatch = s.match(/(\d{4})/)
+        if (yearMatch) return `${yearMatch[1]}-${String(num).padStart(2, '0')}-01`
       }
     }
+    return null
+  }
+  if (DATE_COLS.has(col)) return (val === '' || val == null) ? null : val
+  if (NUMERIC_COLS.has(col)) {
+    if (val === '' || val == null) return null
+    const n = parseFloat(String(val).replace(/[$,]/g, ''))
+    return isNaN(n) ? null : n
+  }
+  return (val === '' || val == null) ? null : String(val)
+}
 
-    const policies = rows.map(p => {
+// ── apps-policies helpers ─────────────────────────────────────────────────────
+
+const LAPSE_CONSV_STATUSES = new Set(['lapse pending', 'first premium not paid'])
+
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function parseAmt(val) {
+  if (val === null || val === undefined || val === '') return 0
+  if (typeof val === 'number') return val
+  return parseFloat(String(val).replace(/[$,]/g, '')) || 0
+}
+
+function daysDiff(dateStr) {
+  const d = parseDateLocal(dateStr)
+  if (!d) return null
+  return Math.round((d - Date.now()) / 86400000)
+}
+
+function inPeriod(dateStr, start, end) {
+  const d = parseDateLocal(dateStr)
+  if (!d) return false
+  return d >= start && (!end || d < end)
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
+
+export default async function handler(req, res) {
+  const type = req.query.type  // 'apps' | 'crosswalk' | 'import' | undefined
+
+  const supabase = createClient(
+    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  )
+
+  // ── GET /api/policies?type=crosswalk ───────────────────────────────────────
+  if (req.method === 'GET' && type === 'crosswalk') {
+    try {
+      const { data, error } = await supabase
+        .from('policy_crosswalk')
+        .select('carrier, policy_name, subtype')
+        .order('carrier')
+        .order('policy_name')
+      if (error) throw error
+      return res.status(200).json(data ?? [])
+    } catch (err) {
+      console.error('[policies/crosswalk]', err)
+      return res.status(500).json({ error: 'Failed to load crosswalk' })
+    }
+  }
+
+  // ── GET /api/policies?type=apps&sfg_ids=X ──────────────────────────────────
+  if (req.method === 'GET' && type === 'apps') {
+    const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''
+    const requestedIds = raw
+      ? raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+      : []
+
+    try {
+      const [allRows, people] = await Promise.all([
+        fetchPolicies(supabase, requestedIds.length ? requestedIds : null),
+        fetchAll(supabase, 'personnel', 'sfg_id, preferred_name, opt_name'),
+      ])
+
+      if (!allRows.length) return res.status(200).json({ pending: [], incomplete: [], lapse: [], metrics: null })
+
+      const personLookup = {}
+      for (const p of people) {
+        const id = p.sfg_id?.toLowerCase()
+        if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
+      }
+
+      const earliestSubmit = {}
+      for (const p of allRows) {
+        const id  = p.sfg_id?.trim().toLowerCase()
+        const key = p.submit_week || p.submit_date
+        if (!id || !key) continue
+        if (!earliestSubmit[id] || key < earliestSubmit[id]) earliestSubmit[id] = key
+      }
+
+      const now        = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      const weekStart  = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d })()
+      const lwStart    = new Date(weekStart.getTime()); lwStart.setDate(lwStart.getDate() - 7)
+
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      const daysElapsed = Math.max(now.getDate(), 1)
+      const projFactor  = daysInMonth / daysElapsed
+
+      const pending = [], incomplete = [], lapse = []
+      let submMonth = 0, submWeek = 0, submLW = 0, issMonth = 0
+      const totalWriters = { month: new Set(), week: new Set(), lw: new Set() }
+      const newWriters   = { month: new Set(), week: new Set(), lw: new Set() }
+      const submMonthItems = []
+      const totalWritersItems = new Map()
+      const newWritersItems   = new Map()
+
+      for (const p of allRows) {
+        const sfgId     = p.sfg_id?.trim()
+        if (!sfgId) continue
+        const sfgLower   = sfgId.toLowerCase()
+        const status     = (p.status ?? '').trim()
+        const issueDate  = p.issue_date         ?? ''
+        const submitDate = p.submit_date        ?? ''
+        const submitWeek = p.submit_week        ?? ''
+        const consvStatus = (p.conservation_status ?? '').trim()
+        const submApv    = parseAmt(p.submitted_apv)
+        const issApv     = parseAmt(p.issued_apv)
+        const person     = personLookup[sfgLower] ?? {}
+        const agentName  = person.name || ''
+        const earliest   = earliestSubmit[sfgLower]
+        const submitKey  = submitWeek
+
+        const base = {
+          id: p.id, sfg_id: sfgId, agent: agentName, agent_email: '',
+          applicant:  (p.applicant    ?? '').trim(),
+          carrier:    (p.carrier      ?? '').trim(),
+          policy:     (p.policy_name  ?? '').trim(),
+          policy_no:  (p.policy_number ?? '').trim(),
+          face_amt:   p.face_amount   != null ? String(p.face_amount)    : '',
+          issued_apv: p.issued_apv    != null ? String(p.issued_apv)     : '',
+          subm_apv:   p.submitted_apv != null ? String(p.submitted_apv)  : '',
+          last_update: p.last_update  ?? '',
+        }
+
+        if (inPeriod(submitKey, monthStart, monthEnd)) {
+          totalWriters.month.add(sfgLower)
+          totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+          if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
+            newWriters.month.add(sfgLower)
+            newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+          }
+        }
+        if (inPeriod(submitKey, weekStart)) {
+          totalWriters.week.add(sfgLower)
+          if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
+        }
+        if (inPeriod(submitKey, lwStart, weekStart)) {
+          totalWriters.lw.add(sfgLower)
+          if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
+        }
+
+        if (submApv > 0) {
+          if (inPeriod(submitKey, monthStart, monthEnd)) {
+            submMonth += submApv
+            submMonthItems.push({
+              sfg_id: sfgId, agent: agentName,
+              applicant:   (p.applicant ?? '').trim(),
+              carrier:     (p.carrier   ?? '').trim(),
+              subm_apv:    String(p.submitted_apv),
+              submit_week: submitWeek,
+              submit_date: submitDate,
+            })
+          }
+          if (inPeriod(submitKey, weekStart))          submWeek += submApv
+          if (inPeriod(submitKey, lwStart, weekStart)) submLW   += submApv
+        }
+
+        if (issApv > 0 && inPeriod(issueDate, monthStart, monthEnd)) issMonth += issApv
+
+        const statusLower = status.toLowerCase()
+        if (!status || statusLower === 'pending') {
+          pending.push({ ...base, status, submit_date: submitDate, open_req: (p.application_notes ?? '').trim() })
+        }
+        if (statusLower === 'incomplete') {
+          incomplete.push({ ...base, status, submit_date: submitDate, open_req: (p.application_notes ?? '').trim() })
+        }
+        if (LAPSE_CONSV_STATUSES.has(consvStatus.toLowerCase())) {
+          const consvDate = p.conservation_date ?? ''
+          lapse.push({
+            ...base,
+            policy_type:         (p.policy_name   ?? '').trim(),
+            policy_no:           (p.policy_number ?? '').trim(),
+            issue_date:          issueDate,
+            face_amt:            p.face_amount  != null ? String(p.face_amount)  : '',
+            issued_apv:          p.issued_apv   != null ? String(p.issued_apv)   : '',
+            cb_month:            formatCbMonth(p.snapshot_chargeback_month),
+            cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
+            conservation_status: consvStatus,
+            conservation_date:   consvDate,
+            days_to_lapse:       daysDiff(consvDate),
+          })
+        }
+      }
+
+      const byLastUpdate = (a, b) => {
+        const da = parseDateLocal(a.last_update), db = parseDateLocal(b.last_update)
+        if (!da && !db) return 0
+        if (!da) return 1
+        if (!db) return -1
+        return da - db
+      }
+      pending.sort(byLastUpdate)
+      incomplete.sort(byLastUpdate)
+      lapse.sort((a, b) => (a.days_to_lapse ?? 999) - (b.days_to_lapse ?? 999))
+
+      const metrics = {
+        submMonth, submWeek, submLW, issMonth,
+        newWritersMonth: newWriters.month.size, newWritersWeek: newWriters.week.size, newWritersLW: newWriters.lw.size,
+        totalWritersMonth: totalWriters.month.size, totalWritersWeek: totalWriters.week.size, totalWritersLW: totalWriters.lw.size,
+        projSubmMonth:       Math.round(submMonth             * projFactor),
+        projIssMonth:        Math.round(issMonth              * projFactor),
+        projNewWritersMonth: Math.round(newWriters.month.size * projFactor),
+        pendingSubmAPV:      pending.reduce((s, r) => s + parseAmt(r.subm_apv), 0),
+        openReqSubmAPV:      incomplete.reduce((s, r) => s + parseAmt(r.subm_apv), 0),
+        lapseIssuedAPV:      lapse.reduce((s, r) => s + parseAmt(r.issued_apv), 0),
+        lapseCount:          lapse.length,
+      }
+
+      const detail = {
+        submMonthItems:    submMonthItems.sort((a, b) => a.agent.localeCompare(b.agent)),
+        totalWritersItems: [...totalWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
+        newWritersItems:   [...newWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
+      }
+
+      return res.status(200).json({ pending, incomplete, lapse, metrics, detail })
+    } catch (err) {
+      console.error('[policies/apps]', err)
+      return res.status(500).json({ error: 'Failed to read apps and policies data' })
+    }
+  }
+
+  // ── GET /api/policies?sfg_ids=X  (list) ───────────────────────────────────
+  if (req.method === 'GET') {
+    const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''
+    const requestedIds = raw
+      ? raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+      : []
+
+    try {
+      const [rows, people] = await Promise.all([
+        fetchPolicies(supabase, requestedIds.length ? requestedIds : null),
+        supabase.from('personnel').select('sfg_id, preferred_name, opt_name')
+          .then(r => { if (r.error) throw r.error; return r.data ?? [] }),
+      ])
+
+      const personLookup = {}
+      for (const p of people) {
+        const id = p.sfg_id?.toLowerCase()
+        if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
+      }
+
+      const policies = rows.map(p => {
         const person = personLookup[(p.sfg_id ?? '').trim().toLowerCase()] ?? {}
         return {
-        id:                  p.id,
-        sfg_id:              p.sfg_id                         ?? '',
-        agent:               person.name || '',
-        agent_email:         '',
-        applicant:           p.applicant                      ?? '',
-        carrier:             p.carrier                        ?? '',
-        policy_type:         p.policy_name                    ?? '',
-        policy_no:           p.policy_number                  ?? '',
-        face_amt:            p.face_amount != null ? String(p.face_amount) : '',
-        subm_apv:            p.submitted_apv  ?? null,
-        issued_apv:          p.issued_apv     ?? null,
-        status:              p.status                         ?? '',
-        submit_date:         p.submit_date                    ?? '',
-        submit_week:         p.submit_week                    ?? '',
-        submit_week_num:     p.submit_week_num                ?? '',
-        issue_date:          p.issue_date                     ?? '',
-        app_notes:           p.application_notes              ?? '',
-        policy_notes:        p.policy_notes                   ?? '',
-        not_in_opt:          p.not_in_opt   ? 'x' : '',
-        split_reset:         p.split_reset  ? 'x' : '',
-        cb_month:            formatCbMonth(p.snapshot_chargeback_month),
-        cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
-        conservation_status: p.conservation_status            ?? '',
-        conservation_date:   p.conservation_date              ?? '',
-        last_update:         p.last_update                    ?? '',
-      }
+          id:                  p.id,
+          sfg_id:              p.sfg_id                         ?? '',
+          agent:               person.name || '',
+          agent_email:         '',
+          applicant:           p.applicant                      ?? '',
+          carrier:             p.carrier                        ?? '',
+          policy_type:         p.policy_name                    ?? '',
+          policy_no:           p.policy_number                  ?? '',
+          face_amt:            p.face_amount != null ? String(p.face_amount) : '',
+          subm_apv:            p.submitted_apv   ?? null,
+          issued_apv:          p.issued_apv      ?? null,
+          status:              p.status                         ?? '',
+          submit_date:         p.submit_date                    ?? '',
+          submit_week:         p.submit_week                    ?? '',
+          submit_week_num:     p.submit_week_num                ?? '',
+          issue_date:          p.issue_date                     ?? '',
+          app_notes:           p.application_notes              ?? '',
+          policy_notes:        p.policy_notes                   ?? '',
+          not_in_opt:          p.not_in_opt   ? 'x' : '',
+          split_reset:         p.split_reset  ? 'x' : '',
+          cb_month:            formatCbMonth(p.snapshot_chargeback_month),
+          cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
+          conservation_status: p.conservation_status            ?? '',
+          conservation_date:   p.conservation_date              ?? '',
+          last_update:         p.last_update                    ?? '',
+        }
       })
 
-    return res.status(200).json({ policies })
-  } catch (err) {
-    console.error('[policies]', err)
-    return res.status(500).json({ error: 'Failed to read policies data' })
+      return res.status(200).json({ policies })
+    } catch (err) {
+      console.error('[policies]', err)
+      return res.status(500).json({ error: 'Failed to read policies data' })
+    }
   }
+
+  // ── POST /api/policies  (add single) ──────────────────────────────────────
+  if (req.method === 'POST' && !type) {
+    const f = req.body ?? {}
+    if (!f.sfg_id || !f.applicant) {
+      return res.status(400).json({ error: 'sfg_id and applicant are required' })
+    }
+    try {
+      const record = {
+        sfg_id:          f.sfg_id       ? String(f.sfg_id).trim()       : null,
+        agent:           f.agent        ? String(f.agent).trim()        : null,
+        agent_email:     f.agent_email  ? String(f.agent_email).trim()  : null,
+        applicant:       f.applicant    ? String(f.applicant).trim()    : null,
+        carrier:         f.carrier      ? String(f.carrier).trim()      : null,
+        policy_name:     f.policy_type  ? String(f.policy_type).trim()  : null,
+        policy_number:   f.policy_no    ? String(f.policy_no).trim()    : null,
+        face_amount:     parseNum(f.face_amt),
+        submitted_apv:   parseNum(f.subm_apv),
+        issued_apv:      parseNum(f.issued_apv),
+        status:          f.status       ? String(f.status).trim()       : null,
+        submit_date:     parseDate(f.submit_date),
+        submit_week:     parseDate(f.submit_week),
+        submit_week_num: f.submit_week_num ? String(f.submit_week_num).trim() : null,
+        issue_date:      parseDate(f.issue_date),
+        first_time:      ['x','true','1','yes'].includes(String(f.first_time ?? '').trim().toLowerCase()),
+        application_notes: f.app_notes  ? String(f.app_notes).trim()   : null,
+        policy_notes:    f.policy_notes ? String(f.policy_notes).trim() : null,
+        not_in_opt:      ['x','true','1','yes'].includes(String(f.not_in_opt ?? '').trim().toLowerCase()),
+        split_reset:     ['x','true','1','yes'].includes(String(f.split_reset ?? '').trim().toLowerCase()),
+        last_update:     parseDate(f.last_update),
+      }
+      const { error } = await supabase.from('policies').insert(record)
+      if (error) throw error
+      return res.status(200).json({ ok: true })
+    } catch (err) {
+      console.error('[policies/add]', err)
+      return res.status(500).json({ error: 'Failed to add policy' })
+    }
+  }
+
+  // ── POST /api/policies?type=import  (bulk import) ─────────────────────────
+  if (req.method === 'POST' && type === 'import') {
+    const { rows } = req.body ?? {}
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ error: 'No rows provided' })
+    }
+    try {
+      let inserted = 0, skipped = 0
+      const errors = []
+      for (const row of rows) {
+        if (!row.includeAnyway) {
+          const { data: existing } = await supabase
+            .from('policies')
+            .select('id')
+            .eq('sfg_id', row.sfg_id)
+            .ilike('applicant', row.applicant)
+            .eq('submit_date', row.submit_date)
+            .ilike('carrier', row.carrier)
+            .ilike('policy_name', row.policy_name)
+            .maybeSingle()
+          if (existing) { skipped++; continue }
+        }
+        const record = {
+          sfg_id:          row.sfg_id,
+          applicant:       row.applicant,
+          carrier:         row.carrier,
+          policy_name:     row.policy_name,
+          policy_number:   row.policy_number   ?? null,
+          face_amount:     row.face_amount      ?? null,
+          submitted_apv:   row.submitted_apv    ?? null,
+          status:          row.status           ?? null,
+          submit_date:     row.submit_date      ?? null,
+          issue_date:      row.issue_date       ?? null,
+          last_update:     row.last_update      ?? null,
+          submit_week:     row.submit_week      ?? null,
+          submit_week_num: row.submit_week_num  ?? null,
+          subtype:         row.subtype          ?? null,
+        }
+        const { error } = await supabase.from('policies').insert(record)
+        if (error) {
+          errors.push({ applicant: row.applicant, agent: row.agentName, error: error.message })
+        } else {
+          inserted++
+        }
+      }
+      return res.status(200).json({ inserted, skipped, errors })
+    } catch (err) {
+      console.error('[policies/import]', err)
+      return res.status(500).json({ error: 'Failed to import policies' })
+    }
+  }
+
+  // ── PUT /api/policies  (update fields) ────────────────────────────────────
+  if (req.method === 'PUT') {
+    const { id, updates } = req.body ?? {}
+    if (!id || !updates || typeof updates !== 'object') {
+      return res.status(400).json({ error: 'Missing or invalid id or updates' })
+    }
+    try {
+      const coerced = {}
+      for (const [col, val] of Object.entries(updates)) coerced[col] = coerce(col, val)
+      const { error } = await supabase.from('policies').update(coerced).eq('id', id)
+      if (error) throw error
+      return res.status(200).json({ ok: true })
+    } catch (err) {
+      console.error('[policies/update]', err)
+      return res.status(500).json({ error: 'Failed to update policy' })
+    }
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }

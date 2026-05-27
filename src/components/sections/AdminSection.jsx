@@ -11,7 +11,7 @@ export default function AdminSection({ subject, canWrite }) {
     setSyncState('loading')
     setSyncResult(null)
     try {
-      const res = await fetch('/api/sync-hidden-agents', {
+      const res = await fetch('/api/users?action=sync-hidden', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userProfile.id }),

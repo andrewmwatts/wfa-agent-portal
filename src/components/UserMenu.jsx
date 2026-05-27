@@ -227,7 +227,7 @@ function DelegationModal({ userProfile, onClose }) {
   useEffect(() => { load() }, [load])
 
   async function revoke(id) {
-    await fetch('/api/delegation', {
+    await fetch('/api/users?action=delegate', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
@@ -402,7 +402,7 @@ function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection,
     if (!selectedSections.length) { setError('Select at least one section.'); return }
     setSaving(true)
     setError(null)
-    const res = await fetch('/api/delegation', {
+    const res = await fetch('/api/users?action=delegate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_sfg_id: agentSfgId, assistant_sfg_id: lookupResult.sfgId, sections: selectedSections }),
@@ -470,7 +470,7 @@ function EmailInviteTab({ agentSfgId, sections, selectedSections, onToggleSectio
     if (!selectedSections.length) { setError('Select at least one section.'); return }
     setSaving(true)
     setError(null)
-    const res = await fetch('/api/invite-delegate', {
+    const res = await fetch('/api/users?action=invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_sfg_id: agentSfgId, email: email.trim(), sections: selectedSections }),

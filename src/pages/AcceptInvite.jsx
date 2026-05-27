@@ -59,7 +59,7 @@ export default function AcceptInvite() {
       if (pwErr) throw pwErr
 
       // 2. Provision the portal account and activate the delegation
-      const res = await fetch('/api/accept-invite', {
+      const res = await fetch('/api/users?action=accept-invite', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

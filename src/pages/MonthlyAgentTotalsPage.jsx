@@ -296,7 +296,7 @@ export default function MonthlyAgentTotalsPage() {
   async function load(sfgId, viewMode) {
     try {
       // Always load master — needed for downline tree, all team policies, and director detection
-      const masterRes = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}&mode=master`)
+      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
       const master    = masterRes.ok ? await masterRes.json() : []
       setMasterPersonnel(master)
 
@@ -310,7 +310,7 @@ export default function MonthlyAgentTotalsPage() {
       if (viewMode === 'master') {
         display = master
       } else {
-        const bsRes = await fetch(`/api/personnel-data?root=${encodeURIComponent(sfgId)}`)
+        const bsRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`)
         display = bsRes.ok ? await bsRes.json() : []
       }
       setDisplayPersonnel(display)
