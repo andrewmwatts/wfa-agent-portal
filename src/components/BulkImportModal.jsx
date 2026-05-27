@@ -111,7 +111,9 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
     if (!sfgLower) continue
     const name  = (p.preferred_name || p.opt_name || '').trim()
     const entry = { sfg_id: p.sfg_id, name }
-    if (name) personByName[name.toLowerCase()] = entry
+    // Index by preferred_name AND opt_name separately so either can match
+    if (p.preferred_name?.trim()) personByName[p.preferred_name.trim().toLowerCase()] = entry
+    if (p.opt_name?.trim())       personByName[p.opt_name.trim().toLowerCase()]       = entry
     personByOpt[sfgLower] = entry
   }
 
@@ -216,6 +218,7 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
       _csvIdx:         idx,
       sfg_id,
       agentName,
+      rawAgent,
       applicant,
       carrier,
       policy_name:     policyName,
@@ -252,7 +255,7 @@ function StatusBadge({ status, excluded }) {
   return <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>
 }
 
-function PreviewRow({ row, personnel, onUpdate, idx }) {
+function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
   const [expanded,    setExpanded]    = useState(false)
   const [agentSearch, setAgentSearch] = useState('')
 
@@ -278,6 +281,7 @@ function PreviewRow({ row, personnel, onUpdate, idx }) {
       excluded:  row.isDuplicate,
     })
     setAgentSearch('')
+    onAgentSelected?.(p, row.rawAgent)
   }
 
   const noteCount = row.warnings.length + row.errors.length
@@ -377,6 +381,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
   const [filterStatus, setFilterStatus] = useState('all')
   const [defaultAgentSearch, setDefaultAgentSearch] = useState('')
   const [showDefaultAgentList, setShowDefaultAgentList] = useState(false)
+  const [optNamePrompt, setOptNamePrompt] = useState(null) // { sfg_id, proposed }
   const fileRef = useRef()
 
   const redCount = rows.filter(r => r.rowStatus === 'red').length
@@ -391,6 +396,10 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
 
   function applyDefaultAgent(p) {
     const name = (p.preferred_name || p.opt_name || '').trim()
+    // Collect the raw agent names from affected rows
+    const rawNames = [...new Set(
+      rows.filter(r => r.rowStatus === 'red' && r.rawAgent).map(r => r.rawAgent.trim())
+    )]
     setRows(prev => prev.map(r =>
       r.rowStatus === 'red'
         ? { ...r, sfg_id: p.sfg_id, agentName: name, rowStatus: r.warnings?.length > 0 ? 'yellow' : 'green', errors: [] }
@@ -398,6 +407,29 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
     ))
     setDefaultAgentSearch('')
     setShowDefaultAgentList(false)
+    // Offer to update opt_name if the CSV name differs from what's on file
+    if (rawNames.length === 1 && rawNames[0].toLowerCase() !== (p.opt_name || '').trim().toLowerCase()) {
+      setOptNamePrompt({ sfg_id: p.sfg_id, proposed: rawNames[0] })
+    }
+  }
+
+  function handleRowAgentSelected(p, rawAgent) {
+    // Called from PreviewRow when an agent is manually selected for a single row
+    if (rawAgent && rawAgent.trim().toLowerCase() !== (p.opt_name || '').trim().toLowerCase()) {
+      setOptNamePrompt({ sfg_id: p.sfg_id, proposed: rawAgent.trim() })
+    }
+  }
+
+  async function confirmOptNameUpdate() {
+    if (!optNamePrompt) return
+    try {
+      await fetch('/api/personnel', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sfg_id: optNamePrompt.sfg_id, updates: { opt_name: optNamePrompt.proposed } }),
+      })
+    } catch { /* non-fatal */ }
+    setOptNamePrompt(null)
   }
 
   // Load crosswalk once on mount
@@ -505,7 +537,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -630,6 +662,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                         row={row}
                         personnel={personnel}
                         onUpdate={updateRow}
+                        onAgentSelected={handleRowAgentSelected}
                         idx={realIdx}
                       />
                     )
@@ -718,6 +751,34 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
             </div>
           )}
         </div>
+
+        {/* Opt Name update confirmation dialog */}
+        {optNamePrompt && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 rounded-xl">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
+              <h3 className="text-base font-semibold text-gray-800">Update Opt Name?</h3>
+              <p className="text-sm text-gray-600">
+                The CSV shows <strong>"{optNamePrompt.proposed}"</strong> for this agent.
+                Would you like to update their Opt Name on file to match?
+                This will help future imports auto-match correctly.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setOptNamePrompt(null)}
+                  className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  No, keep current
+                </button>
+                <button
+                  onClick={confirmOptNameUpdate}
+                  className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
+                >
+                  Yes, update
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50">
