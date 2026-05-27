@@ -154,7 +154,7 @@ export default function OnboardingPage() {
       setTotalLessons(total ?? 0)
       setKajabiMap(summaries ?? {})
     } catch {
-      // Non-fatal — table will show "Not linked" for all agents
+      // Non-fatal — table will show "Not enrolled" for all agents
     }
   }
 
@@ -408,7 +408,7 @@ export default function OnboardingPage() {
                       {/* Course Progress */}
                       <td className="py-3 pr-4 min-w-[110px]">
                         {!linked ? (
-                          <span className="text-xs text-gray-400 dark:text-white/25">Not linked</span>
+                          <span className="text-xs text-gray-400 dark:text-white/25">Not enrolled</span>
                         ) : (
                           <div className="space-y-1">
                             <div className="flex items-baseline gap-1.5">

@@ -136,17 +136,17 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
     const warnings = []
     const errors   = []
 
-    const rawAgent     = getField(raw, 'Agent', 'agent', 'Agent Name', 'AgentName')
-    const rawApplicant = getField(raw, 'Applicant', 'applicant', 'Client', 'client')
-    const rawCarrier   = getField(raw, 'Carrier', 'carrier')
-    const rawPolicy    = getField(raw, 'Policy Name', 'policy_name', 'PolicyName', 'Product', 'product')
-    const rawPolicyNo  = getField(raw, 'Policy Number', 'policy_number', 'PolicyNumber', 'Policy No', 'PolicyNo')
-    const rawStatus    = getField(raw, 'Status', 'status')
-    const rawSubmDate  = getField(raw, 'Submit Date', 'submit_date', 'SubmitDate', 'Date Submitted', 'DateSubmitted')
-    const rawIssDate   = getField(raw, 'Issue Date', 'issue_date', 'IssueDate')
-    const rawFace      = getField(raw, 'Face Amount', 'face_amount', 'FaceAmount', 'Face')
-    const rawSubmApv   = getField(raw, 'Submitted APV', 'submitted_apv', 'SubmittedAPV', 'Subm APV', 'APV')
-    const rawSfgId     = getField(raw, 'SFG ID', 'sfg_id', 'SfgId', 'SFGID', 'AgentCode', 'agentcode', 'Agent Code')
+    const rawAgent     = getField(raw, 'Agent', 'agent', 'Agent Name', 'AgentName', 'Writing Agent', 'WritingAgent', 'Producer', 'producer', 'Writer', 'writer', 'Written By', 'WrittenBy', 'Producing Agent', 'ProducingAgent')
+    const rawApplicant = getField(raw, 'Applicant', 'applicant', 'Client', 'client', 'Insured', 'insured', 'Client Name', 'ClientName')
+    const rawCarrier   = getField(raw, 'Carrier', 'carrier', 'Company', 'company', 'Insurance Company')
+    const rawPolicy    = getField(raw, 'Policy Name', 'policy_name', 'PolicyName', 'Product', 'product', 'Plan', 'plan', 'Product Name', 'ProductName')
+    const rawPolicyNo  = getField(raw, 'Policy Number', 'policy_number', 'PolicyNumber', 'Policy No', 'PolicyNo', 'Policy #', 'Contract Number', 'ContractNumber')
+    const rawStatus    = getField(raw, 'Status', 'status', 'Policy Status', 'PolicyStatus', 'App Status', 'AppStatus')
+    const rawSubmDate  = getField(raw, 'Submit Date', 'submit_date', 'SubmitDate', 'Date Submitted', 'DateSubmitted', 'App Date', 'AppDate', 'Application Date', 'Submission Date')
+    const rawIssDate   = getField(raw, 'Issue Date', 'issue_date', 'IssueDate', 'Date Issued', 'DateIssued', 'Issued Date')
+    const rawFace      = getField(raw, 'Face Amount', 'face_amount', 'FaceAmount', 'Face', 'Coverage Amount', 'Death Benefit', 'Benefit Amount')
+    const rawSubmApv   = getField(raw, 'Submitted APV', 'submitted_apv', 'SubmittedAPV', 'Subm APV', 'APV', 'Target Premium', 'Annualized Premium', 'Annual Premium')
+    const rawSfgId     = getField(raw, 'SFG ID', 'sfg_id', 'SfgId', 'SFGID', 'AgentCode', 'agentcode', 'Agent Code', 'Agent ID', 'AgentID', 'Producer Code', 'ProducerCode', 'Writing Agent Code', 'Writer Code')
 
     // Applicant: title-case normalise
     const origApplicant = rawApplicant
@@ -369,13 +369,36 @@ function PreviewRow({ row, personnel, onUpdate, idx }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function BulkImportModal({ onClose, personnel = [], existingPolicies = [] }) {
-  const [phase,      setPhase]      = useState('upload')   // upload | preview | confirm | importing | result
-  const [rows,       setRows]       = useState([])
-  const [crosswalk,  setCrosswalk]  = useState(null)
-  const [parseError, setParseError] = useState('')
-  const [result,     setResult]     = useState(null)
+  const [phase,        setPhase]        = useState('upload')   // upload | preview | confirm | importing | result
+  const [rows,         setRows]         = useState([])
+  const [crosswalk,    setCrosswalk]    = useState(null)
+  const [parseError,   setParseError]   = useState('')
+  const [result,       setResult]       = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
+  const [defaultAgentSearch, setDefaultAgentSearch] = useState('')
+  const [showDefaultAgentList, setShowDefaultAgentList] = useState(false)
   const fileRef = useRef()
+
+  const redCount = rows.filter(r => r.rowStatus === 'red').length
+
+  const defaultAgentResults = defaultAgentSearch.length > 1
+    ? personnel.filter(p => {
+        const name = (p.preferred_name || p.opt_name || '').toLowerCase()
+        return name.includes(defaultAgentSearch.toLowerCase()) ||
+               (p.sfg_id ?? '').toLowerCase().includes(defaultAgentSearch.toLowerCase())
+      }).slice(0, 8)
+    : []
+
+  function applyDefaultAgent(p) {
+    const name = (p.preferred_name || p.opt_name || '').trim()
+    setRows(prev => prev.map(r =>
+      r.rowStatus === 'red'
+        ? { ...r, sfg_id: p.sfg_id, agentName: name, rowStatus: r.warnings?.length > 0 ? 'yellow' : 'green', errors: [] }
+        : r
+    ))
+    setDefaultAgentSearch('')
+    setShowDefaultAgentList(false)
+  }
 
   // Load crosswalk once on mount
   useEffect(() => {
@@ -548,6 +571,40 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                   </button>
                 ))}
               </div>
+
+              {/* Default agent assignment (shown when red rows exist) */}
+              {redCount > 0 && (
+                <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
+                  <span className="text-red-700 font-medium whitespace-nowrap">
+                    {redCount} row{redCount !== 1 ? 's' : ''} missing agent —
+                  </span>
+                  <div className="relative flex-1 max-w-xs">
+                    <input
+                      type="text"
+                      placeholder="Assign all to agent…"
+                      value={defaultAgentSearch}
+                      onChange={e => { setDefaultAgentSearch(e.target.value); setShowDefaultAgentList(true) }}
+                      onFocus={() => setShowDefaultAgentList(true)}
+                      onBlur={() => setTimeout(() => setShowDefaultAgentList(false), 150)}
+                      className="w-full border border-red-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400"
+                    />
+                    {showDefaultAgentList && defaultAgentResults.length > 0 && (
+                      <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto">
+                        {defaultAgentResults.map(p => (
+                          <button
+                            key={p.sfg_id}
+                            onMouseDown={() => applyDefaultAgent(p)}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                          >
+                            <span className="font-medium">{p.preferred_name || p.opt_name}</span>
+                            <span className="text-gray-400 ml-2 text-xs">{p.sfg_id}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Column headers */}
               <div className="flex gap-2 text-xs font-semibold text-gray-500 uppercase px-3 pb-1 border-b">
