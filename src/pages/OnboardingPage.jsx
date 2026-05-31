@@ -12,17 +12,30 @@ function isTruthy(val) {
   return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
 }
 
+// Parse YYYY-MM-DD as local midnight — avoids UTC-offset date shifting
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function toInputDate(str) {
   if (!str) return ''
-  const d = new Date(str)
-  if (isNaN(d)) return str
-  return d.toISOString().slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return String(str)
+  const d = parseDateLocal(str)
+  if (!d) return str
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dy = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dy}`
 }
 
 function fmtDate(d) {
   if (!d) return '—'
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const dt = parseDateLocal(d)
+  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // Given an owner's SFG ID and the full master-agency list, return the set of
@@ -145,14 +158,18 @@ export default function OnboardingPage() {
     }
   }
 
-  async function loadKajabi(sfgIds) {
+  async function loadKajabi(sfgIds, merge = false) {
     if (!sfgIds.length) return
     try {
       const res = await fetch(`/api/onboarding-progress?sfg_ids=${sfgIds.join(',')}`)
       if (!res.ok) return
       const { summaries, totalLessons: total } = await res.json()
       setTotalLessons(total ?? 0)
-      setKajabiMap(summaries ?? {})
+      if (merge) {
+        setKajabiMap(prev => ({ ...prev, ...(summaries ?? {}) }))
+      } else {
+        setKajabiMap(summaries ?? {})
+      }
     } catch {
       // Non-fatal — table will show "Not enrolled" for all agents
     }
@@ -456,6 +473,7 @@ export default function OnboardingPage() {
             setSelected(updated)
             setMasterPersonnel(prev => prev.map(p => p.sfg_id === updated.sfg_id ? updated : p))
           }}
+          onKajabiLinked={sfgId => loadKajabi([sfgId], true)}
         />
       )}
 
@@ -500,13 +518,14 @@ function ContractingCell({ toProducerDate, complete }) {
 
 const OB_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
-function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHidden, onHideToggle, onUpdate }) {
-  const [lessons,   setLessons]   = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [editing,   setEditing]   = useState(false)
-  const [draft,     setDraft]     = useState(null)
-  const [saving,    setSaving]    = useState(false)
-  const [saveError, setSaveError] = useState(null)
+function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHidden, onHideToggle, onUpdate, onKajabiLinked }) {
+  const [lessons,     setLessons]     = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [editing,     setEditing]     = useState(false)
+  const [draft,       setDraft]       = useState(null)
+  const [saving,      setSaving]      = useState(false)
+  const [saveError,   setSaveError]   = useState(null)
+  const [kajabiEmail, setKajabiEmail] = useState(null)
 
   // Close on Escape
   useEffect(() => {
@@ -526,8 +545,9 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
     try {
       const res = await fetch(`/api/onboarding-progress?sfg_id=${encodeURIComponent(sfgId)}&detail=true`)
       if (!res.ok) { setLessons([]); return }
-      const { lessons: data } = await res.json()
+      const { lessons: data, kajabiEmail: email } = await res.json()
       setLessons(data ?? [])
+      setKajabiEmail(email ?? null)
     } catch {
       setLessons([])
     } finally {
@@ -703,6 +723,20 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
           </div>
         )}
 
+        {/* Kajabi link — always visible to writers; read-only if linked, input if not */}
+        {canWrite && (
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
+            <KajabiLinkField
+              sfgId={agent.sfg_id}
+              kajabiEmail={kajabiEmail}
+              onLinked={email => {
+                setKajabiEmail(email)
+                onKajabiLinked?.(agent.sfg_id)
+              }}
+            />
+          </div>
+        )}
+
         {/* Lesson list */}
         <div className="overflow-y-auto flex-1 p-4">
           {loading ? (
@@ -757,6 +791,66 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function KajabiLinkField({ sfgId, kajabiEmail, onLinked }) {
+  const [input,   setInput]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [linkErr, setLinkErr] = useState(null)
+
+  async function handleLink() {
+    const email = input.trim()
+    if (!email) return
+    setSaving(true)
+    setLinkErr(null)
+    try {
+      const res = await fetch('/api/onboarding-progress', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sfg_id: sfgId, kajabi_email: email }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to link Kajabi email')
+      }
+      onLinked(email)
+      setInput('')
+    } catch (e) {
+      setLinkErr(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-2">Kajabi</p>
+      {kajabiEmail ? (
+        <p className="text-sm text-gray-700 dark:text-white/70 font-mono">{kajabiEmail}</p>
+      ) : (
+        <>
+          <div className="flex gap-2 items-center">
+            <input
+              type="email"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLink()}
+              placeholder="Enter Kajabi email to link…"
+              className={OB_INPUT_CLS}
+            />
+            <button
+              onClick={handleLink}
+              disabled={saving || !input.trim()}
+              className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap flex-shrink-0"
+            >
+              {saving ? 'Linking…' : 'Link'}
+            </button>
+          </div>
+          {linkErr && <p className="text-xs text-red-500 dark:text-red-400 mt-1">{linkErr}</p>}
+        </>
+      )}
     </div>
   )
 }

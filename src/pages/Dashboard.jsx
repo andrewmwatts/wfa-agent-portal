@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
+import { useAuth } from '../context/AuthContext'
 import MetricsSection from '../components/sections/MetricsSection'
 import NewAgentStatusSection from '../components/sections/NewAgentStatusSection'
 import PendingBusinessSection from '../components/sections/PendingBusinessSection'
+import ActivitySummarySection from '../components/sections/ActivitySummarySection'
 
 // Fetch apps-policies for a given personnel list; returns raw JSON (does not set state).
 async function fetchAppsData(prs) {
@@ -14,6 +16,8 @@ async function fetchAppsData(prs) {
 
 export default function Dashboard() {
   const { activeSubject, permissions, loading: viewLoading } = useViewing()
+  const { userProfile } = useAuth()
+  const isSuperAdmin = userProfile?.role === 'super_admin'
 
   // Mode-togglable — drives MetricsSection only
   const [personnel,  setPersonnel]  = useState([])
@@ -27,6 +31,7 @@ export default function Dashboard() {
 
   // Director = role-based; drives master/baseshop toggle + parallel data fetching
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
+  const showActivitySummary = ['agent', 'leader', 'super_admin'].includes(activeSubject?.role)
   const [loading,    setLoading]    = useState(false)
 
   // ── Initial load: runs whenever the viewed subject changes ─────────────────
@@ -117,9 +122,16 @@ export default function Dashboard() {
           mode={mode}
           loading={loading}
           onModeChange={handleModeChange}
+          canBreakdown={isSuperAdmin}
         />
       )}
-      {permissions.team.read && (
+      {showActivitySummary && (
+        <ActivitySummarySection
+          subject={activeSubject}
+          loading={loading}
+        />
+      )}
+      {permissions.team.read && activeSubject?.role !== 'agent' && (
         <NewAgentStatusSection
           subject={activeSubject}
           canWrite={permissions.team.write}

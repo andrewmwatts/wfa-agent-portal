@@ -12,11 +12,24 @@ function isTruthy(val) {
   return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
 }
 
+// Parse YYYY-MM-DD as local midnight — avoids UTC-offset date shifting
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function toInputDate(str) {
   if (!str) return ''
-  const d = new Date(str)
-  if (isNaN(d)) return str
-  return d.toISOString().slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return String(str)
+  const d = parseDateLocal(str)
+  if (!d) return str
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dy = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dy}`
 }
 
 // ─── Milestone helpers ────────────────────────────────────────────────────────
@@ -58,28 +71,30 @@ function hasAchieved(named = {}, key) { return allFilled(named[key]) }
 // Format a date string → "Jan 12, 2024"
 function fmtDate(str) {
   if (!str) return null
-  const d = new Date(str)
-  return isNaN(d) ? str : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const d = parseDateLocal(str)
+  return (!d || isNaN(d)) ? str : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // Format milestone date → "Jan 2024" (month + year only)
 function fmtMo(str) {
   if (!str?.trim()) return null
-  const d = new Date(str)
-  return isNaN(d) ? str.trim() : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  const d = parseDateLocal(str)
+  return (!d || isNaN(d)) ? str.trim() : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
-// Display string for a level's month array — "(SS)" if both dates match
+// Display string for a level's month array — "(SS)" if first two dates match (slingshot)
 function milestoneDates(months) {
   if (!months?.length) return null
   const d1 = fmtMo(months[0]) ?? months[0]?.trim() ?? null
   const d2 = months[1] != null ? (fmtMo(months[1]) ?? months[1]?.trim() ?? null) : undefined
+  const d3 = months[2] != null ? (fmtMo(months[2]) ?? months[2]?.trim() ?? null) : undefined
 
   if (!d1) return null
-  if (d2 == null) return d1           // only one month column
-  if (!d2)        return d1           // second column empty
-  if (d1 === d2)  return `${d1} (SS)` // simultaneous start
-  return `${d1} / ${d2}`
+  if (d2 == null) return d1             // only one month column
+  if (!d2)        return d1             // second column empty
+  if (d1 === d2)  return `${d1} (SS)`  // simultaneous start (slingshot)
+  if (!d3)        return `${d1} / ${d2}`
+  return `${d1} / ${d2} / ${d3}`
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -452,7 +467,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
       const updates = {}
 
       // Standard fields
-      const standardKeys = ['name', 'upline_name', 'hire_date', 'birth_date', 'email', 'npn', 'opt_name', 'no_eando', 'profile_issues', 'surelc_profile_date', 'contracting_to_producer', 'contracting_complete']
+      const standardKeys = ['name', 'upline_name', 'hire_date', 'birth_date', 'email', 'npn', 'opt_name', 'surelc_profile_date', 'contracting_to_producer', 'contracting_complete']
       for (const key of standardKeys) {
         if (String(draft[key] ?? '') !== String(p[key] ?? '')) {
           updates[key] = String(draft[key] ?? '')
@@ -589,19 +604,6 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <AgentEditField label="Hire Date"   value={toInputDate(draft.hire_date)}  onChange={v => setField('hire_date', v)}  type="date" />
                 <AgentEditField label="Birth Date"  value={toInputDate(draft.birth_date)} onChange={v => setField('birth_date', v)} type="date" />
                 <AgentEditField label="Opt Name"    value={draft.opt_name}     onChange={v => setField('opt_name', v)} />
-                <AgentEditField label="Profile Issues" value={draft.profile_issues} onChange={v => setField('profile_issues', v)} />
-                <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">No E&amp;O</p>
-                  <label className="flex items-center gap-2 cursor-pointer mt-1">
-                    <input
-                      type="checkbox"
-                      checked={!!draft.no_eando}
-                      onChange={e => setField('no_eando', e.target.checked ? 'TRUE' : '')}
-                      className="w-4 h-4 accent-accent rounded cursor-pointer"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-white/80">No E&amp;O</span>
-                  </label>
-                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">

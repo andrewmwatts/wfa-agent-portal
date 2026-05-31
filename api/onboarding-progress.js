@@ -8,14 +8,27 @@ loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-
   const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
+
+  // ── PUT — upsert kajabi_email_map ─────────────────────────────────────────
+  if (req.method === 'PUT') {
+    const { sfg_id, kajabi_email } = req.body ?? {}
+    if (!sfg_id || !kajabi_email) {
+      return res.status(400).json({ error: 'sfg_id and kajabi_email are required' })
+    }
+    const { error } = await supabase
+      .from('kajabi_email_map')
+      .upsert({ sfg_id: sfg_id.toUpperCase(), kajabi_email }, { onConflict: 'sfg_id' })
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(200).json({ ok: true })
+  }
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
 
   const { sfg_ids, sfg_id, detail } = req.query
 
@@ -34,11 +47,11 @@ export default async function handler(req, res) {
       const { data: mapRow } = await supabase
         .from('kajabi_email_map')
         .select('kajabi_email')
-        .eq('sfg_id', sfg_id)
+        .eq('sfg_id', sfg_id?.toUpperCase())
         .maybeSingle()
 
       if (!mapRow) {
-        return res.status(200).json({ linked: false, lessons: [], totalLessons })
+        return res.status(200).json({ linked: false, lessons: [], totalLessons, kajabiEmail: null })
       }
 
       const [{ data: allLessons }, { data: progress }] = await Promise.all([
@@ -65,13 +78,13 @@ export default async function handler(req, res) {
         completed_at: progressMap[l.id]?.completed_at ?? null,
       }))
 
-      return res.status(200).json({ linked: true, lessons, totalLessons })
+      return res.status(200).json({ linked: true, lessons, totalLessons, kajabiEmail: mapRow.kajabi_email ?? null })
     }
 
     // ── Batch summary mode: completion counts for a list of sfg_ids ───────
     const requestedIds = (sfg_ids ?? '')
       .split(',')
-      .map(s => s.trim())
+      .map(s => s.trim().toUpperCase())
       .filter(Boolean)
 
     if (!requestedIds.length) {
@@ -91,6 +104,7 @@ export default async function handler(req, res) {
     const sfgToEmail = {}
     const emailToSfg = {}
     for (const m of emailMaps) {
+      if (!m.sfg_id || !m.kajabi_email) continue   // skip incomplete rows
       sfgToEmail[m.sfg_id.toLowerCase()] = m.kajabi_email
       emailToSfg[m.kajabi_email.toLowerCase()] = m.sfg_id.toLowerCase()
     }

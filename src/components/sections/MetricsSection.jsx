@@ -20,6 +20,7 @@ export default function MetricsSection({
   mode,
   loading,
   onModeChange,
+  canBreakdown,
 }) {
   const { theme }  = useTheme()
   const [breakdown, setBreakdown] = useState(null)   // { title, type, items }
@@ -66,32 +67,35 @@ export default function MetricsSection({
           label="Submitted APV"
           value={fmtAmt(stats?.submMonth)}
           proj={fmtAmt(stats?.projSubmMonth)}
-          onClick={detail ? () => setBreakdown({ title: `Submitted APV — ${monthLabel}`, type: 'apv', items: detail.submMonthItems }) : null}
+          onClick={canBreakdown && detail ? () => setBreakdown({ title: `Submitted APV — ${monthLabel}`, type: 'apv', items: detail.submMonthItems, apvKey: 'subm_apv', dateKey: 'submit_week' }) : null}
         />
         <KpiCard
           label="Issued APV"
           value={fmtAmt(stats?.issMonth)}
           proj={fmtAmt(stats?.projIssMonth)}
+          onClick={canBreakdown && detail ? () => setBreakdown({ title: `Issued APV — ${monthLabel}`, type: 'apv', items: detail.issMonthItems, apvKey: 'issued_apv', dateKey: 'issue_date' }) : null}
         />
         <KpiCard
           label="New Writers"
           value={stats?.newWritersMonth ?? '—'}
           proj={stats?.projNewWritersMonth}
-          onClick={detail ? () => setBreakdown({ title: `New Writers — ${monthLabel}`, type: 'writers', items: detail.newWritersItems }) : null}
+          onClick={canBreakdown && detail ? () => setBreakdown({ title: `New Writers — ${monthLabel}`, type: 'writers', items: detail.newWritersItems }) : null}
         />
         <KpiCard
           label="Total Writers"
           value={stats?.totalWritersMonth ?? '—'}
-          onClick={detail ? () => setBreakdown({ title: `Total Writers — ${monthLabel}`, type: 'writers', items: detail.totalWritersItems }) : null}
+          onClick={canBreakdown && detail ? () => setBreakdown({ title: `Total Writers — ${monthLabel}`, type: 'writers', items: detail.totalWritersItems }) : null}
         />
         <KpiCard
           label="Pending Business"
           value={fmtAmt(stats?.pendingSubmAPV)}
+          onClick={canBreakdown && appsData?.pending ? () => setBreakdown({ title: 'Pending Business', type: 'policies', items: appsData.pending }) : null}
         />
         <KpiCard
           label="Open Requirement"
           value={fmtAmt(stats?.openReqSubmAPV)}
           highlight={stats?.openReqSubmAPV > 0}
+          onClick={canBreakdown && appsData?.incomplete ? () => setBreakdown({ title: 'Open Requirements (Incomplete)', type: 'policies', items: appsData.incomplete }) : null}
         />
       </div>
 
@@ -111,10 +115,7 @@ export default function MetricsSection({
       </div>
 
       {breakdown && (
-        <MetricsBreakdownModal
-          breakdown={breakdown}
-          onClose={() => setBreakdown(null)}
-        />
+        <MetricsBreakdownModal breakdown={breakdown} onClose={() => setBreakdown(null)} />
       )}
     </SectionShell>
   )
@@ -141,36 +142,19 @@ function KpiCard({ label, value, proj, note, highlight, onClick }) {
   )
 }
 
-function WeekRow({ label, submApv, newWriters, total }) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-      <p className="text-sm font-semibold text-gray-900 dark:text-white w-24 flex-shrink-0">{label}:</p>
-      <Stat label="Submitted APV" value={submApv} />
-      <Stat label="New Writers"   value={newWriters} />
-      <Stat label="Total Writers" value={total} />
-    </div>
-  )
-}
-
-function Stat({ label, value }) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
-      <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{value ?? '—'}</p>
-    </div>
-  )
-}
-
 // ── Metrics drill-down modal ───────────────────────────────────────────────────
 
 function MetricsBreakdownModal({ breakdown, onClose }) {
-  const { title, type, items = [] } = breakdown
+  const { title, type, items = [], apvKey = 'subm_apv', dateKey = 'submit_week' } = breakdown
 
   const thCls = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 whitespace-nowrap'
   const tdCls = 'px-4 py-2 text-xs text-gray-700 dark:text-white/80'
 
-  const totalApv = type === 'apv'
-    ? items.reduce((s, r) => s + parseFloat(r.subm_apv?.replace(/[$,]/g, '') || '0'), 0)
+  const totalApv = (type === 'apv' || type === 'policies')
+    ? items.reduce((s, r) => {
+        const v = r[apvKey] ?? r.subm_apv ?? r.issued_apv ?? '0'
+        return s + parseFloat(String(v).replace(/[$,]/g, '') || '0')
+      }, 0)
     : null
 
   return (
@@ -191,32 +175,7 @@ function MetricsBreakdownModal({ breakdown, onClose }) {
         </div>
 
         <div className="overflow-y-auto flex-1">
-          {type === 'apv' ? (
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
-                <tr>
-                  <th className={thCls}>Agent</th>
-                  <th className={thCls}>Client</th>
-                  <th className={thCls}>Carrier</th>
-                  <th className={thCls}>Submit Week</th>
-                  <th className={`${thCls} text-right`}>Subm APV</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {items.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">No records.</td></tr>
-                ) : items.map((r, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
-                    <td className={`${tdCls} font-medium`}>{r.agent || r.sfg_id}</td>
-                    <td className={tdCls}>{r.applicant || '—'}</td>
-                    <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{r.carrier || '—'}</td>
-                    <td className={`${tdCls} text-gray-500 dark:text-white/55 tabular-nums`}>{r.submit_week || r.submit_date || '—'}</td>
-                    <td className={`${tdCls} text-right tabular-nums`}>{r.subm_apv ? `$${parseFloat(r.subm_apv.replace(/[$,]/g,'')).toLocaleString('en-US',{maximumFractionDigits:0})}` : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
+          {type === 'writers' && (
             <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
                 <tr>
@@ -225,14 +184,77 @@ function MetricsBreakdownModal({ breakdown, onClose }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {items.length === 0 ? (
-                  <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">No records.</td></tr>
-                ) : items.map((r, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
-                    <td className={`${tdCls} font-medium`}>{r.agent || r.sfg_id}</td>
-                    <td className={`${tdCls} font-mono text-gray-500 dark:text-white/55`}>{r.sfg_id}</td>
-                  </tr>
-                ))}
+                {items.length === 0
+                  ? <tr><td colSpan={2} className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">No records.</td></tr>
+                  : items.map((r, i) => (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                      <td className={`${tdCls} font-medium`}>{r.agent || r.sfg_id}</td>
+                      <td className={`${tdCls} font-mono text-gray-500 dark:text-white/55`}>{r.sfg_id}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          )}
+
+          {type === 'apv' && (
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
+                <tr>
+                  <th className={thCls}>Agent</th>
+                  <th className={thCls}>Client</th>
+                  <th className={thCls}>Carrier</th>
+                  <th className={thCls}>{dateKey === 'issue_date' ? 'Issue Date' : 'Submit Week'}</th>
+                  <th className={`${thCls} text-right`}>APV</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                {items.length === 0
+                  ? <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">No records.</td></tr>
+                  : items.map((r, i) => (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                      <td className={`${tdCls} font-medium`}>{r.agent || r.sfg_id}</td>
+                      <td className={tdCls}>{r.applicant || '—'}</td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{r.carrier || '—'}</td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55 tabular-nums`}>{r[dateKey] || '—'}</td>
+                      <td className={`${tdCls} text-right tabular-nums`}>
+                        {r[apvKey] ? `$${parseFloat(String(r[apvKey]).replace(/[$,]/g,'')).toLocaleString('en-US',{maximumFractionDigits:0})}` : '—'}
+                      </td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          )}
+
+          {type === 'policies' && (
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
+                <tr>
+                  <th className={thCls}>Agent</th>
+                  <th className={thCls}>Client</th>
+                  <th className={thCls}>Carrier</th>
+                  <th className={thCls}>Submit Date</th>
+                  <th className={thCls}>Open Req</th>
+                  <th className={`${thCls} text-right`}>Subm APV</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                {items.length === 0
+                  ? <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">No records.</td></tr>
+                  : items.map((r, i) => (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                      <td className={`${tdCls} font-medium`}>{r.agent || r.sfg_id}</td>
+                      <td className={tdCls}>{r.applicant || '—'}</td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{r.carrier || '—'}</td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55 tabular-nums`}>{r.submit_date || '—'}</td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55 max-w-[160px] truncate`}>{r.open_req || '—'}</td>
+                      <td className={`${tdCls} text-right tabular-nums`}>
+                        {r.subm_apv ? `$${parseFloat(String(r.subm_apv).replace(/[$,]/g,'')).toLocaleString('en-US',{maximumFractionDigits:0})}` : '—'}
+                      </td>
+                    </tr>
+                  ))
+                }
               </tbody>
             </table>
           )}
@@ -240,9 +262,9 @@ function MetricsBreakdownModal({ breakdown, onClose }) {
 
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0">
           <span className="text-xs text-gray-400 dark:text-white/35">
-            {items.length} {type === 'apv' ? 'policies' : 'agents'}
+            {items.length} {type === 'writers' ? 'agents' : 'policies'}
           </span>
-          {type === 'apv' && (
+          {totalApv != null && (
             <span className="text-sm font-semibold text-gray-900 dark:text-white">
               Total: {fmtAmt(totalApv)}
             </span>
@@ -252,3 +274,24 @@ function MetricsBreakdownModal({ breakdown, onClose }) {
     </div>
   )
 }
+
+function WeekRow({ label, submApv, newWriters, total }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+      <p className="text-sm font-semibold text-gray-900 dark:text-white w-24 flex-shrink-0">{label}:</p>
+      <Stat label="Submitted APV" value={submApv} />
+      <Stat label="New Writers"   value={newWriters} />
+      <Stat label="Total Writers" value={total} />
+    </div>
+  )
+}
+
+function Stat({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{value ?? '—'}</p>
+    </div>
+  )
+}
+

@@ -2,19 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
+import BulkLeadImportModal from '../components/BulkLeadImportModal'
+import CalendarEventModal from '../components/CalendarEventModal'
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 
-const STATUSES = [
-  { key: 'new',       label: 'New',                 pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',     bar: 'bg-blue-500'   },
-  { key: 'attempted', label: 'Attempted Contact',   pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20', bar: 'bg-orange-500' },
-  { key: 'contacted', label: 'Contacted',           pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',   bar: 'bg-amber-500'  },
-  { key: 'appt',      label: 'Appointment Set',     pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20', bar: 'bg-violet-500' },
-  { key: 'sold',      label: 'Policy Sold',         pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',   bar: 'bg-green-500'  },
-  { key: 'notint',    label: 'Not Interested',      pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',              bar: 'bg-gray-400'   },
-  { key: 'dnc',       label: 'Do Not Call',         pill: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20',               bar: 'bg-red-500'    },
-  { key: 'ghost',     label: 'Ghost / No Response', pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',              bar: 'bg-gray-400'   },
-  { key: 'textvm',    label: 'Text & VM',           pill: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20',         bar: 'bg-pink-500'   },
+export const STATUSES = [
+  { key: 'new',       label: 'New',                   pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',         bar: 'bg-blue-500'   },
+  { key: 'attempted', label: 'Attempted Contact',     pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20', bar: 'bg-orange-500' },
+  { key: 'callback',  label: 'Call Back Scheduled',   pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',               bar: 'bg-sky-500'    },
+  { key: 'contacted', label: 'Contacted',             pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',   bar: 'bg-amber-500'  },
+  { key: 'appt',      label: 'Appointment Set',       pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20', bar: 'bg-violet-500' },
+  { key: 'sold',      label: 'Policy Sold',           pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',   bar: 'bg-green-500'  },
+  { key: 'notint',    label: 'Not Interested',        pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                bar: 'bg-gray-400'   },
+  { key: 'dnc',       label: 'Do Not Call',           pill: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20',                bar: 'bg-red-500'    },
+  { key: 'ghost',     label: 'Ghost / No Response',   pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                bar: 'bg-gray-400'   },
+  { key: 'textvm',    label: 'Text & VM',             pill: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20',          bar: 'bg-pink-500'   },
+  { key: 'bad',       label: 'Bad Lead / Credit',     pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',          bar: 'bg-rose-500'   },
 ]
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.key, s]))
 function statusCfg(key) { return STATUS_MAP[key] ?? STATUSES[0] }
@@ -22,11 +26,28 @@ function statusCfg(key) { return STATUS_MAP[key] ?? STATUSES[0] }
 // ─── Campaign badge ────────────────────────────────────────────────────────────
 
 const TYPE_CFG = {
-  'Life Insurance - Standard': { label: 'STD',  cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'    },
+  'Life Insurance - Standard': { label: 'STD',  cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'       },
   'Life Insurance - Premium':  { label: 'PREM', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300' },
-  'Mortgage Protection':       { label: 'MP',   cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'  },
+  'Mortgage Protection':       { label: 'MP',   cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'    },
+  'Final Expense':             { label: 'FE',   cls: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300' },
+  'Advanced':                  { label: 'ADV',  cls: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300'        },
+  'Recruiting':                { label: 'REC',  cls: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300' },
 }
 function typeCfg(type) { return TYPE_CFG[type] ?? { label: 'LEAD', cls: 'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-white/60' } }
+
+// ─── Source display map ────────────────────────────────────────────────────────
+
+const SOURCE_DISPLAY = {
+  razor_ridge: 'Razor Ridge',
+  lighthouse:  'Lighthouse',
+  level_up:    'Level Up',
+  reset:       'FIF Reset',
+  symmetry:    'Symmetry',
+  external:    'External',
+  referral:    'Referral',
+  other:       'Other',
+}
+function fmtSource(src) { return SOURCE_DISPLAY[src] || src || '—' }
 
 // ─── Timezone helpers ──────────────────────────────────────────────────────────
 
@@ -68,7 +89,7 @@ function fmtDate(str) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function fmtDateTime(str) {
+export function fmtDateTime(str) {
   if (!str) return '—'
   return new Date(str).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
@@ -85,7 +106,7 @@ function fmtRelTime(str) {
   return `${days}d ago`
 }
 
-function isCallbackDue(lead) {
+export function isCallbackDue(lead) {
   if (!lead.callback_at) return false
   return new Date(lead.callback_at) <= new Date(Date.now() + 24 * 60 * 60 * 1000)
 }
@@ -104,13 +125,16 @@ const TABS = [
   { key: 'pipeline',  label: 'Pipeline'  },
 ]
 
-const FILTERS = [
-  { key: 'all',          label: 'All'       },
-  { key: 'today',        label: 'Today'     },
-  { key: 'std',          label: 'Standard'  },
-  { key: 'prem',         label: 'Premium'   },
-  { key: 'mp',           label: 'Mortgage'  },
-  ...STATUSES.map(s => ({ key: s.key, label: s.label })),
+const CATEGORY_FILTERS = [
+  { key: 'digital',  label: 'Digital'  },
+  { key: 'analog',   label: 'Analog'   },
+  { key: 'referral', label: 'Referral' },
+]
+
+const TYPE_FILTERS = [
+  { key: 'life', label: 'Life',           types: ['Life Insurance - Standard', 'Life Insurance - Premium'] },
+  { key: 'fe',   label: 'Final Expense',  types: ['Final Expense'] },
+  { key: 'mp',   label: 'Mortgage',       types: ['Mortgage Protection'] },
 ]
 
 export default function LeadsPage() {
@@ -129,9 +153,12 @@ export default function LeadsPage() {
   const [scripts,    setScripts]    = useState([])
   const [loading,    setLoading]    = useState(false)
   const [search,     setSearch]     = useState('')
-  const [filter,     setFilter]     = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [typeFilter,     setTypeFilter]     = useState('all')
+  const [statusFilter,   setStatusFilter]   = useState('all')
   const [sortDesc,   setSortDesc]   = useState(true)
-  const [showSetup,  setShowSetup]  = useState(false)
+  const [showSetup,     setShowSetup]     = useState(false)
+  const [subjectOptName, setSubjectOptName] = useState('')
 
   // Detail panel
   const [selected,     setSelected]     = useState(null)   // lead object
@@ -144,6 +171,7 @@ export default function LeadsPage() {
   // Modals
   const [showAddLead,   setShowAddLead]   = useState(false)
   const [showAddScript, setShowAddScript] = useState(false)
+  const [showImport,    setShowImport]    = useState(false)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
 
@@ -166,6 +194,18 @@ export default function LeadsPage() {
 
   useEffect(() => { loadLeads() }, [loadLeads])
   useEffect(() => { loadScripts() }, [loadScripts])
+
+  useEffect(() => {
+    if (!sfgId) return
+    setSubjectOptName('')
+    fetch(`/api/personnel?sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const rec = Array.isArray(data) ? data[0] : data
+        setSubjectOptName(rec?.opt_name?.trim() || '')
+      })
+      .catch(() => {})
+  }, [sfgId])
 
   async function openLead(lead) {
     setSelected(lead)
@@ -333,25 +373,27 @@ export default function LeadsPage() {
   const displayLeads = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = leads.filter(l => {
+      if (l.lead_type === 'Recruiting' || l.category === 'recruiting') return false
       const matchQ = !q
         || l.name.toLowerCase().includes(q)
         || (l.phone || '').includes(q)
         || (l.state || '').toLowerCase() === q
         || (l.email || '').toLowerCase().includes(q)
       if (!matchQ) return false
-      if (filter === 'all')  return true
-      if (filter === 'today') return isCallbackDue(l)
-      if (filter === 'std')   return l.lead_type === 'Life Insurance - Standard'
-      if (filter === 'prem')  return l.lead_type === 'Life Insurance - Premium'
-      if (filter === 'mp')    return l.lead_type === 'Mortgage Protection'
-      return l.status === filter
+      if (categoryFilter !== 'all' && l.category !== categoryFilter) return false
+      if (typeFilter !== 'all') {
+        const tf = TYPE_FILTERS.find(t => t.key === typeFilter)
+        if (tf && !tf.types.includes(l.lead_type)) return false
+      }
+      if (statusFilter !== 'all' && l.status !== statusFilter) return false
+      return true
     })
     list.sort((a, b) => {
       const cmp = (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
       return sortDesc ? cmp : -cmp
     })
     return list
-  }, [leads, search, filter, sortDesc])
+  }, [leads, search, categoryFilter, typeFilter, statusFilter, sortDesc])
 
   const callbackLeads = useMemo(() => {
     return leads
@@ -380,6 +422,12 @@ export default function LeadsPage() {
           className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
         >
           ⚙️ Setup
+        </button>
+        <button
+          onClick={() => setShowImport(true)}
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+        >
+          ↑ Import
         </button>
         <button
           onClick={() => setShowAddLead(true)}
@@ -446,27 +494,72 @@ export default function LeadsPage() {
                 </button>
               </div>
 
-              {/* Filter chips */}
-              <div className="flex gap-1.5 overflow-x-auto pb-2 mb-4 scrollbar-none">
-                {FILTERS.map(f => (
+              {/* Filters */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+
+                {/* Category group */}
+                <div className="flex gap-1">
+                  {CATEGORY_FILTERS.map(f => (
+                    <button key={f.key}
+                      onClick={() => setCategoryFilter(v => v === f.key ? 'all' : f.key)}
+                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                        categoryFilter === f.key
+                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                      }`}
+                    >{f.label}</button>
+                  ))}
+                </div>
+
+                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0" />
+
+                {/* Type group */}
+                <div className="flex gap-1">
+                  {TYPE_FILTERS.map(f => (
+                    <button key={f.key}
+                      onClick={() => setTypeFilter(v => v === f.key ? 'all' : f.key)}
+                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                        typeFilter === f.key
+                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                      }`}
+                    >{f.label}</button>
+                  ))}
+                </div>
+
+                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0" />
+
+                {/* Status dropdown */}
+                <select
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value)}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none ${
+                    statusFilter !== 'all'
+                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
+                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
+                  }`}
+                >
+                  <option value="all">All Statuses</option>
+                  {STATUSES.map(s => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
+                </select>
+
+                {/* Show All — only visible when any filter is active */}
+                {(categoryFilter !== 'all' || typeFilter !== 'all' || statusFilter !== 'all') && (
                   <button
-                    key={f.key}
-                    onClick={() => setFilter(f.key)}
-                    className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors shrink-0 ${
-                      filter === f.key
-                        ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                        : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
-                    }`}
+                    onClick={() => { setCategoryFilter('all'); setTypeFilter('all'); setStatusFilter('all') }}
+                    className="whitespace-nowrap text-xs font-medium px-3 py-1 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 dark:text-white/30 hover:text-gray-600 dark:hover:text-white/60 hover:border-gray-300 dark:hover:border-white/20 transition-colors"
                   >
-                    {f.label}
+                    Show All ✕
                   </button>
-                ))}
+                )}
               </div>
 
               {/* Lead count */}
               <p className="text-xs text-gray-400 dark:text-white/30 mb-3 font-medium">
                 {displayLeads.length} lead{displayLeads.length !== 1 ? 's' : ''}
-                {filter !== 'all' || search ? ' (filtered)' : ''}
+                {(categoryFilter !== 'all' || typeFilter !== 'all' || statusFilter !== 'all' || search) ? ' (filtered)' : ''}
               </p>
 
               {loading ? (
@@ -583,6 +676,13 @@ export default function LeadsPage() {
       </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
+      {showImport && (
+        <BulkLeadImportModal
+          onClose={() => setShowImport(false)}
+          onImported={newLeads => setLeads(prev => [...newLeads, ...prev])}
+          authHeaders={authHeaders}
+        />
+      )}
       {showAddLead && (
         <AddLeadModal onClose={() => setShowAddLead(false)} onSave={handleAddLead} />
       )}
@@ -592,9 +692,9 @@ export default function LeadsPage() {
       {showSetup && (
         <LeadsSetupModal
           onClose={() => setShowSetup(false)}
-          initialEmail={userProfile?.leads_email || ''}
-          userId={userProfile?.id}
-          onEmailSaved={() => fetchAndSetProfile(userProfile?.id)}
+          userId={activeSubject?.id}
+          optName={subjectOptName}
+          authHeaders={authHeaders}
         />
       )}
     </div>
@@ -603,8 +703,13 @@ export default function LeadsPage() {
 
 // ─── Lead Card ─────────────────────────────────────────────────────────────────
 
-function LeadCard({ lead: l, onClick, selected }) {
-  const s   = statusCfg(l.status)
+export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
+  const { userProfile } = useAuth()
+  const calConnected = userProfile?.google_calendar_connected ?? false
+  const [showCalModal, setShowCalModal] = useState(false)
+
+  const sMap = Object.fromEntries(statuses.map(s => [s.key, s]))
+  const s    = sMap[l.status] ?? statuses[0]
   const tc  = typeCfg(l.lead_type)
   const tz  = getLeadTZ(l.state)
   const now = new Date()
@@ -613,94 +718,111 @@ function LeadCard({ lead: l, onClick, selected }) {
   const cbToday   = cb && !cbOverdue && cb <= new Date(now.setHours(23, 59, 59))
 
   return (
-    <div
-      onClick={() => onClick(l)}
-      className={`relative bg-white dark:bg-primary/30 border rounded-xl cursor-pointer transition-all overflow-hidden ${
-        selected
-          ? 'border-accent/50 shadow-sm shadow-accent/10'
-          : 'border-primary/15 dark:border-white/10 hover:border-accent/30'
-      }`}
-    >
-      {/* Left accent bar */}
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${s.bar}`} />
+    <>
+      {showCalModal && (
+        <CalendarEventModal lead={l} onClose={() => setShowCalModal(false)} />
+      )}
+      <div
+        onClick={() => onClick(l)}
+        className={`relative bg-white dark:bg-primary/30 border rounded-xl cursor-pointer transition-all overflow-hidden ${
+          selected
+            ? 'border-accent/50 shadow-sm shadow-accent/10'
+            : 'border-primary/15 dark:border-white/10 hover:border-accent/30'
+        }`}
+      >
+        {/* Left accent bar */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1 ${s.bar}`} />
 
-      <div className="pl-3 pr-4 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-gray-900 dark:text-white">{l.name}</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tc.cls}`}>{tc.label}</span>
-              {l.medical && <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">⚠️ Med Hx</span>}
-              {l.smoker  && <span className="text-[10px] text-gray-400 dark:text-white/30">🚬</span>}
+        <div className="pl-3 pr-4 py-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-gray-900 dark:text-white">{l.name}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tc.cls}`}>{tc.label}</span>
+                {l.medical && <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">⚠️ Med Hx</span>}
+                {l.smoker  && <span className="text-[10px] text-gray-400 dark:text-white/30">🚬</span>}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                {l.phone && <span className="text-xs text-gray-500 dark:text-white/50">{l.phone}</span>}
+                {l.state && <span className="text-xs text-gray-500 dark:text-white/50">📍 {l.state}</span>}
+                {l.age   && <span className="text-xs text-gray-500 dark:text-white/50">Age {l.age}</span>}
+                {tz && (
+                  <span className={`text-xs font-semibold ${tz.goodTime ? tz.color : 'text-red-500 dark:text-red-400'}`}>
+                    {tz.label} {tz.timeStr}{!tz.goodTime ? ' ⛔' : ''}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-              {l.phone && <span className="text-xs text-gray-500 dark:text-white/50">{l.phone}</span>}
-              {l.state && <span className="text-xs text-gray-500 dark:text-white/50">📍 {l.state}</span>}
-              {l.age   && <span className="text-xs text-gray-500 dark:text-white/50">Age {l.age}</span>}
-              {tz && (
-                <span className={`text-xs font-semibold ${tz.goodTime ? tz.color : 'text-red-500 dark:text-red-400'}`}>
-                  {tz.label} {tz.timeStr}{!tz.goodTime ? ' ⛔' : ''}
-                </span>
+
+            {/* Quick call / text / calendar */}
+            <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+              {l.phone && (
+                <a
+                  href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
+                  className="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400 font-bold hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors"
+                >📞</a>
+              )}
+              {l.phone && (
+                <a
+                  href={`sms:+1${l.phone.replace(/[^0-9]/g, '')}`}
+                  className="text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
+                >💬</a>
+              )}
+              {calConnected && (
+                <button
+                  onClick={() => setShowCalModal(true)}
+                  className="text-xs px-2 py-1 rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
+                >📅</button>
               )}
             </div>
           </div>
 
-          {/* Quick call/text */}
-          <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-            {l.phone && (
-              <a
-                href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                className="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400 font-bold hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors"
-              >📞</a>
+          <div className="flex items-center justify-between mt-2 gap-2">
+            <StatusPill status={l.status} statuses={statuses} />
+            {cb && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                cbOverdue ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
+                : cbToday ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
+                : 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20'
+              }`}>
+                📅 {cbOverdue ? 'Overdue' : cbToday ? 'Today' : fmtDateTime(l.callback_at)}
+              </span>
             )}
-            {l.phone && (
-              <a
-                href={`sms:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                className="text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
-              >💬</a>
+            {l.last_activity_at && (
+              <span className="text-[10px] text-gray-400 dark:text-white/30 ml-auto">
+                {fmtRelTime(l.last_activity_at)}
+              </span>
             )}
           </div>
-        </div>
 
-        <div className="flex items-center justify-between mt-2 gap-2">
-          <StatusPill status={l.status} />
-          {cb && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
-              cbOverdue ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
-              : cbToday ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
-              : 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20'
-            }`}>
-              📅 {cbOverdue ? 'Overdue' : cbToday ? 'Today' : fmtDateTime(l.callback_at)}
-            </span>
-          )}
-          {l.last_activity_at && (
-            <span className="text-[10px] text-gray-400 dark:text-white/30 ml-auto">
-              {fmtRelTime(l.last_activity_at)}
-            </span>
+          {l.last_activity_text && (
+            <p className="text-xs text-gray-400 dark:text-white/30 mt-1 truncate">{l.last_activity_text}</p>
           )}
         </div>
-
-        {l.last_activity_text && (
-          <p className="text-xs text-gray-400 dark:text-white/30 mt-1 truncate">{l.last_activity_text}</p>
-        )}
       </div>
-    </div>
+    </>
   )
 }
 
 // ─── Lead Detail ───────────────────────────────────────────────────────────────
 
-function LeadDetail({
+export function LeadDetail({
   lead: l, activity, actLoading,
   noteText, setNoteText, showNoteBox, setShowNoteBox,
   statusSaving, onClose, onCall, onText, onNote, onStatusChange, onCallbackChange, onPatch,
+  statuses = STATUSES,
 }) {
+  const { userProfile } = useAuth()
+  const calConnected = userProfile?.google_calendar_connected ?? false
+  const [showCalModal, setShowCalModal] = useState(false)
   const [form, setForm] = useState({})
 
   // Reset local form when a different lead is opened
   useEffect(() => {
     setForm({
       name:                   l.name                   || '',
+      preferred_name:         l.preferred_name         || '',
+      spouse_name:            l.spouse_name            || '',
       phone:                  l.phone                  || '',
       email:                  l.email                  || '',
       state:                  l.state                  || '',
@@ -772,6 +894,10 @@ function LeadDetail({
 
   return (
     <>
+      {showCalModal && (
+        <CalendarEventModal lead={l} onClose={() => setShowCalModal(false)} />
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-white/10 shrink-0">
         <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-sm">←</button>
@@ -786,7 +912,7 @@ function LeadDetail({
             {tz && <span className={` · ${tz.color} font-semibold`}> {tz.label} {tz.timeStr}{!tz.goodTime ? ' ⛔' : ' ✓'}</span>}
           </p>
         </div>
-        <StatusPill status={l.status} />
+        <StatusPill status={l.status} statuses={statuses} />
       </div>
 
       {/* Action bar */}
@@ -801,13 +927,25 @@ function LeadDetail({
             <span className="text-base">{btn.icon}</span>{btn.label}
           </button>
         ))}
+        <button
+          onClick={() => calConnected ? setShowCalModal(true) : undefined}
+          title={calConnected ? 'Schedule calendar event' : 'Connect Google Calendar in your profile to use this'}
+          className={`flex flex-col items-center gap-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors ${
+            calConnected
+              ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 hover:opacity-80 cursor-pointer'
+              : 'bg-gray-50 text-gray-300 dark:bg-white/[0.03] dark:text-white/20 cursor-not-allowed'
+          }`}
+        >
+          <span className="text-base">📅</span>
+          <span>Appt</span>
+        </button>
         <select
           value={l.status}
           onChange={e => onStatusChange(e.target.value)}
           disabled={statusSaving}
           className="flex-1 text-xs font-semibold rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-white/70 px-2 py-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
         >
-          {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          {statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </div>
 
@@ -880,8 +1018,21 @@ function LeadDetail({
               <input type="email" value={form.email ?? ''} onChange={e => set('email', e.target.value)} onBlur={() => save('email')} className={F} placeholder="—" />
             </div>
             <div>
+              <p className={FL}>Preferred Name</p>
+              <input value={form.preferred_name ?? ''} onChange={e => set('preferred_name', e.target.value)} onBlur={() => save('preferred_name')} className={F} placeholder="—" />
+            </div>
+            <div>
+              <p className={FL}>Spouse Name</p>
+              <input value={form.spouse_name ?? ''} onChange={e => set('spouse_name', e.target.value)} onBlur={() => save('spouse_name')} className={F} placeholder="—" />
+            </div>
+            <div>
               <p className={FL}>Source</p>
-              <input value={form.source ?? ''} onChange={e => set('source', e.target.value)} onBlur={() => save('source')} className={F} placeholder="—" />
+              <select value={form.source ?? ''} onChange={e => set('source', e.target.value)} onBlur={() => save('source')} className={F + ' cursor-pointer'}>
+                <option value="">—</option>
+                {Object.entries(SOURCE_DISPLAY).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
             </div>
             <div>
               <p className={FL}>Assigned Date</p>
@@ -1103,7 +1254,7 @@ function LeadDetail({
 
 // ─── Scripts Tab ───────────────────────────────────────────────────────────────
 
-function ScriptsTab({ scripts, onAdd, onDelete }) {
+export function ScriptsTab({ scripts, onAdd, onDelete }) {
   const [copied,  setCopied]  = useState(null)
   const [confirm, setConfirm] = useState(null) // id to delete
 
@@ -1181,7 +1332,7 @@ function ScriptsTab({ scripts, onAdd, onDelete }) {
 
 // ─── Pipeline Tab ──────────────────────────────────────────────────────────────
 
-function PipelineTab({ leads }) {
+export function PipelineTab({ leads }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(STATUSES.map(s => [s.key, 0]))
     for (const l of leads) { if (c[l.status] !== undefined) c[l.status]++ }
@@ -1194,7 +1345,7 @@ function PipelineTab({ leads }) {
     { label: 'Total Leads',   value: total,                color: 'text-accent' },
     { label: 'Policy Sold',   value: counts.sold,          color: 'text-green-600 dark:text-green-400' },
     { label: 'Appointments',  value: counts.appt,          color: 'text-violet-600 dark:text-violet-400' },
-    { label: 'Contacted',     value: counts.contacted + counts.attempted, color: 'text-amber-600 dark:text-amber-400' },
+    { label: 'Contacted',     value: (counts.contacted || 0) + (counts.attempted || 0) + (counts.callback || 0), color: 'text-amber-600 dark:text-amber-400' },
   ]
 
   return (
@@ -1237,24 +1388,37 @@ function PipelineTab({ leads }) {
 
 // ─── Leads Setup Modal ─────────────────────────────────────────────────────────
 
-function LeadsSetupModal({ onClose, initialEmail, userId, onEmailSaved }) {
-  const [email,   setEmail]   = useState(initialEmail || '')
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState('')
-  // If no email yet, start on the capture step; otherwise go straight to setup
-  const [step,    setStep]    = useState(initialEmail ? 'setup' : 'capture')
+function LeadsSetupModal({ onClose, userId, optName, authHeaders }) {
+  const [email,  setEmail]  = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+  const [step,   setStep]   = useState(null)   // null = loading
+
+  // Fetch leads_email for the viewed subject
+  useEffect(() => {
+    if (!userId) { setStep('capture'); return }
+    supabase.from('users').select('leads_email').eq('id', userId).single()
+      .then(({ data }) => {
+        const e = data?.leads_email?.trim() || ''
+        setEmail(e)
+        setStep(e ? 'setup' : 'capture')
+      })
+  }, [userId])
 
   async function handleSaveEmail() {
     if (!email.trim()) { setError('Please enter an email address'); return }
     setSaving(true)
     setError('')
     try {
-      const { error: err } = await supabase
-        .from('users')
-        .update({ leads_email: email.trim() })
-        .eq('id', userId)
-      if (err) throw err
-      await onEmailSaved()
+      const res = await fetch('/api/user-settings', {
+        method: 'PUT',
+        headers: authHeaders ? authHeaders() : { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId, field: 'leads_email', value: email.trim() }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to save')
+      }
       setStep('setup')
     } catch (err) {
       setError(err.message || 'Failed to save email')
@@ -1277,6 +1441,11 @@ function LeadsSetupModal({ onClose, initialEmail, userId, onEmailSaved }) {
         </div>
 
         <div className="overflow-y-auto px-5 py-5 space-y-5">
+
+          {/* ── Loading ── */}
+          {step === null && (
+            <p className="text-sm text-gray-400 dark:text-white/30 text-center py-4">Loading…</p>
+          )}
 
           {/* ── Step 1: capture email ── */}
           {step === 'capture' && (
@@ -1324,7 +1493,7 @@ function LeadsSetupModal({ onClose, initialEmail, userId, onEmailSaved }) {
                   />
                   <button
                     onClick={handleSaveEmail}
-                    disabled={saving || email.trim() === initialEmail}
+                    disabled={saving}
                     className="text-sm px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors shrink-0"
                   >
                     {saving ? 'Saving…' : 'Update'}
@@ -1333,29 +1502,56 @@ function LeadsSetupModal({ onClose, initialEmail, userId, onEmailSaved }) {
                 {error && <p className="text-xs text-red-500 dark:text-red-400 mt-1">{error}</p>}
               </div>
 
+              <p className="text-xs text-gray-500 dark:text-white/45">
+                Your Opt name:{' '}
+                <span className="font-medium text-gray-700 dark:text-white/70">
+                  {optName || <span className="italic text-gray-400 dark:text-white/30">not set</span>}
+                </span>
+              </p>
+
               <hr className="border-gray-100 dark:border-white/10" />
 
               {/* Instructions */}
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">
-                  How to Set Up Automatic Lead Import
+                  How to Set Up Automatic and Manual Lead Import
                 </p>
                 <div className="space-y-4 text-sm text-gray-600 dark:text-white/60 leading-relaxed">
                   <div>
-                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 1 — Forward leads to your import address</p>
-                    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 1 — Forward leads to the import mailbox</p>
+                    <p className="mb-2">Set up a rule for any digital leads you are receiving. You will need a separate rule for each lead type. For each one, set any incoming emails to forward automatically to <span className="font-medium text-gray-700 dark:text-white/70">leads@wattsfamilyagency.com</span>.</p>
+                    <div className="space-y-1.5 pl-3 border-l-2 border-gray-200 dark:border-white/10">
+                      <div>
+                        <p className="font-medium text-gray-700 dark:text-white/70">Razor Ridge</p>
+                        <p>Filter emails coming from <span className="font-mono text-xs">notifications@therazorridge.com</span></p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-700 dark:text-white/70">Lighthouse</p>
+                        <p>Filter emails with a subject of <span className="italic">"New Leads Assigned to [your Opt name, shown above]"</span></p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-700 dark:text-white/70">Level Up</p>
+                        <p>Filter emails coming from <span className="font-mono text-xs">info@levelup-crm.com</span></p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-700 dark:text-white/70">CABoom</p>
+                        <p>Filter emails coming from <span className="font-mono text-xs">leads@caboomleads.com</span></p>
+                      </div>
+                    </div>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 2 — Configure your lead vendor</p>
-                    <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 2 — Backfill old leads</p>
+                    <p className="mb-1">If you have leads in Funnel, make sure they are synced to HQ by hitting the Sync button in Funnel. It may take a few minutes for the sync to complete.</p>
+                    <p className="mb-1">In HQ, go to <span className="font-medium text-gray-700 dark:text-white/70">Leads &gt;&gt; My Leads</span>. Use the filters if you don't want to export all of your leads. Once you have the leads you want, hit the <span className="font-medium text-gray-700 dark:text-white/70">Export Results</span> button (above and to the right of the top lead). Once the file is done building, hit the <span className="font-medium text-gray-700 dark:text-white/70">Download</span> button inside the purple box at the bottom of the page and save the file.</p>
+                    <p>Use the <span className="font-medium text-gray-700 dark:text-white/70">Import</span> button at the top of this page to import the file you just saved.</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 3 — Verify your first import</p>
-                    <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+                    <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 3 — Add analog leads</p>
+                    <p>Analog leads will come into your inbox, but the notification email doesn't have phone numbers associated with the leads. Any time you have a batch of analog leads drop, repeat Step 2 above to import them.</p>
                   </div>
                   <div className="bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-xl px-4 py-3">
                     <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">💡 Note</p>
-                    <p className="text-amber-700 dark:text-amber-300/80">Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.</p>
+                    <p className="text-amber-700 dark:text-amber-300/80">If you change the address your digital leads are being sent to you will need to enter the new address above.</p>
                   </div>
                 </div>
               </div>
@@ -1377,13 +1573,14 @@ function LeadsSetupModal({ onClose, initialEmail, userId, onEmailSaved }) {
 // ─── Add Lead Modal ────────────────────────────────────────────────────────────
 
 const LEAD_EMPTY = {
-  name: '', phone: '', email: '', state: '', zip: '',
+  name: '', preferred_name: '', spouse_name: '',
+  phone: '', email: '', state: '', zip: '',
   gender: '', age: '', lead_type: 'Life Insurance - Standard',
   coverage: '', motivation: '', beneficiary: '', employment: '', income: '',
-  smoker: false, medical: false, hobby: '', source: 'Referral', notes: '',
+  smoker: false, medical: false, hobby: '', source: 'referral', notes: '',
 }
 
-function AddLeadModal({ onClose, onSave }) {
+export function AddLeadModal({ onClose, onSave }) {
   const [form,   setForm]   = useState(LEAD_EMPTY)
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -1425,6 +1622,8 @@ function AddLeadModal({ onClose, onSave }) {
           <ModalSection label="Contact Info">
             <div className="grid grid-cols-2 gap-3">
               <LF label="First / Full Name *" span={2}><input type="text" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Jane Smith" className={INPUT_CLS} /></LF>
+              <LF label="Preferred Name"><input type="text" value={form.preferred_name} onChange={e => set('preferred_name', e.target.value)} placeholder="Jane" className={INPUT_CLS} /></LF>
+              <LF label="Spouse Name"><input type="text" value={form.spouse_name} onChange={e => set('spouse_name', e.target.value)} placeholder="John Smith" className={INPUT_CLS} /></LF>
               <LF label="Phone"><input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="555-555-5555" className={INPUT_CLS} /></LF>
               <LF label="Email"><input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={INPUT_CLS} /></LF>
               <LF label="State"><input type="text" value={form.state} onChange={e => set('state', e.target.value)} placeholder="IN" maxLength={2} className={INPUT_CLS + ' uppercase'} /></LF>
@@ -1517,8 +1716,15 @@ function AddLeadModal({ onClose, onSave }) {
               <LF label="Hobby / Security Word" span={2}><input type="text" value={form.hobby} onChange={e => set('hobby', e.target.value)} placeholder="e.g. Fishing…" className={INPUT_CLS} /></LF>
               <LF label="Lead Source">
                 <select value={form.source} onChange={e => set('source', e.target.value)} className={SELECT_CLS}>
-                  <option>Referral</option><option>Razor Ridge</option>
-                  <option>Social Media</option><option>Organic</option><option>Other</option>
+                  <option value="">—</option>
+                  <option value="referral">Referral</option>
+                  <option value="symmetry">Symmetry</option>
+                  <option value="razor_ridge">Razor Ridge</option>
+                  <option value="lighthouse">Lighthouse</option>
+                  <option value="level_up">Level Up</option>
+                  <option value="reset">FIF Reset</option>
+                  <option value="external">External</option>
+                  <option value="other">Other</option>
                 </select>
               </LF>
             </div>
@@ -1543,7 +1749,7 @@ function AddLeadModal({ onClose, onSave }) {
 
 // ─── Add Script Modal ──────────────────────────────────────────────────────────
 
-function AddScriptModal({ onClose, onSave }) {
+export function AddScriptModal({ onClose, onSave }) {
   const [form,   setForm]   = useState({ category: 'General', title: '', body: '', tag: '' })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -1587,8 +1793,9 @@ function AddScriptModal({ onClose, onSave }) {
 
 // ─── Shared primitives ─────────────────────────────────────────────────────────
 
-function StatusPill({ status }) {
-  const s = statusCfg(status)
+export function StatusPill({ status, statuses = STATUSES }) {
+  const sMap = Object.fromEntries(statuses.map(s => [s.key, s]))
+  const s    = sMap[status] ?? statuses[0]
   return <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.pill}`}>{s.label}</span>
 }
 

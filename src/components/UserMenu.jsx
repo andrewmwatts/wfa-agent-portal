@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { useAuth } from '../context/AuthContext'
 
 // Sections available for delegation (maps to assistant_permissions.section values)
 const SECTIONS = [
@@ -11,9 +12,37 @@ const SECTIONS = [
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 
 export default function UserMenu({ userProfile, onSignOut }) {
-  const [open, setOpen]   = useState(false)
-  const [modal, setModal] = useState(null) // null | 'profile' | 'delegation'
+  const { session, fetchAndSetProfile } = useAuth()
+  const [open,           setOpen]           = useState(false)
+  const [modal,          setModal]          = useState(null) // null | 'profile' | 'delegation'
+  const [calToast,       setCalToast]       = useState(null) // null | 'connected' | 'error' | string
+  const [calConnecting,  setCalConnecting]  = useState(false)
   const ref = useRef(null)
+
+  // Handle post-OAuth redirect params (?calendar=connected or ?calendar=error)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const cal    = params.get('calendar')
+    if (!cal) return
+
+    // Clean the URL
+    params.delete('calendar')
+    params.delete('reason')
+    const newSearch = params.toString()
+    const newUrl    = window.location.pathname + (newSearch ? `?${newSearch}` : '')
+    window.history.replaceState({}, '', newUrl)
+
+    if (cal === 'connected') {
+      setCalToast('connected')
+      // Refresh profile so google_calendar_connected flips to true
+      if (session?.user?.id) fetchAndSetProfile(session.user.id)
+      setTimeout(() => setCalToast(null), 5000)
+    } else if (cal === 'error') {
+      setCalToast('error')
+      setTimeout(() => setCalToast(null), 6000)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -24,8 +53,57 @@ export default function UserMenu({ userProfile, onSignOut }) {
 
   function openModal(m) { setOpen(false); setModal(m) }
 
+  async function connectCalendar() {
+    if (!session?.access_token) return
+    setCalConnecting(true)
+    setOpen(false)
+    try {
+      const res  = await fetch('/api/google-auth', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = await res.json()
+      if (!res.ok || !data.url) throw new Error(data.error || 'Failed to get auth URL')
+      window.location.href = data.url
+    } catch (err) {
+      setCalToast('error')
+      setTimeout(() => setCalToast(null), 6000)
+      setCalConnecting(false)
+    }
+  }
+
+  async function disconnectCalendar() {
+    if (!session?.access_token) return
+    setOpen(false)
+    try {
+      await fetch('/api/google-calendar', {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (session?.user?.id) fetchAndSetProfile(session.user.id)
+    } catch { /* ignore */ }
+  }
+
+  const calConnected = userProfile?.google_calendar_connected ?? false
+
   return (
     <>
+      {/* Calendar toast */}
+      {calToast && (
+        <div className={`fixed bottom-4 right-4 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold border ${
+          calToast === 'connected'
+            ? 'bg-green-50 text-green-800 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20'
+            : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20'
+        }`}>
+          <span>{calToast === 'connected' ? '✅' : '❌'}</span>
+          <span>
+            {calToast === 'connected'
+              ? 'Google Calendar connected!'
+              : 'Google Calendar connection failed. Please try again.'}
+          </span>
+          <button onClick={() => setCalToast(null)} className="ml-1 opacity-60 hover:opacity-100 text-lg leading-none">✕</button>
+        </div>
+      )}
+
       <div className="relative" ref={ref}>
         {/* Trigger */}
         <button
@@ -43,13 +121,26 @@ export default function UserMenu({ userProfile, onSignOut }) {
 
         {/* Dropdown */}
         {open && (
-          <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-primary border border-primary/15 dark:border-white/10 rounded-xl shadow-xl py-1.5 z-50">
+          <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-primary border border-primary/15 dark:border-white/10 rounded-xl shadow-xl py-1.5 z-50">
             <DropItem onClick={() => openModal('profile')}>
               <PersonIcon /> Profile
             </DropItem>
             <DropItem onClick={() => openModal('delegation')}>
               <DelegateIcon /> Access Delegation
             </DropItem>
+            <div className="my-1 border-t border-gray-100 dark:border-white/10" />
+            {calConnected ? (
+              <DropItem onClick={disconnectCalendar}>
+                <CalendarIcon />
+                <span className="flex-1">Google Calendar</span>
+                <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">Connected</span>
+              </DropItem>
+            ) : (
+              <DropItem onClick={connectCalendar} disabled={calConnecting}>
+                <CalendarIcon />
+                {calConnecting ? 'Connecting…' : 'Connect Google Calendar'}
+              </DropItem>
+            )}
             <div className="my-1 border-t border-gray-100 dark:border-white/10" />
             <DropItem onClick={onSignOut} danger>
               <SignOutIcon /> Sign out
@@ -66,11 +157,12 @@ export default function UserMenu({ userProfile, onSignOut }) {
 
 // ── Dropdown item ──────────────────────────────────────────────────────────────
 
-function DropItem({ onClick, danger, children }) {
+function DropItem({ onClick, danger, disabled, children }) {
   return (
     <button
-      onClick={onClick}
-      className={`w-full text-left flex items-center gap-2.5 px-3.5 py-2 text-sm transition-colors
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={`w-full text-left flex items-center gap-2.5 px-3.5 py-2 text-sm transition-colors disabled:opacity-50
         ${danger
           ? 'text-accent hover:bg-accent/10'
           : 'text-gray-700 dark:text-white/70 hover:bg-primary/[0.06] dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
@@ -612,6 +704,14 @@ function SignOutIcon() {
   return (
     <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
     </svg>
   )
 }

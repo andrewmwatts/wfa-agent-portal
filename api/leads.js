@@ -172,17 +172,79 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // ── BULK IMPORT ───────────────────────────────────────────────────────────
+  if (req.method === 'POST' && req.query.action === 'bulk') {
+    const body   = req.body ?? {}
+    const sfgId  = (body.sfg_id ?? '').toString().trim().toUpperCase()
+    const leads  = Array.isArray(body.leads) ? body.leads : []
+
+    if (!sfgId)        return res.status(400).json({ error: 'sfg_id is required' })
+    if (!leads.length) return res.status(400).json({ error: 'No leads provided' })
+
+    // Verify caller is super_admin (or bypass for dev)
+    const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+    if (!bypass) {
+      const callerSfgId = await resolveCallerSfgId(req, null)
+      if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+      const { data: caller } = await sb.from('users').select('role').eq('sfg_id', callerSfgId).single()
+      if (caller?.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden: super_admin required' })
+    }
+
+    // Fetch existing phones for this agent to detect duplicates
+    const { data: existing } = await sb
+      .from('leads')
+      .select('phone')
+      .eq('sfg_id', sfgId)
+    const existingPhones = new Set((existing ?? []).map(r => r.phone))
+
+    const toInsert = []
+    let skipped = 0
+
+    for (const lead of leads) {
+      if (!lead.name || !lead.phone) { skipped++; continue }
+      if (existingPhones.has(lead.phone)) { skipped++; continue }
+      existingPhones.add(lead.phone) // prevent dupes within this batch
+      const now = new Date().toISOString()
+      toInsert.push({
+        ...lead,
+        sfg_id:     sfgId,
+        created_at: now,
+        updated_at: now,
+      })
+    }
+
+    let inserted = []
+    let errors   = 0
+
+    if (toInsert.length) {
+      // Insert in chunks to stay within Supabase payload limits
+      const CHUNK = 200
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        const { data: chunk, error: chunkErr } = await sb
+          .from('leads')
+          .insert(toInsert.slice(i, i + CHUNK))
+          .select()
+        if (chunkErr) {
+          errors += toInsert.slice(i, i + CHUNK).length
+        } else {
+          inserted = inserted.concat(chunk ?? [])
+        }
+      }
+    }
+
+    return res.status(200).json({ inserted, skipped, errors })
+  }
+
   // ── LEADS ─────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
     const sfgId = await resolveCallerSfgId(req, req.query.sfg_id)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { data, error } = await sb
-      .from('leads')
-      .select('*')
-      .eq('sfg_id', sfgId)
-      .order('added', { ascending: false })
-      .order('id',    { ascending: false })
+    const { category } = req.query
+    let query = sb.from('leads').select('*').eq('sfg_id', sfgId)
+    if (category) query = query.eq('category', category)
+    query = query.order('added', { ascending: false }).order('id', { ascending: false })
+    const { data, error } = await query
 
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ leads: data ?? [] })

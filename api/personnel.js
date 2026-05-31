@@ -24,9 +24,18 @@ function buildPromotionMaps(promoRows) {
   for (const row of promoRows) {
     const { promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot } = row
     const arr = []
-    arr.push(month_1 ?? '')
-    arr.push(is_slingshot ? (slingshot_month ?? '') : (month_2 ?? ''))
-    if (month_3 != null) arr.push(month_3 ?? '')
+
+    if (is_slingshot) {
+      // For slingshot rows the qualifying month is month_1 when present, otherwise the
+      // slingshot month itself.  Both slots being equal triggers "(SS)" in the display.
+      arr.push(month_1 ?? slingshot_month ?? '')
+      arr.push(slingshot_month ?? '')
+    } else {
+      arr.push(month_1 ?? '')
+      arr.push(month_2 ?? '')
+      // Only push month_3 when it has real content — an empty string would fail allFilled
+      if (month_3?.trim()) arr.push(month_3)
+    }
 
     if (promotion_type === 'commission') {
       milestones[String(level)] = arr
@@ -87,6 +96,7 @@ function computeBaseshop(rootSfgId, allPersonnel, ownerSet) {
 // ── Allowed fields for update-personnel ──────────────────────────────────────
 
 const ALLOWED_FIELDS = new Set([
+  'opt_name', 'preferred_name',
   'hire_date', 'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
 ])
@@ -274,7 +284,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ inserted, skipped, statusUpdated, errors })
     } catch (err) {
       console.error('[personnel/post]', err)
-      return res.status(500).json({ error: 'Failed to import agents' })
+      return res.status(500).json({ error: err?.message ?? 'Failed to import agents' })
     }
   }
 

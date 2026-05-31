@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background tile -->
+  <rect width="512" height="512" rx="96" fill="#005365"/>
+  <!-- WFA lightning bolt, centred and scaled from the 24×24 sidebar glyph -->
+  <!-- Original path: M13 2L3 14h9l-1 8 10-12h-9l1-8z  (24×24 viewBox) -->
+  <!-- Scaled ×17, translated so the bolt sits at visual centre -->
+  <path d="M281 44L103 282h153l-17 136 170-204h-153l17-136z" fill="#EE2666"/>
+</svg>

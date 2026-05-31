@@ -56,14 +56,14 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
 
       const payload = {
         rows: [{
-          sfg_id:         form.sfg_id.trim(),
+          sfg_id:         form.sfg_id.trim().toUpperCase(),
           opt_name:       form.opt_name.trim()       || null,
           preferred_name: form.preferred_name.trim() || null,
           npn:            form.npn.trim()            || null,
           hire_date:      form.hire_date             || null,
           birth_date:     form.birth_date            || null,
           upline_sfg_id:  uplineId                   || null,
-          status:         form.status.trim()         || null,
+          status:         form.status.trim()         || 'Active',
           phone:          form.phone.trim()          || null,
           city:           form.city.trim()           || null,
           state:          form.state.trim()          || null,

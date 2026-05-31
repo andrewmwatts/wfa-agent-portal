@@ -65,8 +65,8 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const {
       sfg_id, log_date,
-      dials, contacts, appts_set, appts_kept, apps_written, resets,
-      hours_dialed,
+      dials, hours_dialed, reachouts, posts,
+      contacts, appts_set, appts_kept, apps_written, resets,
       notes,
     } = req.body ?? {}
 
@@ -80,13 +80,15 @@ export default async function handler(req, res) {
         {
           sfg_id:       sfg_id.trim().toUpperCase(),
           log_date,
-          dials:        Math.max(0, parseInt(dials)        || 0),
-          contacts:     Math.max(0, parseInt(contacts)     || 0),
-          appts_set:    Math.max(0, parseInt(appts_set)    || 0),
-          appts_kept:   Math.max(0, parseInt(appts_kept)   || 0),
-          apps_written: Math.max(0, parseInt(apps_written) || 0),
-          resets:       Math.max(0, parseInt(resets)       || 0),
+          dials:        Math.max(0, parseInt(dials)           || 0),
           hours_dialed: Math.max(0, parseFloat(hours_dialed) || 0),
+          reachouts:    Math.max(0, parseInt(reachouts)      || 0),
+          posts:        Math.max(0, parseInt(posts)          || 0),
+          contacts:     Math.max(0, parseInt(contacts)       || 0),
+          appts_set:    Math.max(0, parseInt(appts_set)      || 0),
+          appts_kept:   Math.max(0, parseInt(appts_kept)     || 0),
+          apps_written: Math.max(0, parseInt(apps_written)   || 0),
+          resets:       Math.max(0, parseInt(resets)         || 0),
           notes:        notes?.trim() || null,
           updated_at:   new Date().toISOString(),
         },

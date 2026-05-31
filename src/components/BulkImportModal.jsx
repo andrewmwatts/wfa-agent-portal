@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ function getField(row, ...keys) {
 
 // ── Row processing ────────────────────────────────────────────────────────────
 
-function processRows(csvRows, personnel, crosswalk, existingPolicies) {
+function processRows(csvRows, personnel, existingPolicies) {
   // Build lookups
   const personByName = {}   // name lower → { sfg_id, name }
   const personByOpt  = {}   // sfg_id lower → { sfg_id, name }
@@ -115,13 +116,6 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
     if (p.preferred_name?.trim()) personByName[p.preferred_name.trim().toLowerCase()] = entry
     if (p.opt_name?.trim())       personByName[p.opt_name.trim().toLowerCase()]       = entry
     personByOpt[sfgLower] = entry
-  }
-
-  const crosswalkMap = {}  // `${carrier.lower}||${policy_name.lower}` → subtype
-  for (const c of crosswalk) {
-    if (c.carrier && c.policy_name) {
-      crosswalkMap[`${c.carrier.toLowerCase()}||${c.policy_name.toLowerCase()}`] = c.subtype || ''
-    }
   }
 
   // Build natural-key duplicate set from existing policies
@@ -140,18 +134,33 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
 
     const rawAgent     = getField(raw, 'Agent', 'agent', 'Agent Name', 'AgentName', 'Writing Agent', 'WritingAgent', 'Producer', 'producer', 'Writer', 'writer', 'Written By', 'WrittenBy', 'Producing Agent', 'ProducingAgent')
     const rawApplicant = getField(raw, 'Applicant', 'applicant', 'Client', 'client', 'Insured', 'insured', 'Client Name', 'ClientName')
+    const rawPolicy    = getField(raw, 'Policy Name', 'policy_name', 'PolicyName', 'Policy', 'Product', 'product', 'Plan', 'plan', 'Product Name', 'ProductName')
+
+    // Auto-exclude aggregate/total rows (e.g. a "Total" footer row from carrier exports)
+    const isSummaryRow = /^totals?$/i.test(rawAgent.trim())
+                      || /^totals?$/i.test(rawApplicant.trim())
+                      || /^totals?$/i.test(rawPolicy.trim())
+    if (isSummaryRow) {
+      return {
+        _csvIdx: idx, sfg_id: '', agentName: '', rawAgent, applicant: rawApplicant,
+        carrier: '', policy_name: '', policy_number: '', status: '',
+        submit_date: null, issue_date: null, face_amount: null, submitted_apv: null,
+        submit_week: null, submit_week_num: null,
+        isChildPolicy: false, isDuplicate: false,
+        rowStatus: 'red', warnings: [], errors: ['Summary row — auto-excluded'],
+        excluded: true, includeAnyway: false,
+      }
+    }
     const rawCarrier   = getField(raw, 'Carrier', 'carrier', 'Company', 'company', 'Insurance Company')
-    const rawPolicy    = getField(raw, 'Policy Name', 'policy_name', 'PolicyName', 'Product', 'product', 'Plan', 'plan', 'Product Name', 'ProductName')
     const rawPolicyNo  = getField(raw, 'Policy Number', 'policy_number', 'PolicyNumber', 'Policy No', 'PolicyNo', 'Policy #', 'Contract Number', 'ContractNumber')
-    const rawStatus    = getField(raw, 'Status', 'status', 'Policy Status', 'PolicyStatus', 'App Status', 'AppStatus')
     const rawSubmDate  = getField(raw, 'Submit Date', 'submit_date', 'SubmitDate', 'Date Submitted', 'DateSubmitted', 'App Date', 'AppDate', 'Application Date', 'Submission Date')
     const rawIssDate   = getField(raw, 'Issue Date', 'issue_date', 'IssueDate', 'Date Issued', 'DateIssued', 'Issued Date')
-    const rawFace      = getField(raw, 'Face Amount', 'face_amount', 'FaceAmount', 'Face', 'Coverage Amount', 'Death Benefit', 'Benefit Amount')
-    const rawSubmApv   = getField(raw, 'Submitted APV', 'submitted_apv', 'SubmittedAPV', 'Subm APV', 'APV', 'Target Premium', 'Annualized Premium', 'Annual Premium')
+    const rawFace      = getField(raw, 'Face Amount', 'face_amount', 'FaceAmount', 'FaceAmt', 'Face', 'Coverage Amount', 'Death Benefit', 'Benefit Amount')
+    const rawSubmApv   = getField(raw, 'APV')
     const rawSfgId     = getField(raw, 'SFG ID', 'sfg_id', 'SfgId', 'SFGID', 'AgentCode', 'agentcode', 'Agent Code', 'Agent ID', 'AgentID', 'Producer Code', 'ProducerCode', 'Writing Agent Code', 'Writer Code')
 
     // Applicant: title-case normalise
-    const origApplicant = rawApplicant
+    const origApplicant = rawApplicant  // already resolved above
     const applicant     = toTitleCase(origApplicant)
     if (applicant && applicant !== origApplicant) {
       warnings.push(`Applicant name normalized: "${origApplicant}" → "${applicant}"`)
@@ -160,7 +169,6 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
     const carrier    = rawCarrier
     const policyName = rawPolicy
     const policyNo   = rawPolicyNo
-    const status     = rawStatus
     const faceAmt    = parseNum(rawFace)
     const submApv    = parseNum(rawSubmApv)
 
@@ -171,13 +179,6 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
     const submitWeekObj  = calcSubmitWeek(submitDateObj)
     const submitWeekISO  = fmtISO(submitWeekObj)
     const submitWeekNum  = calcSubmitWeekNum(submitWeekObj)
-
-    // Crosswalk lookup
-    const cwKey   = `${carrier.toLowerCase()}||${policyName.toLowerCase()}`
-    const subtype = crosswalkMap[cwKey] ?? null
-    if (!subtype && carrier && policyName) {
-      warnings.push(`No crosswalk match for "${carrier} / ${policyName}"`)
-    }
 
     const isChildPolicy = /child|juv|juvenile/i.test(policyName)
 
@@ -223,14 +224,14 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
       carrier,
       policy_name:     policyName,
       policy_number:   policyNo,
-      status,
+      status:          '',   // never import status from CSV — left blank for manual entry
       submit_date:     submitDateISO,
       issue_date:      issueDateISO,
       face_amount:     faceAmt,
       submitted_apv:   submApv,
+      issued_apv:      submApv,
       submit_week:     submitWeekISO,
       submit_week_num: submitWeekNum,
-      subtype,
       isChildPolicy,
       isDuplicate,
       rowStatus,
@@ -244,7 +245,8 @@ function processRows(csvRows, personnel, crosswalk, existingPolicies) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, excluded }) {
+function StatusBadge({ status, excluded, isDuplicate }) {
+  if (excluded && isDuplicate) return <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Duplicate</span>
   if (excluded) return <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Excluded</span>
   const map = {
     green:  ['bg-green-100 text-green-800',  'Ready'],
@@ -290,7 +292,7 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
     <div className={`border-b last:border-0 px-3 py-2 text-sm ${bgCls}`}>
       <div className="flex items-center gap-2 flex-wrap">
         <div className="w-16 flex-shrink-0">
-          <StatusBadge status={row.rowStatus} excluded={row.excluded} />
+          <StatusBadge status={row.rowStatus} excluded={row.excluded} isDuplicate={row.isDuplicate} />
         </div>
 
         <span className="w-36 truncate font-medium flex-shrink-0">{row.applicant || <em className="text-gray-400">—</em>}</span>
@@ -313,7 +315,7 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
                 {filteredPersonnel.map(p => (
                   <li
                     key={p.sfg_id}
-                    className="px-2 py-1 hover:bg-blue-50 cursor-pointer"
+                    className="px-2 py-1 hover:bg-blue-50 cursor-pointer text-gray-800"
                     onMouseDown={() => selectAgent(p)}
                   >
                     {(p.preferred_name || p.opt_name || p.sfg_id)}
@@ -375,7 +377,6 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
 export default function BulkImportModal({ onClose, personnel = [], existingPolicies = [] }) {
   const [phase,        setPhase]        = useState('upload')   // upload | preview | confirm | importing | result
   const [rows,         setRows]         = useState([])
-  const [crosswalk,    setCrosswalk]    = useState(null)
   const [parseError,   setParseError]   = useState('')
   const [result,       setResult]       = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
@@ -423,36 +424,64 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
   async function confirmOptNameUpdate() {
     if (!optNamePrompt) return
     try {
-      await fetch('/api/personnel', {
-        method: 'PUT',
+      const res  = await fetch('/api/personnel', {
+        method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sfg_id: optNamePrompt.sfg_id, updates: { opt_name: optNamePrompt.proposed } }),
+        body:    JSON.stringify({ sfg_id: optNamePrompt.sfg_id, updates: { opt_name: optNamePrompt.proposed } }),
       })
-    } catch { /* non-fatal */ }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.error('[opt_name update]', data?.error ?? res.status)
+        // Still dismiss the prompt — the import itself succeeded
+      }
+    } catch (err) {
+      console.error('[opt_name update]', err)
+    }
     setOptNamePrompt(null)
   }
 
-  // Load crosswalk once on mount
-  useEffect(() => {
-    fetch('/api/policies?type=crosswalk')
-      .then(r => r.json())
-      .then(data => setCrosswalk(Array.isArray(data) ? data : []))
-      .catch(() => setCrosswalk([]))
-  }, [])
+  function finishParsing(jsonRows) {
+    if (!jsonRows?.length) { setParseError('No data rows found in file.'); return }
+    const detectedCols = Object.keys(jsonRows[0] ?? {})
+    const processed = processRows(jsonRows, personnel, existingPolicies)
+    const allRed = processed.every(r => r.rowStatus === 'red')
+    if (allRed && processed.length > 0) {
+      setParseError(`Agent column not found. Columns detected: ${detectedCols.join(', ')}`)
+    }
+    setRows(processed)
+    setPhase('preview')
+  }
 
   function handleFile(file) {
     if (!file) return
     setParseError('')
+
+    const ext = file.name.split('.').pop().toLowerCase()
+
+    // Excel files — use SheetJS
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm') {
+      const reader = new FileReader()
+      reader.onload = e => {
+        try {
+          const wb   = XLSX.read(e.target.result, { type: 'array', cellDates: true })
+          const ws   = wb.Sheets[wb.SheetNames[0]]
+          const json = XLSX.utils.sheet_to_json(ws, { defval: '' })
+          finishParsing(json)
+        } catch (err) {
+          setParseError(`Failed to read Excel file: ${err.message}`)
+        }
+      }
+      reader.readAsArrayBuffer(file)
+      return
+    }
+
+    // CSV files — use PapaParse
     Papa.parse(file, {
-      header:         true,
-      skipEmptyLines: true,
-      complete(res) {
-        if (!res.data?.length) { setParseError('No data rows found in file.'); return }
-        const processed = processRows(res.data, personnel, crosswalk ?? [], existingPolicies)
-        setRows(processed)
-        setPhase('preview')
-      },
-      error(err) { setParseError(err.message) },
+      header:          true,
+      skipEmptyLines:  true,
+      transformHeader: h => h.replace(/^﻿/, '').trim(),  // strip Excel BOM + whitespace
+      complete(res) { finishParsing(res.data) },
+      error(err)    { setParseError(err.message) },
     })
   }
 
@@ -467,13 +496,16 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
 
   const visibleRows = filterStatus === 'all'
     ? rows
+    : filterStatus === 'duplicate'
+    ? rows.filter(r => r.isDuplicate)
     : rows.filter(r => r.rowStatus === filterStatus)
 
   const counts = {
-    green:    rows.filter(r => r.rowStatus === 'green'  && !r.excluded).length,
-    yellow:   rows.filter(r => r.rowStatus === 'yellow' && !r.excluded).length,
-    red:      rows.filter(r => r.rowStatus === 'red'    && !r.excluded).length,
-    excluded: rows.filter(r => r.excluded).length,
+    green:     rows.filter(r => r.rowStatus === 'green'  && !r.excluded).length,
+    yellow:    rows.filter(r => r.rowStatus === 'yellow' && !r.excluded).length,
+    red:       rows.filter(r => r.rowStatus === 'red'    && !r.excluded).length,
+    duplicate: rows.filter(r => r.isDuplicate).length,
+    excluded:  rows.filter(r => r.excluded && !r.isDuplicate).length,
   }
 
   // Rows eligible to import: included, not red (unless agent was assigned)
@@ -481,6 +513,9 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
 
   async function doImport() {
     setPhase('importing')
+    // Rows excluded client-side (duplicates + manually excluded) never reach the
+    // server, so we have to track them here and fold them into the result.
+    const clientExcluded = rows.filter(r => r.excluded).length
     const payload = toImport.map(r => ({
       sfg_id:          r.sfg_id,
       applicant:       r.applicant,
@@ -489,12 +524,12 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
       policy_number:   r.policy_number   || null,
       face_amount:     r.face_amount,
       submitted_apv:   r.submitted_apv,
+      issued_apv:      r.issued_apv,
       status:          r.status          || null,
       submit_date:     r.submit_date     || null,
       issue_date:      r.issue_date      || null,
       submit_week:     r.submit_week     || null,
       submit_week_num: r.submit_week_num ?? null,
-      subtype:         r.subtype         || null,
       includeAnyway:   r.includeAnyway   ?? false,
       agentName:       r.agentName,
     }))
@@ -506,10 +541,15 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
         body:    JSON.stringify({ rows: payload }),
       })
       const data = await res.json()
-      setResult(data)
+      if (!res.ok) throw new Error(data?.error ?? `Server error ${res.status}`)
+      setResult({
+        inserted: data.inserted  ?? 0,
+        skipped:  (data.skipped  ?? 0) + clientExcluded,
+        errors:   Array.isArray(data.errors) ? data.errors : [],
+      })
       setPhase('result')
     } catch (err) {
-      setResult({ inserted: 0, skipped: 0, errors: [{ error: err.message }] })
+      setResult({ inserted: 0, skipped: clientExcluded, errors: [{ error: err.message }] })
       setPhase('result')
     }
   }
@@ -552,7 +592,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
           {phase === 'upload' && (
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                Upload a CSV file with policy data. Required columns: <strong>Applicant</strong>, <strong>Carrier</strong>, <strong>Policy Name</strong>, <strong>Submit Date</strong>.
+                Upload a CSV or Excel file (.xlsx) with policy data. Required columns: <strong>Applicant</strong>, <strong>Carrier</strong>, <strong>Policy Name</strong>, <strong>Submit Date</strong>.
                 Optional: Agent, SFG ID, Policy Number, Face Amount, Submitted APV, Issue Date, Status.
               </p>
 
@@ -562,33 +602,41 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                 onDrop={handleDrop}
                 onClick={() => fileRef.current?.click()}
               >
-                <p className="text-gray-400 text-sm">Drag &amp; drop a CSV file here, or <span className="text-blue-600 underline">click to browse</span></p>
-                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => handleFile(e.target.files[0])} />
+                <p className="text-gray-400 text-sm">Drag &amp; drop a CSV or Excel file here, or <span className="text-blue-600 underline">click to browse</span></p>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.xlsm" className="hidden" onChange={e => handleFile(e.target.files[0])} />
               </div>
 
               {parseError && <p className="text-red-600 text-sm">{parseError}</p>}
-              {crosswalk === null && <p className="text-gray-400 text-xs animate-pulse">Loading crosswalk data…</p>}
             </div>
           )}
 
           {/* ── Preview phase ── */}
           {phase === 'preview' && (
             <div className="space-y-3">
+              {/* Parse warning (e.g. unrecognised agent column) */}
+              {parseError && (
+                <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm">
+                  ⚠ {parseError}
+                </p>
+              )}
+
               {/* Summary chips */}
               <div className="flex gap-3 flex-wrap">
                 <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 text-sm font-medium">{counts.green} ready</span>
                 <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 text-sm font-medium">{counts.yellow} need review</span>
                 <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 text-sm font-medium">{counts.red} no agent</span>
-                <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-600 text-sm font-medium">{counts.excluded} excluded</span>
+                {counts.duplicate > 0 && <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-sm font-medium">{counts.duplicate} duplicate{counts.duplicate !== 1 ? 's' : ''}</span>}
+                {counts.excluded > 0  && <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-600 text-sm font-medium">{counts.excluded} excluded</span>}
               </div>
 
               {/* Filter tabs */}
               <div className="flex gap-2 text-sm flex-wrap">
                 {[
-                  ['all',    `All (${rows.length})`],
-                  ['green',  'Ready'],
-                  ['yellow', 'Review'],
-                  ['red',    'No Agent'],
+                  ['all',       `All (${rows.length})`],
+                  ['green',     'Ready'],
+                  ['yellow',    'Review'],
+                  ['red',       'No Agent'],
+                  ...(counts.duplicate > 0 ? [['duplicate', `Duplicates (${counts.duplicate})`]] : []),
                 ].map(([f, label]) => (
                   <button
                     key={f}
@@ -626,7 +674,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                           <button
                             key={p.sfg_id}
                             onMouseDown={() => applyDefaultAgent(p)}
-                            className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm text-gray-800"
                           >
                             <span className="font-medium">{p.preferred_name || p.opt_name}</span>
                             <span className="text-gray-400 ml-2 text-xs">{p.sfg_id}</span>
@@ -712,23 +760,23 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
           {/* ── Result phase ── */}
           {phase === 'result' && result && (
             <div className="space-y-4">
-              <div className={`border rounded-lg p-5 space-y-3 text-sm ${result.errors?.length ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'}`}>
-                <p className="font-semibold text-base">{result.errors?.length ? 'Import completed with errors' : 'Import complete ✓'}</p>
+              <div className={`border rounded-lg p-5 space-y-3 text-sm ${result.errors.length ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'}`}>
+                <p className="font-semibold text-base text-gray-900">{result.errors.length ? 'Import completed with errors' : 'Import complete ✓'}</p>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Rows inserted</span>
                   <span className="font-semibold text-green-700">{result.inserted}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Skipped (server duplicate check)</span>
-                  <span className="font-semibold">{result.skipped}</span>
+                  <span className="text-gray-600">Skipped (duplicates)</span>
+                  <span className="font-semibold text-gray-700">{result.skipped}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Errors</span>
-                  <span className={`font-semibold ${result.errors?.length ? 'text-red-600' : ''}`}>{result.errors?.length ?? 0}</span>
+                  <span className={`font-semibold ${result.errors.length ? 'text-red-600' : 'text-gray-700'}`}>{result.errors.length}</span>
                 </div>
               </div>
 
-              {result.errors?.length > 0 && (
+              {result.errors.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-red-700">Row-level errors:</p>
                   <div className="border border-red-200 rounded-lg overflow-hidden text-xs">

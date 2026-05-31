@@ -75,7 +75,7 @@ function processRows(csvRows, existingPersonnel) {
     const rawFirstName = getField(raw, 'FirstName', 'First Name', 'first_name')
     const rawLastName  = getField(raw, 'LastName',  'Last Name',  'last_name')
     const rawUpline    = getField(raw, 'Upline', 'UplineCode', 'Upline SFG ID', 'upline_sfg_id', 'UplineAgentCode')
-    const rawHire      = getField(raw, 'Hire Date', 'HireDate', 'hire_date', 'ContractDate', 'Contract Date', 'Start Date', 'StartDate', 'WritingDate', 'Writing Date')
+    const rawHire      = getField(raw, 'ContractStartDt', 'hire_date')
     const rawBirth     = getField(raw, 'BirthDate', 'Birth Date', 'birth_date', 'DOB', 'Date of Birth', 'DateOfBirth')
     const rawNPN       = getField(raw, 'NPN', 'npn', 'NPN Number')
     const rawStatus    = getField(raw, 'Status', 'status')

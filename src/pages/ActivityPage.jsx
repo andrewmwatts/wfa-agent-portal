@@ -4,18 +4,20 @@ import { useViewing } from '../context/ViewingContext'
 // ─── Metric definitions ────────────────────────────────────────────────────────
 
 const METRICS = [
-  { key: 'dials',        label: 'Dials',        short: 'Dials',   accent: 'text-blue-500  dark:text-blue-400'  },
-  { key: 'contacts',     label: 'Contacts',     short: 'Contacts',accent: 'text-teal-600  dark:text-teal-400'  },
-  { key: 'appts_set',    label: 'Appts Set',    short: 'Set',     accent: 'text-violet-500 dark:text-violet-400'},
-  { key: 'appts_kept',   label: 'Appts Kept',   short: 'Kept',    accent: 'text-purple-500 dark:text-purple-400'},
-  { key: 'apps_written', label: 'Apps Written', short: 'Apps',    accent: 'text-orange-500 dark:text-orange-400'},
-  { key: 'resets',       label: 'Resets',       short: 'Resets',  accent: 'text-green-600  dark:text-green-400' },
-  { key: 'hours_dialed', label: 'Hours Dialed', short: 'Hours',   accent: 'text-indigo-500 dark:text-indigo-400', step: '0.5', decimal: true },
+  { key: 'dials',        label: 'Dials',        short: 'Dials',      accent: 'text-blue-500   dark:text-blue-400'   },
+  { key: 'hours_dialed', label: 'Hours Dialed', short: 'Hours',      accent: 'text-indigo-500 dark:text-indigo-400', step: '0.5', decimal: true },
+  { key: 'reachouts',    label: 'Reachouts',    short: 'Reachouts',  accent: 'text-cyan-600   dark:text-cyan-400'   },
+  { key: 'posts',        label: 'Posts',        short: 'Posts',      accent: 'text-pink-500   dark:text-pink-400'   },
+  { key: 'contacts',     label: 'Contacts',     short: 'Contacts',   accent: 'text-teal-600   dark:text-teal-400'   },
+  { key: 'appts_set',    label: 'Appts Set',    short: 'Set',        accent: 'text-violet-500 dark:text-violet-400' },
+  { key: 'appts_kept',   label: 'Appts Kept',   short: 'Kept',       accent: 'text-purple-500 dark:text-purple-400' },
+  { key: 'apps_written', label: 'Apps Written', short: 'Apps',       accent: 'text-orange-500 dark:text-orange-400' },
+  { key: 'resets',       label: 'Resets',       short: 'Resets',     accent: 'text-green-600  dark:text-green-400'  },
 ]
 
 const METRIC_KEYS = METRICS.map(m => m.key)
 
-const EMPTY_DRAFT = { dials: '', contacts: '', appts_set: '', appts_kept: '', apps_written: '', resets: '', hours_dialed: '', notes: '' }
+const EMPTY_DRAFT = { dials: '', hours_dialed: '', reachouts: '', posts: '', contacts: '', appts_set: '', appts_kept: '', apps_written: '', resets: '', notes: '' }
 
 // ─── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -181,12 +183,14 @@ export default function ActivityPage() {
     if (existing) {
       setDraft({
         dials:        existing.dials        ?? '',
+        hours_dialed: existing.hours_dialed ?? '',
+        reachouts:    existing.reachouts    ?? '',
+        posts:        existing.posts        ?? '',
         contacts:     existing.contacts     ?? '',
         appts_set:    existing.appts_set    ?? '',
         appts_kept:   existing.appts_kept   ?? '',
         apps_written: existing.apps_written ?? '',
         resets:       existing.resets       ?? '',
-        hours_dialed: existing.hours_dialed ?? '',
         notes:        existing.notes        ?? '',
       })
     } else {
@@ -221,12 +225,14 @@ export default function ActivityPage() {
           sfg_id:       activeSubject.sfg_id,
           log_date:     editDate,
           dials:        draft.dials,
+          hours_dialed: draft.hours_dialed,
+          reachouts:    draft.reachouts,
+          posts:        draft.posts,
           contacts:     draft.contacts,
           appts_set:    draft.appts_set,
           appts_kept:   draft.appts_kept,
           apps_written: draft.apps_written,
           resets:       draft.resets,
-          hours_dialed: draft.hours_dialed,
           notes:        draft.notes,
         }),
       })

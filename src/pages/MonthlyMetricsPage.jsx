@@ -13,6 +13,27 @@ function isOwnerRecord(p) {
   return !!(ao[0] && ao[1])
 }
 
+function getBaseshopIds(ownerSfgId, allPersonnel) {
+  const ownerIds = new Set(allPersonnel.filter(isOwnerRecord).map(p => p.sfg_id.toLowerCase()))
+  const childrenOf = {}
+  for (const p of allPersonnel) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+  const root   = ownerSfgId.toLowerCase()
+  const result = new Set()
+  function traverse(id) {
+    result.add(id)
+    for (const child of (childrenOf[id] ?? [])) {
+      if (ownerIds.has(child) && child !== root) continue
+      traverse(child)
+    }
+  }
+  traverse(root)
+  return result
+}
+
 function parseAmt(v) {
   if (v === null || v === undefined) return 0
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,]/g, ''))
@@ -145,10 +166,11 @@ export default function MonthlyMetricsPage() {
   const { activeSubject } = useViewing()
   const { theme } = useTheme()
 
-  const [policies, setPolicies]       = useState([])
-  const [loading, setLoading]         = useState(false)
-  const [mode, setMode]               = useState('baseshop')
-  const [isDirector, setIsDirector]   = useState(false)
+  const [policies, setPolicies]               = useState([])
+  const [masterPersonnel, setMasterPersonnel] = useState([])
+  const [loading, setLoading]                 = useState(false)
+  const [selectedScope, setSelectedScope]     = useState('master')
+  const [isDirector, setIsDirector]           = useState(false)
 
   const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 
@@ -167,7 +189,8 @@ export default function MonthlyMetricsPage() {
       const root  = sfgId.toLowerCase()
       const isDir = masterPersonnel.some(p => p.sfg_id?.toLowerCase() !== root && isOwnerRecord(p))
       setIsDirector(isDir)
-      setMode(isDir ? 'master' : 'baseshop')
+      setMasterPersonnel(masterPersonnel)
+      setSelectedScope(isDir ? 'master' : sfgId)
 
       await loadPolicies(masterPersonnel)
     } catch { /* ignore */ } finally {
@@ -175,15 +198,14 @@ export default function MonthlyMetricsPage() {
     }
   }
 
-  async function handleModeChange(newMode) {
-    if (!activeSubject?.sfg_id) return
-    setMode(newMode)
+  async function handleScopeChange(scope) {
+    setSelectedScope(scope)
     setLoading(true)
     try {
-      const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
-      const personnel = res.ok ? await res.json() : []
-      await loadPolicies(personnel)
+      const scoped = scope === 'master'
+        ? masterPersonnel
+        : masterPersonnel.filter(p => getBaseshopIds(scope, masterPersonnel).has(p.sfg_id.toLowerCase()))
+      await loadPolicies(scoped)
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
@@ -243,16 +265,23 @@ export default function MonthlyMetricsPage() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Monthly Metrics</h1>
-        {isDirector && (
-          <select
-            value={mode}
-            onChange={e => handleModeChange(e.target.value)}
-            className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-          >
-            <option value="master"   style={optionStyle}>Master Agency</option>
-            <option value="baseshop" style={optionStyle}>My Baseshop</option>
-          </select>
-        )}
+        {isDirector && (() => {
+          const owners = masterPersonnel
+            .filter(p => p.sfg_id?.toLowerCase() !== activeSubject?.sfg_id?.toLowerCase() && isOwnerRecord(p))
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          return (
+            <select
+              value={selectedScope}
+              onChange={e => handleScopeChange(e.target.value)}
+              className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+            >
+              <option value="master" style={optionStyle}>Master Agency</option>
+              {owners.map(o => (
+                <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>{o.name}</option>
+              ))}
+            </select>
+          )
+        })()}
       </div>
 
       {loading ? (

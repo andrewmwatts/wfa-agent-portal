@@ -25,7 +25,7 @@ const POLICY_COLS = [
   'id', 'sfg_id', 'applicant', 'carrier', 'policy_name', 'policy_number',
   'face_amount', 'submitted_apv', 'issued_apv', 'status',
   'submit_date', 'submit_week', 'submit_week_num', 'issue_date', 'last_update',
-  'application_notes', 'policy_notes', 'not_in_opt', 'split_reset',
+  'application_notes', 'policy_notes', 'not_in_opt', 'split_reset', 'chargeback_exempt',
   'conservation_status', 'conservation_date',
   'snapshot_chargeback_month', 'snapshot_chargeback_apv',
 ].join(', ')
@@ -175,6 +175,117 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── GET /api/policies?type=carrier-metrics ────────────────────────────────
+  // Aggregate placement rates + avg issue days across ALL policies (no user filter).
+  // Grouped by carrier × subtype.  Only counts terminal placement statuses:
+  // issued, declined, withdrawn, not taken.
+  if (req.method === 'GET' && type === 'carrier-metrics') {
+    try {
+      // Paginated fetch — same pattern as fetchAll so we get every row
+      const [policies, crosswalk] = await Promise.all([
+        fetchAll(supabase, 'policies', 'carrier, policy_name, status, submit_date, issue_date'),
+        fetchAll(supabase, 'policy_crosswalk', 'carrier, policy_name, subtype'),
+      ])
+
+      // Build crosswalk lookup: "carrier‖policy_name" → subtype
+      const cwMap = {}
+      for (const row of crosswalk) {
+        const key = `${(row.carrier ?? '').trim().toLowerCase()}‖${(row.policy_name ?? '').trim().toLowerCase()}`
+        cwMap[key] = row.subtype?.trim() || null
+      }
+
+      // Same aliases as PoliciesPage — keeps carrier names consistent across the app
+      const CARRIER_ALIASES = {
+        'american amicable group': 'American Amicable',
+        'occidental':              'American Amicable',
+        'lga':                     'Banner',
+        'corebridge':              'American General',
+        'transamerica group':      'TransAmerica',
+        'foresters dfl':           'Foresters',
+      }
+      const normCarrier = raw =>
+        raw ? (CARRIER_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()) : raw
+
+      const PLACEMENT = new Set(['issued', 'declined', 'withdrawn', 'not taken'])
+
+      // carrier|subtype → accumulator
+      const groups = {}
+
+      for (const p of policies) {
+        const rawCarrier = (p.carrier ?? '').trim()
+        if (!rawCarrier) continue
+        const carrier = normCarrier(rawCarrier)
+
+        const status = (p.status ?? '').trim().toLowerCase()
+        if (!PLACEMENT.has(status)) continue
+
+        // Crosswalk lookup uses the raw carrier name (as stored in the crosswalk table)
+        const cwKey  = `${rawCarrier.toLowerCase()}‖${(p.policy_name ?? '').trim().toLowerCase()}`
+        const subtype = cwMap[cwKey] ?? null
+        const groupKey = `${carrier}|||${subtype ?? ''}`
+
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            carrier, subtype,
+            issued: 0, declined: 0, withdrawn: 0, not_taken: 0,
+            issue_days_sum: 0, issue_days_count: 0,
+          }
+        }
+
+        const g = groups[groupKey]
+
+        if (status === 'issued') {
+          g.issued++
+          if (p.submit_date && p.issue_date) {
+            const days = Math.round(
+              (new Date(p.issue_date) - new Date(p.submit_date)) / 86_400_000
+            )
+            if (days >= 0) { g.issue_days_sum += days; g.issue_days_count++ }
+          }
+        } else if (status === 'declined')  { g.declined++  }
+        else if (status === 'withdrawn')   { g.withdrawn++ }
+        else if (status === 'not taken')   { g.not_taken++ }
+      }
+
+      const rows = Object.values(groups).map(g => {
+        const total = g.issued + g.declined + g.withdrawn + g.not_taken
+        const pct   = n => total ? Math.round(n / total * 100) : null
+        return {
+          carrier:          g.carrier,
+          subtype:          g.subtype,
+          total,
+          issued:           g.issued,
+          declined:         g.declined,
+          withdrawn:        g.withdrawn,
+          not_taken:        g.not_taken,
+          issued_pct:       pct(g.issued),
+          declined_pct:     pct(g.declined),
+          withdrawn_pct:    pct(g.withdrawn),
+          not_taken_pct:    pct(g.not_taken),
+          issue_days_sum:   g.issue_days_sum,
+          issue_days_count: g.issue_days_count,
+          avg_issue_days:   g.issue_days_count > 0
+            ? Math.round(g.issue_days_sum / g.issue_days_count)
+            : null,
+        }
+      })
+
+      // Sort: carrier A→Z, then nulls-last subtype A→Z
+      rows.sort((a, b) => {
+        const cc = a.carrier.localeCompare(b.carrier)
+        if (cc !== 0) return cc
+        if (a.subtype === null && b.subtype !== null) return  1
+        if (a.subtype !== null && b.subtype === null) return -1
+        return (a.subtype ?? '').localeCompare(b.subtype ?? '')
+      })
+
+      return res.status(200).json(rows)
+    } catch (err) {
+      console.error('[policies/carrier-metrics]', err)
+      return res.status(500).json({ error: err?.message ?? 'Failed to load carrier metrics' })
+    }
+  }
+
   // ── GET /api/policies?type=apps&sfg_ids=X ──────────────────────────────────
   if (req.method === 'GET' && type === 'apps') {
     const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''
@@ -219,6 +330,7 @@ export default async function handler(req, res) {
       const totalWriters = { month: new Set(), week: new Set(), lw: new Set() }
       const newWriters   = { month: new Set(), week: new Set(), lw: new Set() }
       const submMonthItems = []
+      const issMonthItems  = []
       const totalWritersItems = new Map()
       const newWritersItems   = new Map()
 
@@ -283,7 +395,16 @@ export default async function handler(req, res) {
           if (inPeriod(submitKey, lwStart, weekStart)) submLW   += submApv
         }
 
-        if (issApv > 0 && inPeriod(issueDate, monthStart, monthEnd)) issMonth += issApv
+        if (issApv > 0 && inPeriod(issueDate, monthStart, monthEnd)) {
+          issMonth += issApv
+          issMonthItems.push({
+            sfg_id: sfgId, agent: agentName,
+            applicant:  (p.applicant ?? '').trim(),
+            carrier:    (p.carrier   ?? '').trim(),
+            issued_apv: String(p.issued_apv),
+            issue_date: issueDate,
+          })
+        }
 
         const statusLower = status.toLowerCase()
         if (!status || statusLower === 'pending') {
@@ -336,6 +457,7 @@ export default async function handler(req, res) {
 
       const detail = {
         submMonthItems:    submMonthItems.sort((a, b) => a.agent.localeCompare(b.agent)),
+        issMonthItems:     issMonthItems.sort((a, b) => a.agent.localeCompare(b.agent)),
         totalWritersItems: [...totalWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
         newWritersItems:   [...newWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
       }
@@ -386,10 +508,11 @@ export default async function handler(req, res) {
           submit_week:         p.submit_week                    ?? '',
           submit_week_num:     p.submit_week_num                ?? '',
           issue_date:          p.issue_date                     ?? '',
-          app_notes:           p.application_notes              ?? '',
+          application_notes:   p.application_notes              ?? '',
           policy_notes:        p.policy_notes                   ?? '',
           not_in_opt:          p.not_in_opt   ? 'x' : '',
           split_reset:         p.split_reset  ? 'x' : '',
+          chargeback_exempt:   p.chargeback_exempt ?? null,
           cb_month:            formatCbMonth(p.snapshot_chargeback_month),
           cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
           conservation_status: p.conservation_status            ?? '',
@@ -413,27 +536,24 @@ export default async function handler(req, res) {
     }
     try {
       const record = {
-        sfg_id:          f.sfg_id       ? String(f.sfg_id).trim()       : null,
-        agent:           f.agent        ? String(f.agent).trim()        : null,
-        agent_email:     f.agent_email  ? String(f.agent_email).trim()  : null,
-        applicant:       f.applicant    ? String(f.applicant).trim()    : null,
-        carrier:         f.carrier      ? String(f.carrier).trim()      : null,
-        policy_name:     f.policy_type  ? String(f.policy_type).trim()  : null,
-        policy_number:   f.policy_no    ? String(f.policy_no).trim()    : null,
-        face_amount:     parseNum(f.face_amt),
-        submitted_apv:   parseNum(f.subm_apv),
-        issued_apv:      parseNum(f.issued_apv),
-        status:          f.status       ? String(f.status).trim()       : null,
-        submit_date:     parseDate(f.submit_date),
-        submit_week:     parseDate(f.submit_week),
-        submit_week_num: f.submit_week_num ? String(f.submit_week_num).trim() : null,
-        issue_date:      parseDate(f.issue_date),
-        first_time:      ['x','true','1','yes'].includes(String(f.first_time ?? '').trim().toLowerCase()),
-        application_notes: f.app_notes  ? String(f.app_notes).trim()   : null,
-        policy_notes:    f.policy_notes ? String(f.policy_notes).trim() : null,
-        not_in_opt:      ['x','true','1','yes'].includes(String(f.not_in_opt ?? '').trim().toLowerCase()),
-        split_reset:     ['x','true','1','yes'].includes(String(f.split_reset ?? '').trim().toLowerCase()),
-        last_update:     parseDate(f.last_update),
+        sfg_id:            f.sfg_id       ? String(f.sfg_id).trim()      : null,
+        applicant:         f.applicant    ? String(f.applicant).trim()   : null,
+        carrier:           f.carrier      ? String(f.carrier).trim()     : null,
+        policy_name:       f.policy_type  ? String(f.policy_type).trim() : null,
+        policy_number:     f.policy_no    ? String(f.policy_no).trim()   : null,
+        face_amount:       parseNum(f.face_amt),
+        submitted_apv:     parseNum(f.subm_apv),
+        issued_apv:        parseNum(f.issued_apv),
+        status:            f.status       ? String(f.status).trim()      : null,
+        submit_date:       parseDate(f.submit_date),
+        submit_week:       parseDate(f.submit_week),
+        submit_week_num:   f.submit_week_num ? String(f.submit_week_num).trim() : null,
+        issue_date:        parseDate(f.issue_date),
+        application_notes: f.app_notes    ? String(f.app_notes).trim()   : null,
+        policy_notes:      f.policy_notes ? String(f.policy_notes).trim(): null,
+        not_in_opt:        ['x','true','1','yes'].includes(String(f.not_in_opt ?? '').trim().toLowerCase()),
+        split_reset:       ['x','true','1','yes'].includes(String(f.split_reset ?? '').trim().toLowerCase()),
+        last_update:       parseDate(f.last_update),
       }
       const { error } = await supabase.from('policies').insert(record)
       if (error) throw error
@@ -467,20 +587,20 @@ export default async function handler(req, res) {
           if (existing) { skipped++; continue }
         }
         const record = {
-          sfg_id:          row.sfg_id,
+          sfg_id:          row.sfg_id?.toUpperCase() ?? row.sfg_id,
           applicant:       row.applicant,
           carrier:         row.carrier,
           policy_name:     row.policy_name,
           policy_number:   row.policy_number   ?? null,
           face_amount:     row.face_amount      ?? null,
           submitted_apv:   row.submitted_apv    ?? null,
-          status:          row.status           ?? null,
+          issued_apv:      row.issued_apv       ?? null,
+          status:          null,   // status is never imported from CSV — set manually after review
           submit_date:     row.submit_date      ?? null,
           issue_date:      row.issue_date       ?? null,
-          last_update:     row.last_update      ?? null,
+          last_update:     row.submit_date      ?? null,   // use submit date so "This Month" filter aligns with submission period
           submit_week:     row.submit_week      ?? null,
           submit_week_num: row.submit_week_num  ?? null,
-          subtype:         row.subtype          ?? null,
         }
         const { error } = await supabase.from('policies').insert(record)
         if (error) {
@@ -502,15 +622,44 @@ export default async function handler(req, res) {
     if (!id || !updates || typeof updates !== 'object') {
       return res.status(400).json({ error: 'Missing or invalid id or updates' })
     }
+
+    // Whitelist of actual table columns — prevents phantom fields (e.g. derived
+    // "agent" name) from reaching Supabase and causing a 400/500.
+    const ALLOWED_COLS = new Set([
+      'applicant', 'carrier', 'policy_name', 'policy_number',
+      'face_amount', 'submitted_apv', 'issued_apv', 'status',
+      'submit_date', 'submit_week', 'submit_week_num', 'issue_date', 'last_update',
+      'application_notes', 'policy_notes', 'not_in_opt', 'split_reset', 'chargeback_exempt',
+      'conservation_status', 'conservation_date',
+      'snapshot_chargeback_month', 'snapshot_chargeback_apv',
+      'sfg_id',
+    ])
+
     try {
       const coerced = {}
-      for (const [col, val] of Object.entries(updates)) coerced[col] = coerce(col, val)
+      for (const [col, val] of Object.entries(updates)) {
+        if (ALLOWED_COLS.has(col)) coerced[col] = coerce(col, val)
+      }
       const { error } = await supabase.from('policies').update(coerced).eq('id', id)
       if (error) throw error
       return res.status(200).json({ ok: true })
     } catch (err) {
       console.error('[policies/update]', err)
       return res.status(500).json({ error: 'Failed to update policy' })
+    }
+  }
+
+  // ── DELETE /api/policies  (delete single policy by id) ───────────────────
+  if (req.method === 'DELETE') {
+    const { id } = req.body ?? {}
+    if (!id) return res.status(400).json({ error: 'Missing policy id' })
+    try {
+      const { error } = await supabase.from('policies').delete().eq('id', id)
+      if (error) throw error
+      return res.status(200).json({ ok: true })
+    } catch (err) {
+      console.error('[policies/delete]', err)
+      return res.status(500).json({ error: 'Failed to delete policy' })
     }
   }
 

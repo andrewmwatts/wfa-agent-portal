@@ -10,11 +10,25 @@ function isTruthy(val) {
   return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
 }
 
+// Parse a YYYY-MM-DD string as LOCAL midnight (avoids UTC-offset date shifting)
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function toInputDate(str) {
   if (!str) return ''
-  const d = new Date(str)
-  if (isNaN(d)) return str
-  return d.toISOString().slice(0, 10)
+  // If already YYYY-MM-DD, return as-is — no parsing needed
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return String(str)
+  const d = parseDateLocal(str)
+  if (!d || isNaN(d)) return str
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dy = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dy}`
 }
 
 // ─── Director detection (same logic as MetricsSection) ────────────────────────
@@ -22,6 +36,27 @@ function toInputDate(str) {
 function isOwnerRecord(p) {
   const ao = p.named_milestones?.AO ?? []
   return !!(ao[0] && ao[1] && ao[2])
+}
+
+function getBaseshopIds(ownerSfgId, allPersonnel) {
+  const ownerIds = new Set(allPersonnel.filter(isOwnerRecord).map(p => p.sfg_id.toLowerCase()))
+  const childrenOf = {}
+  for (const p of allPersonnel) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+  const root   = ownerSfgId.toLowerCase()
+  const result = new Set()
+  function traverse(id) {
+    result.add(id)
+    for (const child of (childrenOf[id] ?? [])) {
+      if (ownerIds.has(child) && child !== root) continue
+      traverse(child)
+    }
+  }
+  traverse(root)
+  return result
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -44,6 +79,50 @@ function normalizeCarrier(raw) {
   return CARRIER_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
 }
 
+// ─── Chargeback-exempt auto-compute ──────────────────────────────────────────
+// Carriers that have defined chargeback windows for Cancelled/Lapsed policies.
+const CB_RULE_CARRIERS = new Set(['americo', 'banner', 'fidelity and guaranty', 'sbli'])
+
+// "On Snapshot" conservation statuses → always not exempt (chargeback expected)
+const CB_SNAPSHOT_STATUSES = new Set([
+  'declined, on snapshot', 'not taken, on snapshot', 'withdrawn, on snapshot',
+])
+
+// Returns the difference in whole calendar months from fromIso to toIso (YYYY-MM-DD).
+function monthsBetween(fromIso, toIso) {
+  if (!fromIso || !toIso) return null
+  const fm = String(fromIso).match(/^(\d{4})-(\d{2})/)
+  const tm = String(toIso).match(/^(\d{4})-(\d{2})/)
+  if (!fm || !tm) return null
+  return (parseInt(tm[1]) - parseInt(fm[1])) * 12 + (parseInt(tm[2]) - parseInt(fm[2]))
+}
+
+// Returns true (exempt), false (not exempt), or null (cannot determine yet).
+function computeChargebackExempt(conservation_status, conservation_date, issue_date, carrier) {
+  if (!conservation_status?.trim()) return null
+  const status  = conservation_status.trim().toLowerCase()
+  const normCar = (normalizeCarrier(carrier ?? '') ?? '').toLowerCase()
+  const inRuleSet = CB_RULE_CARRIERS.has(normCar)
+
+  // On-Snapshot statuses → not exempt regardless of carrier
+  if (CB_SNAPSHOT_STATUSES.has(status)) return false
+
+  if (inRuleSet) {
+    // Cancelled within 12 months of issue → not exempt (carrier charges back)
+    if (status === 'cancelled') {
+      const mo = monthsBetween(issue_date, conservation_date)
+      if (mo !== null && mo < 12) return false
+    }
+    // Lapsed more than 14 months after issue → not exempt (carrier charges back)
+    if (status === 'lapsed') {
+      const mo = monthsBetween(issue_date, conservation_date)
+      if (mo !== null && mo > 14) return false
+    }
+  }
+
+  return true  // all other cases → exempt
+}
+
 const STATUS_ORDER = ['incomplete', 'pending', 'issued', 'lapse pending',
                       'first premium not paid', 'declined', 'not taken',
                       'withdrawn', 'cancelled', 'lapsed']
@@ -54,23 +133,23 @@ function statusWeight(s) {
 }
 
 function parseDate(str) {
-  if (!str) return null
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
+  return parseDateLocal(str)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(d) {
   if (!d) return '—'
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const dt = parseDateLocal(d)
+  return (!dt || isNaN(dt)) ? String(d) : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function fmtAmt(n) {
-  if (n === null || n === undefined) return '—'
-  if (n === 0) return '$0'
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  if (n === null || n === undefined || n === '') return '—'
+  const num = Number(n)
+  if (isNaN(num)) return '—'
+  if (num === 0) return '$0'
+  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
 // Compare two date strings; nulls sort to the end
@@ -93,6 +172,9 @@ function StatusBadge({ status }) {
     s === 'issued'                 ? 'bg-green-500/20 text-green-600 dark:text-green-300' :
     s === 'lapse pending'          ? 'bg-red-500/20 text-red-500 dark:text-red-300' :
     s === 'first premium not paid' ? 'bg-red-500/20 text-red-500 dark:text-red-300' :
+    s === 'declined'               ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
+    s === 'withdrawn'              ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
+    s === 'not taken'              ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
     FINAL_STATUSES.has(s)         ? 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-white/30' :
                                     'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/60'
   return <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${cls}`}>{status}</span>
@@ -115,11 +197,12 @@ export default function PoliciesPage() {
   const { userProfile }                = useAuth()
   const { theme } = useTheme()
   const [policies,   setPolicies]   = useState([])
-  const [personnel,  setPersonnel]  = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [error,      setError]      = useState(null)
-  const [mode,       setMode]       = useState('master')       // 'master' | 'baseshop'
-  const [isDirector, setIsDirector] = useState(false)
+  const [personnel,        setPersonnel]        = useState([])
+  const [masterPersonnel,  setMasterPersonnel]  = useState([])
+  const [loading,          setLoading]          = useState(true)
+  const [error,            setError]            = useState(null)
+  const [selectedScope,    setSelectedScope]    = useState('master')
+  const [isDirector,       setIsDirector]       = useState(false)
   const [showAddPolicy,   setShowAddPolicy]   = useState(false)
   const [showBulkImport, setShowBulkImport] = useState(false)
 
@@ -190,8 +273,9 @@ export default function PoliciesPage() {
       const root  = sfgId.toLowerCase()
       const isDir = masterPersonnel.some(p => p.sfg_id?.toLowerCase() !== root && isOwnerRecord(p))
       setIsDirector(isDir)
+      setMasterPersonnel(masterPersonnel)
       setPersonnel(masterPersonnel)
-      setMode(isDir ? 'master' : 'baseshop')
+      setSelectedScope(isDir ? 'master' : sfgId)
 
       await loadPolicies(masterPersonnel)
     } catch (e) {
@@ -201,19 +285,18 @@ export default function PoliciesPage() {
     }
   }
 
-  // Called only when user explicitly toggles the mode dropdown
-  async function handleModeChange(newMode) {
+  // Called when user changes the scope dropdown — filters client-side, no re-fetch
+  async function handleScopeChange(scope) {
     if (!activeSubject?.sfg_id) return
-    setMode(newMode)
+    setSelectedScope(scope)
     setLoading(true)
     setError(null)
     try {
-      const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
-      if (!res.ok) throw new Error('Failed to load personnel data')
-      const personnel = await res.json()
-      setPersonnel(personnel)
-      await loadPolicies(personnel)
+      const scoped = scope === 'master'
+        ? masterPersonnel
+        : masterPersonnel.filter(p => getBaseshopIds(scope, masterPersonnel).has(p.sfg_id.toLowerCase()))
+      setPersonnel(scoped)
+      await loadPolicies(scoped)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -246,8 +329,9 @@ export default function PoliciesPage() {
 
   // ── Unique option lists (carrier uses normalized names) ────────────────────
   const statusOptions = useMemo(() => {
-    const s = new Set(policies.map(p => p.status).filter(Boolean))
-    return [...s].sort((a, b) => statusWeight(a) - statusWeight(b))
+    // Deduplicate by lowercase key so "pending" and "Pending" don't both appear
+    const keys = new Set(policies.map(p => p.status?.trim().toLowerCase()).filter(Boolean))
+    return [...keys].sort((a, b) => statusWeight(a) - statusWeight(b))
   }, [policies])
 
   const carrierOptions = useMemo(() => {
@@ -307,7 +391,7 @@ export default function PoliciesPage() {
       if (agentFilter !== 'all' && p.agent?.toLowerCase() !== agentFilter) return false
 
       // ── Search ───────────────────────────────────────────────────────────
-      if (q && !p.applicant?.toLowerCase().includes(q) && !p.agent?.toLowerCase().includes(q)) return false
+      if (q && !p.applicant?.toLowerCase().includes(q) && !p.agent?.toLowerCase().includes(q) && !p.policy_no?.toLowerCase().includes(q)) return false
 
       // ── Custom date range ────────────────────────────────────────────────
       if (customStart || customEnd) {
@@ -344,10 +428,10 @@ export default function PoliciesPage() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const paginated  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // ── Summary stats ──────────────────────────────────────────────────────────
-  const totalSubm = filtered.reduce((s, p) => s + (p.subm_apv ?? 0), 0)
+  // ── Summary stats — always mirror exactly what is currently displayed ──────
+  const totalSubm = filtered.reduce((s, p) => s + (Number(p.subm_apv)  || 0), 0)
   const totalIss  = filtered.reduce((s, p) =>
-    p.status?.toLowerCase() === 'issued' ? s + (p.issued_apv ?? 0) : s, 0)
+    p.status?.toLowerCase() === 'issued' ? s + (Number(p.issued_apv) || 0) : s, 0)
 
   const hasCustomDate      = dateStart || dateEnd
   const hasSecondaryFilter = search || statusFilter !== 'all' || carrierFilter !== 'all' || agentFilter !== 'all' || hasCustomDate
@@ -385,16 +469,25 @@ export default function PoliciesPage() {
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Policies</h3>
           <div className="flex items-center gap-3">
-            {isDirector && (
-              <select
-                value={mode}
-                onChange={e => handleModeChange(e.target.value)}
-                className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-              >
-                <option value="master"   style={optionStyle}>Master Agency</option>
-                <option value="baseshop" style={optionStyle}>My Baseshop</option>
-              </select>
-            )}
+            {isDirector && (() => {
+              const self     = masterPersonnel.find(p => p.sfg_id?.toLowerCase() === activeSubject?.sfg_id?.toLowerCase())
+              const subOwners = masterPersonnel
+                .filter(p => p.sfg_id?.toLowerCase() !== activeSubject?.sfg_id?.toLowerCase() && isOwnerRecord(p))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+              const owners = self ? [self, ...subOwners] : subOwners
+              return (
+                <select
+                  value={selectedScope}
+                  onChange={e => handleScopeChange(e.target.value)}
+                  className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+                >
+                  <option value="master" style={optionStyle}>Master Agency</option>
+                  {owners.map(o => (
+                    <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>{o.name}</option>
+                  ))}
+                </select>
+              )
+            })()}
             <button
               onClick={() => setQuickSearchOpen(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-white/15 hover:border-gray-300 dark:hover:border-white/30 rounded-lg px-2.5 py-1 transition-colors"
@@ -451,7 +544,7 @@ export default function PoliciesPage() {
             </svg>
             <input
               type="text"
-              placeholder="Search client or agent…"
+              placeholder="Search client, agent, or policy no…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/15 dark:text-white dark:placeholder:text-white/25 text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-accent/60"
@@ -463,7 +556,7 @@ export default function PoliciesPage() {
             className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[140px]">
             <option value="all" style={optionStyle}>All Statuses</option>
             {statusOptions.map(s => (
-              <option key={s} value={s.toLowerCase()} style={optionStyle}>{s}</option>
+              <option key={s} value={s} style={optionStyle}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
             ))}
           </select>
 
@@ -553,11 +646,11 @@ export default function PoliciesPage() {
         ) : (
           <>
           <div className="overflow-x-auto -mx-1 mb-4">
-            <table className="w-full text-sm min-w-[860px]">
+            <table className="w-full text-sm min-w-[1060px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Client', 'Carrier', 'Policy', 'Status',
-                    'APV', 'Submit Date', 'Issue Date', 'Last Update'].map(h => (
+                    'APV', 'Submit Date', 'Issue Date', 'Last Update', 'Open Req'].map(h => (
                     <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
                       {h}
                     </th>
@@ -581,7 +674,8 @@ export default function PoliciesPage() {
                     <td className="py-2.5 pr-4 text-gray-600 dark:text-white/60 text-xs tabular-nums whitespace-nowrap">{fmtAmt(p.issued_apv)}</td>
                     <td className="py-2.5 pr-4 text-gray-500 dark:text-white/50 text-xs whitespace-nowrap">{fmtDate(p.submit_date)}</td>
                     <td className="py-2.5 pr-4 text-gray-500 dark:text-white/50 text-xs whitespace-nowrap">{fmtDate(p.issue_date)}</td>
-                    <td className="py-2.5 text-gray-400 dark:text-white/40 text-xs whitespace-nowrap">{fmtDate(p.last_update)}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 dark:text-white/40 text-xs whitespace-nowrap">{fmtDate(p.last_update)}</td>
+                    <td className="py-2.5 text-gray-500 dark:text-white/50 text-xs max-w-[200px] truncate">{p.application_notes || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,6 +736,7 @@ export default function PoliciesPage() {
             setSelected(updated)
             setPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
           }}
+          onDelete={id => setPolicies(prev => prev.filter(p => p.id !== id))}
         />
       )}
 
@@ -687,7 +782,6 @@ function StatChip({ label, value }) {
 
 const POLICY_COL_MAP = {
   applicant:           'applicant',
-  agent:               'agent',
   carrier:             'carrier',
   policy_type:         'policy_name',
   policy_no:           'policy_number',
@@ -699,19 +793,23 @@ const POLICY_COL_MAP = {
   submit_week:         'submit_week',
   issue_date:          'issue_date',
   last_update:         'last_update',
-  app_notes:           'application_notes',
+  application_notes:   'application_notes',
   policy_notes:        'policy_notes',
   not_in_opt:          'not_in_opt',
   split_reset:         'split_reset',
+  chargeback_exempt:   'chargeback_exempt',
   conservation_status: 'conservation_status',
   conservation_date:   'conservation_date',
   cb_month:            'snapshot_chargeback_month',
   cb_apv:              'snapshot_chargeback_apv',
 }
 
+// Fields that must be stored as numbers, not strings
+const POLICY_NUMERIC_KEYS = new Set(['subm_apv', 'issued_apv', 'face_amt', 'cb_apv'])
+
 const INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
-const STATUS_OPTIONS = ['pending', 'incomplete', 'issued', 'declined', 'withdrawn', 'not taken']
+const STATUS_OPTIONS = ['Pending', 'Incomplete', 'Issued', 'Declined', 'Withdrawn', 'Not taken']
 
 const CONSERVATION_STATUS_OPTIONS = [
   'Cancelled',
@@ -724,11 +822,14 @@ const CONSERVATION_STATUS_OPTIONS = [
   'Withdrawn, On Snapshot',
 ]
 
-function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
-  const [editing,   setEditing]   = useState(false)
-  const [draft,     setDraft]     = useState(null)
-  const [saving,    setSaving]    = useState(false)
-  const [saveError, setSaveError] = useState(null)
+function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete }) {
+  const [editing,         setEditing]         = useState(false)
+  const [draft,           setDraft]           = useState(null)
+  const [saving,          setSaving]          = useState(false)
+  const [saveError,       setSaveError]       = useState(null)
+  const [confirmDelete,   setConfirmDelete]   = useState(false)
+  const [deleting,        setDeleting]        = useState(false)
+  const [confirmNotInOpt, setConfirmNotInOpt] = useState(false)
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -752,14 +853,61 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
     setDraft(d => ({ ...d, [key]: value }))
   }
 
-  async function handleSave() {
+  // Like setField but also recomputes chargeback_exempt whenever conservation
+  // status or date changes — result overwrites only if deterministic (non-null).
+  function setConservationField(key, value) {
+    setDraft(d => {
+      const updated = { ...d, [key]: value }
+      const exempt = computeChargebackExempt(
+        updated.conservation_status,
+        updated.conservation_date,
+        updated.issue_date,
+        updated.carrier,
+      )
+      if (exempt !== null) updated.chargeback_exempt = exempt
+      return updated
+    })
+  }
+
+  const NOT_IN_OPT_DELETE_STATUSES = ['declined', 'withdrawn', 'not taken']
+
+  function handleSave() {
+    if (!draft) return
+    const s = draft.status?.toLowerCase()
+    if (draft.not_in_opt && NOT_IN_OPT_DELETE_STATUSES.includes(s)) {
+      setConfirmNotInOpt(true)
+      return
+    }
+    doSave()
+  }
+
+  async function doSave() {
     if (!draft) return
     setSaving(true)
     setSaveError(null)
     try {
+      // When transitioning to Issued: clear open requirements and stamp issue date as last update
+      const becomingIssued = draft.status?.toLowerCase() === 'issued' && p.status?.toLowerCase() !== 'issued'
+      const effectiveDraft = becomingIssued
+        ? { ...draft, application_notes: '', last_update: draft.issue_date || new Date().toISOString().slice(0, 10) }
+        : draft
+
+      // Coerce numeric fields so local state and the API payload both stay typed correctly
+      const typedDraft = { ...effectiveDraft }
+      for (const key of POLICY_NUMERIC_KEYS) {
+        const v = typedDraft[key]
+        typedDraft[key] = (v === '' || v === null || v === undefined) ? null : Number(v) || 0
+      }
+
       const updates = {}
       for (const [key, col] of Object.entries(POLICY_COL_MAP)) {
-        updates[col] = String(draft[key] ?? '')
+        const v = typedDraft[key]
+        updates[col] = POLICY_NUMERIC_KEYS.has(key) ? v : String(v ?? '')
+      }
+      // chargeback_exempt is nullable — omit it entirely if never computed
+      // so we don't accidentally overwrite a null DB value with false
+      if (typedDraft.chargeback_exempt === null || typedDraft.chargeback_exempt === undefined) {
+        delete updates['chargeback_exempt']
       }
       const res = await fetch('/api/policies', {
         method: 'PUT',
@@ -770,13 +918,35 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Save failed')
       }
-      onUpdate?.(draft)
+      onUpdate?.(typedDraft)
       setEditing(false)
       setDraft(null)
     } catch (e) {
       setSaveError(e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/policies', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: p.id }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Delete failed')
+      }
+      onDelete?.(p.id)
+      onClose()
+    } catch (e) {
+      setSaveError(e.message)
+      setConfirmDelete(false)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -820,6 +990,12 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
             {editing && (
               <>
                 <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  Delete
+                </button>
+                <button
                   onClick={cancelEdit}
                   className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
                 >
@@ -854,6 +1030,53 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
           </div>
         )}
 
+        {/* Delete confirmation */}
+        {confirmDelete && (
+          <div className="mx-6 mt-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg flex items-center justify-between gap-4">
+            <p className="text-sm text-red-700 dark:text-red-300">
+              Permanently delete this policy? This cannot be undone.
+            </p>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {confirmNotInOpt && (
+          <div className="mx-6 mt-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg flex items-center justify-between gap-4">
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              This policy is not in Opt. Would you like to delete it?
+            </p>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => { setConfirmNotInOpt(false); doSave() }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+              >
+                No, keep it
+              </button>
+              <button
+                onClick={() => { setConfirmNotInOpt(false); handleDelete() }}
+                disabled={deleting}
+                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Body */}
         <div className="p-6 space-y-6">
 
@@ -862,6 +1085,17 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                 <EditField label="Agent" value={draft.agent} onChange={v => setField('agent', v)} />
                 <EditField label="Client" value={draft.applicant} onChange={v => setField('applicant', v)} />
+                <div className="col-span-2">
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
+                  <select
+                    value={draft.status ?? ''}
+                    onChange={e => setField('status', e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">— select —</option>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
                 <EditField label="Submit Date" value={toInputDate(draft.submit_date)} onChange={v => setField('submit_date', v)} type="date" />
                 <EditField label="Issue Date" value={toInputDate(draft.issue_date)} onChange={v => setField('issue_date', v)} type="date" />
                 <EditField label="Last Update" value={toInputDate(draft.last_update)} onChange={v => setField('last_update', v)} type="date" />
@@ -884,17 +1118,6 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
                 <EditField label="Policy Type" value={draft.policy_type} onChange={v => setField('policy_type', v)} />
                 <EditField label="Policy No." value={draft.policy_no} onChange={v => setField('policy_no', v)} />
                 <EditField label="Face Amount" value={draft.face_amt} onChange={v => setField('face_amt', v)} />
-                <div className="col-span-2">
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
-                  <select
-                    value={draft.status ?? ''}
-                    onChange={e => setField('status', e.target.value)}
-                    className={INPUT_CLS}
-                  >
-                    <option value="">— select —</option>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
               </div>
             ) : (
               <DetailGrid>
@@ -942,14 +1165,14 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
               <div>
                 <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Application Notes</p>
                 <textarea
-                  value={draft.app_notes ?? ''}
-                  onChange={e => setField('app_notes', e.target.value)}
+                  value={draft.application_notes ?? ''}
+                  onChange={e => setField('application_notes', e.target.value)}
                   rows={3}
                   className={INPUT_CLS + ' resize-y'}
                 />
               </div>
-            ) : display.app_notes ? (
-              <p className="text-sm text-amber-300/90 leading-relaxed">{display.app_notes}</p>
+            ) : display.application_notes ? (
+              <p className="text-sm text-amber-300/90 leading-relaxed">{display.application_notes}</p>
             ) : (
               <p className="text-sm text-gray-400 dark:text-white/30">—</p>
             )}
@@ -979,23 +1202,33 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
                   <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Conservation Status</p>
                   <select
                     value={draft.conservation_status ?? ''}
-                    onChange={e => setField('conservation_status', e.target.value)}
+                    onChange={e => setConservationField('conservation_status', e.target.value)}
                     className={INPUT_CLS}
                   >
                     <option value="">—</option>
                     {CONSERVATION_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <EditField label="Expected Date" value={toInputDate(draft.conservation_date)} onChange={v => setField('conservation_date', v)} type="date" />
+                <EditField label="Expected Date" value={toInputDate(draft.conservation_date)} onChange={v => setConservationField('conservation_date', v)} type="date" />
                 <EditField label="Snapshot Chargeback Month" value={draft.cb_month ?? ''} onChange={v => setField('cb_month', v)} />
                 <EditField label="Snapshot Chargeback APV" value={draft.cb_apv ?? ''} onChange={v => setField('cb_apv', v)} />
+                <div className="col-span-2 pt-1">
+                  <CheckEditField
+                    label="Chargeback Exempt"
+                    checked={draft.chargeback_exempt === true}
+                    onChange={v => setField('chargeback_exempt', v)}
+                  />
+                </div>
               </div>
-            ) : (display.conservation_status || display.conservation_date || display.cb_month || display.cb_apv) ? (
+            ) : (display.conservation_status || display.conservation_date || display.cb_month || display.cb_apv || display.chargeback_exempt != null) ? (
               <DetailGrid>
                 <DetailItem label="Status"        value={display.conservation_status} />
                 <DetailItem label="Expected Date" value={fmtDate(display.conservation_date)} />
                 <DetailItem label="Snapshot Chargeback Month" value={display.cb_month} />
                 <DetailItem label="Snapshot Chargeback APV"   value={display.cb_apv} />
+                {display.chargeback_exempt != null && (
+                  <CheckItem label="Chargeback Exempt" value={String(display.chargeback_exempt)} />
+                )}
               </DetailGrid>
             ) : (
               <p className="text-sm text-gray-400 dark:text-white/30">—</p>

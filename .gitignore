@@ -22,3 +22,7 @@ Thumbs.db
 npm-debug.log*
 
 .vercel
+
+# Reference / scratch HTML exports
+*.html
+*_files/

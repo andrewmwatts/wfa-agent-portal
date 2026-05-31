@@ -283,6 +283,7 @@ export default function MonthlyAgentTotalsPage() {
   const [mode,             setMode]             = useState('master')
   const [isDirector,       setIsDirector]       = useState(false)
   const [modal,            setModal]            = useState(null)
+  const [includeLikelyCb,  setIncludeLikelyCb]  = useState(false)
 
   const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 
@@ -427,6 +428,26 @@ export default function MonthlyAgentTotalsPage() {
     return { amounts, pols }
   }, [policies, selectedYear, selectedMonth])
 
+  // ── Likely-chargeback memo ────────────────────────────────────────────────
+  // Policies where chargeback_exempt = false AND conservation_date falls in the
+  // selected month. Represents expected carrier chargebacks not yet posted.
+  const likelyCbMemo = useMemo(() => {
+    const amounts = {}
+    const pols    = {}
+    for (const p of policies) {
+      if (p.chargeback_exempt !== false) continue   // null = unknown, true = exempt
+      const cbYm = toYearMonth(p.conservation_date)
+      if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
+      const amt = p.issued_apv ?? 0
+      if (!amt) continue
+      const id = p.sfg_id?.toLowerCase()
+      if (!id) continue
+      amounts[id] = (amounts[id] ?? 0) + amt
+      ;(pols[id] ??= []).push(p)
+    }
+    return { amounts, pols }
+  }, [policies, selectedYear, selectedMonth])
+
   // ── Week columns — one per Friday in the selected month ───────────────────
   // Uses computed Friday dates so a 5-Friday month always shows 5 columns.
   // Date labels are pulled from policy data when available (prefer data over computed).
@@ -469,11 +490,17 @@ export default function MonthlyAgentTotalsPage() {
 
       const hasDownlines = descSet.size > 1
 
-      // Chargebacks
+      // Snapshot chargebacks (posted, via cb_month / cb_apv)
       const ownCb      = chargebackMemo.amounts[id] ?? 0
       const teamCb     = [...descSet].reduce((s, tid) => s + (chargebackMemo.amounts[tid] ?? 0), 0)
       const ownCbPols  = chargebackMemo.pols[id] ?? []
       const teamCbPols = [...descSet].flatMap(tid => chargebackMemo.pols[tid] ?? [])
+
+      // Likely chargebacks (chargeback_exempt=false, conservation_date in selected month)
+      const ownLikelyCbAmt   = likelyCbMemo.amounts[id] ?? 0
+      const teamLikelyCbAmt  = [...descSet].reduce((s, tid) => s + (likelyCbMemo.amounts[tid] ?? 0), 0)
+      const ownLikelyCbPols  = includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
+      const teamLikelyCbPols = includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
 
       // Status predicates
       const isIssued  = p => p.status?.toLowerCase() === 'issued'
@@ -490,10 +517,10 @@ export default function MonthlyAgentTotalsPage() {
 
       // APV sums — always use issued_apv; chargebacks reduce issued totals
       const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
-      const agentIssued     = sumApv(agentIssuedPols) - ownCb
+      const agentIssued     = sumApv(agentIssuedPols) - ownCb  - (includeLikelyCb ? ownLikelyCbAmt  : 0)
       const agentPending    = sumApv(agentPendingPols)
       const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb
+      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb - (includeLikelyCb ? teamLikelyCbAmt : 0)
       const teamPending     = sumApv(teamPendingPols)
       const teamIncomplete  = sumApv(teamIncompletePols)
 
@@ -564,6 +591,7 @@ export default function MonthlyAgentTotalsPage() {
         agentIssuedPols, agentPendingPols, agentIncompletePols,
         teamIssuedPols: teamIssuedPolsList, teamPendingPols, teamIncompletePols,
         ownCbPols, teamCbPols,
+        ownLikelyCbPols, teamLikelyCbPols,
       }
     })
     // Only show agents with at least one non-zero APV field (includes negatives from chargebacks)
@@ -573,7 +601,7 @@ export default function MonthlyAgentTotalsPage() {
     )
     // Alphabetical by name
     .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, isCurrentMonth, weekColumns])
+  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, likelyCbMemo, includeLikelyCb, isCurrentMonth, weekColumns])
 
   // ── Year options ───────────────────────────────────────────────────────────
   const yearOptions = []
@@ -622,6 +650,19 @@ export default function MonthlyAgentTotalsPage() {
             <option value="baseshop" style={optionStyle}>My Baseshop</option>
           </select>
         )}
+
+        {/* Likely-chargeback toggle */}
+        <button
+          onClick={() => setIncludeLikelyCb(v => !v)}
+          className={`ml-auto flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+            includeLikelyCb
+              ? 'bg-orange-500/10 border-orange-400/40 text-orange-600 dark:text-orange-400'
+              : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:border-gray-300 dark:hover:border-white/25'
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${includeLikelyCb ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/25'}`} />
+          Possible chargebacks
+        </button>
       </div>
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
@@ -724,14 +765,15 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
 function PolicyBreakdownModal({ modal, onClose }) {
   if (!modal) return null
 
-  const { title, pols = [], cbPols = [], showAgent, apvField, showNotes } = modal
+  const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes } = modal
 
   // Sort main policies by APV descending
   const sorted = [...pols].sort((a, b) => (b[apvField] ?? 0) - (a[apvField] ?? 0))
 
-  // Running total (positive policies minus chargebacks)
+  // Running total (positive policies minus chargebacks and likely chargebacks)
   const total = pols.reduce((s, p) => s + (p[apvField] ?? 0), 0)
               - cbPols.reduce((s, p) => s + parseCbApv(p.cb_apv), 0)
+              - likelyCbPols.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
 
   const thCls = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 whitespace-nowrap'
   const tdCls = 'px-4 py-2 text-xs text-gray-700 dark:text-white/80'
@@ -769,7 +811,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-              {sorted.length === 0 && cbPols.length === 0 ? (
+              {sorted.length === 0 && cbPols.length === 0 && likelyCbPols.length === 0 ? (
                 <tr>
                   <td colSpan={2 + (showAgent ? 1 : 0) + 1 + (showNotes ? 1 : 0)}
                       className="px-4 py-8 text-center text-xs text-gray-400 dark:text-white/30">
@@ -786,7 +828,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       <td className={`${tdCls} text-right tabular-nums`}>{fmtAmt(p[apvField])}</td>
                       {showNotes && (
                         <td className={`${tdCls} text-gray-500 dark:text-white/55 max-w-xs`}>
-                          {p.app_notes || <span className="text-gray-300 dark:text-white/20">—</span>}
+                          {p.application_notes || <span className="text-gray-300 dark:text-white/20">—</span>}
                         </td>
                       )}
                     </tr>
@@ -805,6 +847,20 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       {showNotes && <td />}
                     </tr>
                   ))}
+                  {likelyCbPols.map((p, i) => (
+                    <tr key={`lcb-${i}`} className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                      <td className={`${tdCls} text-gray-500 dark:text-white/50`}>
+                        {p.applicant || '—'}
+                        <span className="ml-1.5 text-[10px] font-semibold text-orange-500 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 px-1 py-0.5 rounded">LC</span>
+                      </td>
+                      <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.carrier || '—'}</td>
+                      {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
+                      <td className={`${tdCls} text-right tabular-nums text-orange-500 dark:text-orange-400 font-medium`}>
+                        {fmtAmt(-(p.issued_apv ?? 0))}
+                      </td>
+                      {showNotes && <td />}
+                    </tr>
+                  ))}
                 </>
               )}
             </tbody>
@@ -814,8 +870,10 @@ function PolicyBreakdownModal({ modal, onClose }) {
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0">
           <span className="text-xs text-gray-400 dark:text-white/35">
-            {sorted.length + cbPols.length} {sorted.length + cbPols.length === 1 ? 'policy' : 'policies'}
+            {sorted.length + cbPols.length + likelyCbPols.length}{' '}
+            {sorted.length + cbPols.length + likelyCbPols.length === 1 ? 'policy' : 'policies'}
             {cbPols.length > 0 && ` (${cbPols.length} CB)`}
+            {likelyCbPols.length > 0 && ` (${likelyCbPols.length} LC)`}
           </span>
           <span className="text-sm font-semibold text-gray-900 dark:text-white">
             Total: {fmtAmt(total)}
@@ -837,13 +895,14 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
     const cls = v > 0 ? 'text-gray-700 dark:text-white/80'
               : v < 0 ? 'text-red-500 dark:text-red-400 font-medium'
               :         'text-gray-300 dark:text-white/20'
-    const clickable = modalConfig && v !== 0
+    const hasChargebacks = (modalConfig?.cbPols?.length ?? 0) > 0 || (modalConfig?.likelyCbPols?.length ?? 0) > 0
+    const clickable = modalConfig && (v !== 0 || hasChargebacks)
     return (
       <td
         className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap ${cls} ${clickable ? 'cursor-pointer hover:underline' : ''}`}
         onClick={clickable ? () => onCellClick(modalConfig) : undefined}
       >
-        {v !== 0 ? fmtAmt(v) : '—'}
+        {(v !== 0 || clickable) ? fmtAmt(v) : '—'}
       </td>
     )
   }
@@ -913,6 +972,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
       {/* Agent APVs */}
       {apvCell(r.agentIssued, true,
         { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols,
+          likelyCbPols: r.ownLikelyCbPols,
           showAgent: false, apvField: 'issued_apv', showNotes: false })}
       {apvCell(r.agentPending, false,
         { title: `${r.name} — Agent Pending`, pols: r.agentPendingPols, cbPols: [],
@@ -924,6 +984,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
       {/* Team APVs */}
       {apvCell(r.teamIssued, true,
         { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols,
+          likelyCbPols: r.teamLikelyCbPols,
           showAgent: true, apvField: 'issued_apv', showNotes: false })}
       {apvCell(r.teamPending, false,
         { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [],

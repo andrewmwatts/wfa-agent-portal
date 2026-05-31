@@ -59,7 +59,7 @@ export default function TeamSection({ subject, canWrite }) {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const active        = members.filter(m => m.is_active).length
   const inTraining    = members.filter(m => m.onboardingCompleted !== null && (totalLessons === 0 || m.onboardingCompleted < totalLessons)).length
-  const newThisMonth  = members.filter(m => m.hire_date && new Date(m.hire_date) >= monthStart).length
+  const newThisMonth  = members.filter(m => m.hire_date && (parseDateLocal(m.hire_date) ?? 0) >= monthStart).length
 
   if (loading) return (
     <SectionShell title="Team">
@@ -171,6 +171,16 @@ function ProgressBar({ pct }) {
   )
 }
 
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function fmtDate(d) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (!d) return '—'
+  const dt = parseDateLocal(d)
+  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }

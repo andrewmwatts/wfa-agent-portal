@@ -109,8 +109,16 @@ function ContractingCell({ toProducerDate, complete }) {
   return <span className="text-xs bg-gray-100 text-gray-400 dark:bg-white/10 dark:text-white/40 font-medium px-2 py-0.5 rounded-full">Not Started</span>
 }
 
+function parseDateLocal(str) {
+  if (!str) return null
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function fmtDate(d) {
   if (!d) return '—'
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const dt = parseDateLocal(d)
+  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }

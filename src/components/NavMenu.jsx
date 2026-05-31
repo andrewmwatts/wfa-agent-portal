@@ -2,22 +2,41 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-// Roles that unlock leader-level pages
 const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
-const ADMIN_ROLES  = new Set(['super_admin'])
+const OWNER_ROLES  = new Set(['owner', 'super_admin'])
 
-const NAV_ITEMS = [
-  { path: '/dashboard',            label: 'Dashboard'            },
-  { path: '/policies',             label: 'Policies'             },
-  { path: '/lapse',                label: 'Lapse / Pending Lapse'},
-  { path: '/monthly-metrics',      label: 'Monthly Metrics'      },
-  { path: '/weekly-metrics',       label: 'Weekly Metrics'       },
-  // Leader+ only
-  { path: '/onboarding',           label: 'Onboarding',           roles: LEADER_ROLES },
-  { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
-  { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
-  // Admin only
-  { path: '/agents',               label: 'Agents',               roles: ADMIN_ROLES  },
+const NAV_SECTIONS = [
+  {
+    items: [
+      { path: '/dashboard', label: 'Dashboard' },
+    ],
+  },
+  {
+    label: 'Business',
+    items: [
+      { path: '/policies', label: 'Policies'              },
+      { path: '/lapse',    label: 'Lapse / Pending Lapse' },
+      { path: '/activity', label: 'Activity Tracking'     },
+      { path: '/leads',    label: 'Leads'                 },
+    ],
+  },
+  {
+    label: 'Owner',
+    items: [
+      { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
+      { path: '/onboarding',           label: 'Onboarding',           roles: LEADER_ROLES },
+      { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
+      { path: '/agents',               label: 'Agents',               roles: OWNER_ROLES  },
+    ],
+  },
+  {
+    label: 'Analytics',
+    items: [
+      { path: '/monthly-metrics',  label: 'Monthly Metrics'  },
+      { path: '/weekly-metrics',   label: 'Weekly Metrics'   },
+      { path: '/carrier-metrics',  label: 'Carrier Metrics'  },
+    ],
+  },
 ]
 
 export default function NavMenu() {
@@ -28,7 +47,10 @@ export default function NavMenu() {
   const { userProfile } = useAuth()
 
   const role = userProfile?.role ?? 'agent'
-  const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.has(role))
+
+  const allVisible = NAV_SECTIONS.flatMap(s =>
+    s.items.filter(item => !item.roles || item.roles.has(role))
+  )
 
   useEffect(() => {
     function handleClick(e) {
@@ -38,7 +60,7 @@ export default function NavMenu() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const active = visibleItems.find(i => i.path === location.pathname) ?? visibleItems[0]
+  const active = allVisible.find(i => i.path === location.pathname) ?? allVisible[0]
 
   return (
     <div ref={ref} className="relative">
@@ -59,20 +81,33 @@ export default function NavMenu() {
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-1.5 w-52 bg-white border border-gray-200 dark:bg-primary dark:border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden">
-          {visibleItems.map(item => (
-            <button
-              key={item.path}
-              onClick={() => { navigate(item.path); setOpen(false) }}
-              className={`w-full text-left px-4 py-2.5 text-sm transition-colors
-                ${location.pathname === item.path
-                  ? 'text-accent bg-accent/10 font-medium'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-white/75 dark:hover:text-white dark:hover:bg-white/10'
-                }`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="absolute left-0 mt-1.5 w-52 bg-white border border-gray-200 dark:bg-primary dark:border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+          {NAV_SECTIONS.map((section, si) => {
+            const visibleItems = section.items.filter(item => !item.roles || item.roles.has(role))
+            if (!visibleItems.length) return null
+            return (
+              <div key={si} className={si > 0 ? 'mt-1' : ''}>
+                {section.label && (
+                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30">
+                    {section.label}
+                  </p>
+                )}
+                {visibleItems.map(item => (
+                  <button
+                    key={item.path}
+                    onClick={() => { navigate(item.path); setOpen(false) }}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors
+                      ${location.pathname === item.path
+                        ? 'text-accent bg-accent/10 font-medium'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-white/75 dark:hover:text-white dark:hover:bg-white/10'
+                      }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

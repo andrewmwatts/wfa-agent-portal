@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import PWAUpdatePrompt from './components/PWAUpdatePrompt'
 import { AgencyProvider } from './context/AgencyContext'
 import { ViewingProvider } from './context/ViewingContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -19,10 +20,13 @@ import AgentsPage from './pages/AgentsPage'
 import CoachingPage from './pages/CoachingPage'
 import ActivityPage from './pages/ActivityPage'
 import LeadsPage from './pages/LeadsPage'
+import RecruitingPage from './pages/RecruitingPage'
+import CarrierMetricsPage from './pages/CarrierMetricsPage'
 import Admin from './pages/Admin'
 
 export default function App() {
   return (
+    <>
     <ThemeProvider>
     <AuthProvider>
       <AgencyProvider>
@@ -39,10 +43,12 @@ export default function App() {
                 <Route path="/dashboard"       element={<Dashboard />} />
                 <Route path="/policies"        element={<PoliciesPage />} />
                 <Route path="/lapse"           element={<LapsePage />} />
-                <Route path="/monthly-metrics" element={<MonthlyMetricsPage />} />
-                <Route path="/weekly-metrics"  element={<WeeklyMetricsPage />} />
+                <Route path="/monthly-metrics"  element={<MonthlyMetricsPage />} />
+                <Route path="/weekly-metrics"   element={<WeeklyMetricsPage />} />
+                <Route path="/carrier-metrics"  element={<CarrierMetricsPage />} />
                 <Route path="/activity"        element={<ActivityPage />} />
                 <Route path="/leads"           element={<LeadsPage />} />
+                <Route path="/recruiting"      element={<RecruitingPage />} />
               </Route>
             </Route>
 
@@ -77,5 +83,7 @@ export default function App() {
       </AgencyProvider>
     </AuthProvider>
     </ThemeProvider>
+    <PWAUpdatePrompt />
+    </>
   )
 }
