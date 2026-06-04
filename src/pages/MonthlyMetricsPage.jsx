@@ -5,34 +5,8 @@ import {
 } from 'recharts'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function isOwnerRecord(p) {
-  const ao = p.named_milestones?.AO ?? []
-  return !!(ao[0] && ao[1])
-}
-
-function getBaseshopIds(ownerSfgId, allPersonnel) {
-  const ownerIds = new Set(allPersonnel.filter(isOwnerRecord).map(p => p.sfg_id.toLowerCase()))
-  const childrenOf = {}
-  for (const p of allPersonnel) {
-    const up = p.upline_sfg_id?.trim().toLowerCase()
-    if (!up) continue
-    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
-  }
-  const root   = ownerSfgId.toLowerCase()
-  const result = new Set()
-  function traverse(id) {
-    result.add(id)
-    for (const child of (childrenOf[id] ?? [])) {
-      if (ownerIds.has(child) && child !== root) continue
-      traverse(child)
-    }
-  }
-  traverse(root)
-  return result
-}
+import ScopeDropdown from '../components/ScopeDropdown'
+import { getBaseshopIds } from '../utils/agencyScope'
 
 function parseAmt(v) {
   if (v === null || v === undefined) return 0
@@ -84,7 +58,6 @@ function fmtPct(v) {
   return `${(v * 100).toFixed(1)}%`
 }
 
-const FINAL_STATUSES = new Set(['issued','declined','not taken','withdrawn','cancelled','lapsed'])
 
 // ─── Monthly aggregation ──────────────────────────────────────────────────────
 
@@ -103,10 +76,15 @@ function buildMonthly(policies) {
     if (!agentFirst[id] || ym < agentFirst[id]) agentFirst[id] = ym
   }
 
+  // Pace projection factor for current month (same as Dashboard)
+  const daysInMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const daysElapsed  = Math.max(now.getDate(), 1)
+  const projFactor   = daysInMonth / daysElapsed
+
   // Per-month buckets
   const byMonth = {}
   const ensure  = ym => {
-    if (!byMonth[ym]) byMonth[ym] = { subm: 0, iss: 0, pending: 0, agents: new Set() }
+    if (!byMonth[ym]) byMonth[ym] = { subm: 0, iss: 0, agents: new Set() }
     return byMonth[ym]
   }
 
@@ -117,9 +95,6 @@ function buildMonthly(policies) {
       const b = ensure(submYM)
       b.subm += parseAmt(p.subm_apv)
       if (p.sfg_id) b.agents.add(p.sfg_id.toLowerCase())
-      if (submYM === curYM && !FINAL_STATUSES.has(p.status?.toLowerCase() ?? '')) {
-        b.pending += parseAmt(p.subm_apv)
-      }
     }
 
     if (p.status?.toLowerCase() === 'issued') {
@@ -130,18 +105,12 @@ function buildMonthly(policies) {
 
   const allYMs = Object.keys(byMonth).sort()
 
-  // Rolling 6-month close rate for projection
-  const recent = allYMs.filter(ym => ym < curYM).slice(-6)
-  const rSubm  = recent.reduce((s, ym) => s + byMonth[ym].subm, 0)
-  const rIss   = recent.reduce((s, ym) => s + byMonth[ym].iss,  0)
-  const rate   = rSubm > 0 ? rIss / rSubm : 0.75
-
   return allYMs.map(ym => {
     const b        = byMonth[ym]
     const submApv  = Math.round(b.subm)
     const issApv   = Math.round(b.iss)
     const isCur    = ym === curYM
-    const projApv  = isCur ? Math.round(issApv + b.pending * rate) : issApv
+    const projApv  = isCur ? Math.round(issApv * projFactor) : issApv
     const newW     = Object.values(agentFirst).filter(f => f === ym).length
     const closeRate = submApv > 0 ? issApv / submApv : 0
 
@@ -166,13 +135,12 @@ export default function MonthlyMetricsPage() {
   const { activeSubject } = useViewing()
   const { theme } = useTheme()
 
+  const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [policies, setPolicies]               = useState([])
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [loading, setLoading]                 = useState(false)
   const [selectedScope, setSelectedScope]     = useState('master')
-  const [isDirector, setIsDirector]           = useState(false)
 
-  const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 
   // ── Single init effect — fetches master, detects director, loads data once ──
   useEffect(() => {
@@ -183,16 +151,13 @@ export default function MonthlyMetricsPage() {
 
   async function initLoad(sfgId) {
     try {
-      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
-      const masterPersonnel = masterRes.ok ? await masterRes.json() : []
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master&include=policies`)
+      if (!res.ok) return
+      const { personnel: masterPersonnel, policies: rows } = await res.json()
 
-      const root  = sfgId.toLowerCase()
-      const isDir = masterPersonnel.some(p => p.sfg_id?.toLowerCase() !== root && isOwnerRecord(p))
-      setIsDirector(isDir)
       setMasterPersonnel(masterPersonnel)
-      setSelectedScope(isDir ? 'master' : sfgId)
-
-      await loadPolicies(masterPersonnel)
+      setSelectedScope('master')
+      setPolicies(rows ?? [])
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
@@ -265,23 +230,14 @@ export default function MonthlyMetricsPage() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Monthly Metrics</h1>
-        {isDirector && (() => {
-          const owners = masterPersonnel
-            .filter(p => p.sfg_id?.toLowerCase() !== activeSubject?.sfg_id?.toLowerCase() && isOwnerRecord(p))
-            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-          return (
-            <select
-              value={selectedScope}
-              onChange={e => handleScopeChange(e.target.value)}
-              className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-            >
-              <option value="master" style={optionStyle}>Master Agency</option>
-              {owners.map(o => (
-                <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>{o.name}</option>
-              ))}
-            </select>
-          )
-        })()}
+        {isDirector && (
+          <ScopeDropdown
+            masterPersonnel={masterPersonnel}
+            selfId={activeSubject?.sfg_id}
+            value={selectedScope}
+            onChange={handleScopeChange}
+          />
+        )}
       </div>
 
       {loading ? (
@@ -425,11 +381,6 @@ export default function MonthlyMetricsPage() {
                         {/* Issued APV */}
                         <td className={`px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.iss_apv, maxIssApv) ? maxCls : normCls}`}>
                           {fmtApv(r.iss_apv)}
-                          {r.is_current && r.proj_iss_apv > r.iss_apv && (
-                            <span className="block text-xs text-gray-400 dark:text-white/30">
-                              proj. {fmtApv(r.proj_iss_apv)}
-                            </span>
-                          )}
                         </td>
 
                         {/* Close Rate */}

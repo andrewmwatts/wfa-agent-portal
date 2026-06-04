@@ -181,31 +181,27 @@ export default function LeadsPage() {
     if (!sfgId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/leads?sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
-      if (res.ok) { const { leads: d } = await res.json(); setLeads(d) }
+      // include=scripts returns leads + scripts in one round-trip; personnel fetched
+      // in parallel for opt_name since it's a separate function endpoint.
+      const enc = encodeURIComponent(sfgId)
+      const [leadsRes, personnelRes] = await Promise.all([
+        fetch(`/api/leads?sfg_id=${enc}&include=scripts`, { headers: authHeaders() }),
+        fetch(`/api/personnel?sfg_id=${enc}`, { headers: authHeaders() }),
+      ])
+      if (leadsRes.ok) {
+        const { leads: d, scripts: s } = await leadsRes.json()
+        setLeads(d ?? [])
+        setScripts(s ?? [])
+      }
+      if (personnelRes.ok) {
+        const data = await personnelRes.json()
+        const rec = Array.isArray(data) ? data[0] : data
+        setSubjectOptName(rec?.opt_name?.trim() || '')
+      }
     } finally { setLoading(false) }
   }, [sfgId])
 
-  const loadScripts = useCallback(async () => {
-    if (!sfgId) return
-    const res = await fetch(`/api/leads?resource=scripts&sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
-    if (res.ok) { const { scripts: d } = await res.json(); setScripts(d) }
-  }, [sfgId])
-
   useEffect(() => { loadLeads() }, [loadLeads])
-  useEffect(() => { loadScripts() }, [loadScripts])
-
-  useEffect(() => {
-    if (!sfgId) return
-    setSubjectOptName('')
-    fetch(`/api/personnel?sfg_id=${encodeURIComponent(sfgId)}`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => {
-        const rec = Array.isArray(data) ? data[0] : data
-        setSubjectOptName(rec?.opt_name?.trim() || '')
-      })
-      .catch(() => {})
-  }, [sfgId])
 
   async function openLead(lead) {
     setSelected(lead)
@@ -788,16 +784,7 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
                 📅 {cbOverdue ? 'Overdue' : cbToday ? 'Today' : fmtDateTime(l.callback_at)}
               </span>
             )}
-            {l.last_activity_at && (
-              <span className="text-[10px] text-gray-400 dark:text-white/30 ml-auto">
-                {fmtRelTime(l.last_activity_at)}
-              </span>
-            )}
           </div>
-
-          {l.last_activity_text && (
-            <p className="text-xs text-gray-400 dark:text-white/30 mt-1 truncate">{l.last_activity_text}</p>
-          )}
         </div>
       </div>
     </>

@@ -69,6 +69,7 @@ export default function RecruitingPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [sortDesc,     setSortDesc]     = useState(true)
+  const [hideTerminal, setHideTerminal] = useState(false)
   const [showSetup,    setShowSetup]    = useState(false)
 
   // Detail panel
@@ -92,24 +93,18 @@ export default function RecruitingPage() {
     setLoading(true)
     try {
       const res = await fetch(
-        `/api/leads?sfg_id=${encodeURIComponent(sfgId)}&category=recruiting`,
+        `/api/leads?sfg_id=${encodeURIComponent(sfgId)}&category=recruiting&include=scripts`,
         { headers: authHeaders() },
       )
-      if (res.ok) { const { leads: d } = await res.json(); setLeads(d) }
+      if (res.ok) {
+        const { leads: d, scripts: s } = await res.json()
+        setLeads(d ?? [])
+        setScripts(s ?? [])
+      }
     } finally { setLoading(false) }
   }, [sfgId])
 
-  const loadScripts = useCallback(async () => {
-    if (!sfgId) return
-    const res = await fetch(
-      `/api/leads?resource=scripts&sfg_id=${encodeURIComponent(sfgId)}`,
-      { headers: authHeaders() },
-    )
-    if (res.ok) { const { scripts: d } = await res.json(); setScripts(d) }
-  }, [sfgId])
-
-  useEffect(() => { loadLeads()   }, [loadLeads])
-  useEffect(() => { loadScripts() }, [loadScripts])
+  useEffect(() => { loadLeads() }, [loadLeads])
 
   async function openLead(lead) {
     setSelected(lead)
@@ -279,6 +274,7 @@ export default function RecruitingPage() {
       if (!matchQ) return false
       if (statusFilter !== 'all' && l.status !== statusFilter) return false
       if (sourceFilter !== 'all' && (l.source || '') !== sourceFilter) return false
+      if (hideTerminal && (l.status === 'hired' || l.status === 'dead')) return false
       return true
     })
     list.sort((a, b) => {
@@ -286,7 +282,7 @@ export default function RecruitingPage() {
       return sortDesc ? cmp : -cmp
     })
     return list
-  }, [leads, search, statusFilter, sourceFilter, sortDesc])
+  }, [leads, search, statusFilter, sourceFilter, hideTerminal, sortDesc])
 
   const callbackLeads = useMemo(() => (
     leads.filter(l => l.callback_at).sort((a, b) => new Date(a.callback_at) - new Date(b.callback_at))
@@ -409,6 +405,16 @@ export default function RecruitingPage() {
                     <option key={s.key} value={s.key}>{s.label}</option>
                   ))}
                 </select>
+                <button
+                  onClick={() => setHideTerminal(h => !h)}
+                  className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                    hideTerminal
+                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
+                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
+                  }`}
+                >
+                  Hide Hired / Dead
+                </button>
                 {(statusFilter !== 'all' || sourceFilter !== 'all') && (
                   <button
                     onClick={() => { setStatusFilter('all'); setSourceFilter('all') }}
@@ -422,7 +428,7 @@ export default function RecruitingPage() {
               {/* Lead count */}
               <p className="text-xs text-gray-400 dark:text-white/30 mb-3 font-medium">
                 {displayLeads.length} lead{displayLeads.length !== 1 ? 's' : ''}
-                {(statusFilter !== 'all' || sourceFilter !== 'all' || search) ? ' (filtered)' : ''}
+                {(statusFilter !== 'all' || sourceFilter !== 'all' || hideTerminal || search) ? ' (filtered)' : ''}
               </p>
 
               {loading ? (

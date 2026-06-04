@@ -4,15 +4,15 @@ import { useViewing } from '../context/ViewingContext'
 // ─── Metric definitions ────────────────────────────────────────────────────────
 
 const METRICS = [
-  { key: 'dials',        label: 'Dials',        short: 'Dials',      accent: 'text-blue-500   dark:text-blue-400'   },
-  { key: 'hours_dialed', label: 'Hours Dialed', short: 'Hours',      accent: 'text-indigo-500 dark:text-indigo-400', step: '0.5', decimal: true },
-  { key: 'reachouts',    label: 'Reachouts',    short: 'Reachouts',  accent: 'text-cyan-600   dark:text-cyan-400'   },
-  { key: 'posts',        label: 'Posts',        short: 'Posts',      accent: 'text-pink-500   dark:text-pink-400'   },
-  { key: 'contacts',     label: 'Contacts',     short: 'Contacts',   accent: 'text-teal-600   dark:text-teal-400'   },
-  { key: 'appts_set',    label: 'Appts Set',    short: 'Set',        accent: 'text-violet-500 dark:text-violet-400' },
-  { key: 'appts_kept',   label: 'Appts Kept',   short: 'Kept',       accent: 'text-purple-500 dark:text-purple-400' },
-  { key: 'apps_written', label: 'Apps Written', short: 'Apps',       accent: 'text-orange-500 dark:text-orange-400' },
-  { key: 'resets',       label: 'Resets',       short: 'Resets',     accent: 'text-green-600  dark:text-green-400'  },
+  { key: 'dials',        label: 'Dials',             short: 'Dials',     accent: 'text-blue-500   dark:text-blue-400'   },
+  { key: 'hours_dialed', label: 'Hours Dialed',       short: 'Hours',     accent: 'text-indigo-500 dark:text-indigo-400', step: '0.5', decimal: true },
+  { key: 'contacts',     label: 'Contacts',           short: 'Contacts',  accent: 'text-teal-600   dark:text-teal-400'   },
+  { key: 'appts_set',    label: 'Appts Set',          short: 'Set',       accent: 'text-violet-500 dark:text-violet-400' },
+  { key: 'appts_kept',   label: 'Appts Kept',         short: 'Kept',      accent: 'text-purple-500 dark:text-purple-400' },
+  { key: 'apps_written', label: 'Apps Written',       short: 'Apps',      accent: 'text-orange-500 dark:text-orange-400' },
+  { key: 'resets',       label: 'Resets',             short: 'Resets',    accent: 'text-green-600  dark:text-green-400'  },
+  { key: 'reachouts',    label: 'Reachouts',          short: 'Reachouts', accent: 'text-cyan-600   dark:text-cyan-400'   },
+  { key: 'posts',        label: 'Social Media Post',  short: 'Social',    accent: 'text-pink-500   dark:text-pink-400'   },
 ]
 
 const METRIC_KEYS = METRICS.map(m => m.key)
@@ -80,6 +80,38 @@ const STAT_RANGES = [
   { key: 'all',   label: 'All Time'   },
 ]
 
+// ─── Goals config ─────────────────────────────────────────────────────────────
+
+const GOAL_FIELDS = [
+  { key: 'weekly_dials',          label: 'Dials',         period: 'per week',  currency: false },
+  { key: 'weekly_appts',          label: 'Appts Run',     period: 'per week',  currency: false },
+  { key: 'monthly_apv_submitted', label: 'APV Submitted', period: 'per month', currency: true  },
+  { key: 'monthly_apv_issued',    label: 'APV Issued',    period: 'per month', currency: true  },
+]
+
+const EMPTY_GOALS = { weekly_dials: '', weekly_appts: '', monthly_apv_submitted: '', monthly_apv_issued: '' }
+
+function fmtGoalsMonth(ym) {
+  return new Date(ym.year, ym.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
+function addMonths(ym, n) {
+  const d = new Date(ym.year, ym.month + n, 1)
+  return { year: d.getFullYear(), month: d.getMonth() }
+}
+
+function toYearMonth(ym) {
+  return `${ym.year}-${String(ym.month + 1).padStart(2, '0')}`
+}
+
+function fmtGoalValue(val, currency) {
+  if (val === null || val === undefined || val === '') return '—'
+  const n = Number(val)
+  if (isNaN(n)) return '—'
+  if (currency) return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return n.toLocaleString('en-US')
+}
+
 function getStatDateRange(rangeKey) {
   const now = new Date()
   if (rangeKey === 'week') {
@@ -115,6 +147,14 @@ export default function ActivityPage() {
   const [statsRange, setStatsRange] = useState('week')
   const [statsLogs,  setStatsLogs]  = useState([])
   const [statsLoading, setStatsLoading] = useState(false)
+
+  // Goals
+  const now = new Date()
+  const [goalsMonth,   setGoalsMonth]   = useState({ year: now.getFullYear(), month: now.getMonth() })
+  const [goals,        setGoals]        = useState(null)   // null = loading, {} = no goals saved
+  const [goalsDraft,   setGoalsDraft]   = useState(null)   // null = view mode
+  const [goalsSaving,  setGoalsSaving]  = useState(false)
+  const [goalsLoading, setGoalsLoading] = useState(false)
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -172,6 +212,37 @@ export default function ActivityPage() {
     const { start, end } = getStatDateRange(statsRange)
     const inRange = (!start || dateStr >= start) && (!end || dateStr <= end)
     if (inRange) loadStatsLogs()
+  }
+
+  // ── Goals load/save ──────────────────────────────────────────────────────────
+  const loadGoals = useCallback(async () => {
+    if (!activeSubject?.sfg_id) return
+    setGoalsLoading(true)
+    try {
+      const res = await fetch(
+        `/api/activity-goals?sfg_id=${encodeURIComponent(activeSubject.sfg_id)}&month=${toYearMonth(goalsMonth)}`,
+      )
+      if (res.ok) { const { goals: g } = await res.json(); setGoals(g ?? {}) }
+    } catch { /* ignore */ } finally { setGoalsLoading(false) }
+  }, [activeSubject?.sfg_id, goalsMonth])
+
+  useEffect(() => { loadGoals() }, [loadGoals])
+
+  async function saveGoals() {
+    if (!activeSubject?.sfg_id || !goalsDraft) return
+    setGoalsSaving(true)
+    try {
+      const res = await fetch('/api/activity-goals', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sfg_id:     activeSubject.sfg_id,
+          year_month: toYearMonth(goalsMonth),
+          ...goalsDraft,
+        }),
+      })
+      if (res.ok) { const { goals: g } = await res.json(); setGoals(g); setGoalsDraft(null) }
+    } catch { /* ignore */ } finally { setGoalsSaving(false) }
   }
 
   // Reset edit when week changes
@@ -549,6 +620,93 @@ export default function ActivityPage() {
             </div>
 
           </div>
+
+          {/* ── Goals section ────────────────────────────────────────────────── */}
+          <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
+
+            {/* Header row */}
+            <div className="flex flex-wrap items-center gap-3 mb-5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+                Goals
+              </p>
+
+              {/* Month navigation */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setGoalsMonth(m => addMonths(m, -1)); setGoalsDraft(null) }}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                >‹</button>
+                <span className="text-xs font-medium text-gray-600 dark:text-white/70 min-w-[110px] text-center">
+                  {fmtGoalsMonth(goalsMonth)}
+                </span>
+                <button
+                  onClick={() => { setGoalsMonth(m => addMonths(m, 1)); setGoalsDraft(null) }}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                >›</button>
+              </div>
+
+              {/* Edit / Save / Cancel */}
+              <div className="ml-auto flex gap-2">
+                {goalsDraft ? (
+                  <>
+                    <button
+                      onClick={saveGoals}
+                      disabled={goalsSaving}
+                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors"
+                    >
+                      {goalsSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setGoalsDraft(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setGoalsDraft({
+                      weekly_dials:          goals?.weekly_dials          ?? '',
+                      weekly_appts:          goals?.weekly_appts          ?? '',
+                      monthly_apv_submitted: goals?.monthly_apv_submitted ?? '',
+                      monthly_apv_issued:    goals?.monthly_apv_issued    ?? '',
+                    })}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    {goals && Object.values(goals).some(v => v !== null && v !== undefined && v !== '') ? 'Edit' : 'Set Goals'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Goals grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {GOAL_FIELDS.map(f => (
+                <div key={f.key}>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{f.label}</p>
+                  <p className="text-[10px] text-gray-300 dark:text-white/20 mb-2">{f.period}</p>
+                  {goalsDraft ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step={f.currency ? '100' : '1'}
+                      inputMode={f.currency ? 'decimal' : 'numeric'}
+                      value={goalsDraft[f.key] ?? ''}
+                      onChange={e => setGoalsDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                      onFocus={e => e.target.select()}
+                      placeholder="—"
+                      className="w-full text-sm rounded-lg px-2.5 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums"
+                    />
+                  ) : (
+                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                      {goals === null ? '…' : fmtGoalValue(goals[f.key], f.currency)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
         </>
       )}
     </main>

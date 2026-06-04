@@ -6,13 +6,6 @@ import NewAgentStatusSection from '../components/sections/NewAgentStatusSection'
 import PendingBusinessSection from '../components/sections/PendingBusinessSection'
 import ActivitySummarySection from '../components/sections/ActivitySummarySection'
 
-// Fetch apps-policies for a given personnel list; returns raw JSON (does not set state).
-async function fetchAppsData(prs) {
-  const sfgIds = prs.map(p => p.sfg_id)
-  if (!sfgIds.length) return { pending: [], incomplete: [], lapse: [], metrics: null, detail: null }
-  const res = await fetch(`/api/policies?type=apps&sfg_ids=${sfgIds.join(',')}`)
-  return res.ok ? await res.json() : {}
-}
 
 export default function Dashboard() {
   const { activeSubject, permissions, loading: viewLoading } = useViewing()
@@ -44,31 +37,37 @@ export default function Dashboard() {
 
   async function initLoad(sfgId, role) {
     const isDir = ['director', 'super_admin'].includes(role)
+    const enc   = encodeURIComponent(sfgId)
     try {
       if (isDir) {
-        const [masterRes, baseshopRes] = await Promise.all([
-          fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`),
-          fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`),
+        // All 4 requests in one parallel batch — personnel and apps no longer sequential.
+        // type=apps resolves the team tree internally so it doesn't wait for personnel.
+        const [masterPrsRes, baseshopPrsRes, masterAppsRes, baseshopAppsRes] = await Promise.all([
+          fetch(`/api/personnel?root=${enc}&mode=master`),
+          fetch(`/api/personnel?root=${enc}`),
+          fetch(`/api/policies?type=apps&root=${enc}&mode=master`),
+          fetch(`/api/policies?type=apps&root=${enc}`),
         ])
-        const masterPrs   = masterRes.ok   ? await masterRes.json()   : []
-        const baseshopPrs = baseshopRes.ok ? await baseshopRes.json() : []
+        const masterPrs   = masterPrsRes.ok   ? await masterPrsRes.json()   : []
+        const baseshopPrs = baseshopPrsRes.ok ? await baseshopPrsRes.json() : []
+        const masterApps   = masterAppsRes.ok   ? await masterAppsRes.json()   : {}
+        const baseshopApps = baseshopAppsRes.ok ? await baseshopAppsRes.json() : {}
 
         setPersonnel(masterPrs)
         setMode('master')
         setBaseshopPersonnel(baseshopPrs)
-
-        const [masterApps, baseshopApps] = await Promise.all([
-          fetchAppsData(masterPrs),
-          fetchAppsData(baseshopPrs),
-        ])
         setAppsData(masterApps)
         setBaseshopAppsData(baseshopApps)
       } else {
-        const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`)
-        const prs = res.ok ? await res.json() : []
+        // Both requests in parallel — apps resolves its own tree so no waterfall.
+        const [prsRes, appsRes] = await Promise.all([
+          fetch(`/api/personnel?root=${enc}`),
+          fetch(`/api/policies?type=apps&root=${enc}`),
+        ])
+        const prs  = prsRes.ok  ? await prsRes.json()  : []
+        const apps = appsRes.ok ? await appsRes.json() : {}
         setPersonnel(prs)
         setBaseshopPersonnel(prs)
-        const apps = await fetchAppsData(prs)
         setAppsData(apps)
         setBaseshopAppsData(apps)
       }
@@ -84,12 +83,16 @@ export default function Dashboard() {
     if (!activeSubject?.sfg_id || newMode === mode) return
     setMode(newMode)
     setLoading(true)
+    const enc      = encodeURIComponent(activeSubject.sfg_id)
+    const modeParam = newMode === 'master' ? '&mode=master' : ''
     try {
-      const modeParam = newMode === 'master' ? '&mode=master' : ''
-      const res = await fetch(`/api/personnel?root=${encodeURIComponent(activeSubject.sfg_id)}${modeParam}`)
-      const prs = res.ok ? await res.json() : []
+      const [prsRes, appsRes] = await Promise.all([
+        fetch(`/api/personnel?root=${enc}${modeParam}`),
+        fetch(`/api/policies?type=apps&root=${enc}${modeParam}`),
+      ])
+      const prs  = prsRes.ok  ? await prsRes.json()  : []
+      const apps = appsRes.ok ? await appsRes.json() : {}
       setPersonnel(prs)
-      const apps = await fetchAppsData(prs)
       setAppsData(apps)
       // baseshopPersonnel + baseshopAppsData intentionally unchanged
     } catch (err) {

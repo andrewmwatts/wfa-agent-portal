@@ -47,6 +47,33 @@ function buildPromotionMaps(promoRows) {
   return { milestones, named_milestones }
 }
 
+// ── Policy fetch (mirrors api/policies.js — used for ?include=policies) ──────
+
+const POLICY_COLS = [
+  'id', 'sfg_id', 'applicant', 'carrier', 'policy_name', 'policy_number',
+  'face_amount', 'submitted_apv', 'issued_apv', 'status',
+  'submit_date', 'submit_week', 'submit_week_num', 'issue_date', 'last_update',
+  'application_notes', 'policy_notes', 'not_in_opt', 'split_reset', 'chargeback_exempt',
+  'conservation_status', 'conservation_date',
+  'snapshot_chargeback_month', 'snapshot_chargeback_apv',
+].join(', ')
+
+async function fetchPolicies(supabase, sfgIds) {
+  const PAGE = 10000
+  const rows = []
+  let from = 0
+  while (true) {
+    let q = supabase.from('policies').select(POLICY_COLS).order('id')
+    if (sfgIds?.length) q = q.in('sfg_id', sfgIds.map(id => id.toUpperCase()))
+    const { data, error } = await q.range(from, from + PAGE - 1)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+    from += PAGE
+  }
+  return rows
+}
+
 // ── Tree traversal ────────────────────────────────────────────────────────────
 
 function isOwnerFromData(record) {
@@ -95,11 +122,18 @@ function computeBaseshop(rootSfgId, allPersonnel, ownerSet) {
 
 // ── Allowed fields for update-personnel ──────────────────────────────────────
 
+// Direct DB column names (personnel table)
 const ALLOWED_FIELDS = new Set([
-  'opt_name', 'preferred_name',
-  'hire_date', 'upline_sfg_id', 'profile_issues', 'no_eando',
+  'preferred_name', 'opt_name',
+  'hire_date', 'birth_date', 'npn',
+  'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
 ])
+
+// Frontend key → DB column (for fields whose names differ)
+const FIELD_MAP = { name: 'preferred_name' }
+
+const DATE_FIELDS = new Set(['hire_date', 'birth_date', 'contracting_to_producer', 'contracting_complete', 'surelc_profile_date'])
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
@@ -119,18 +153,30 @@ export default async function handler(req, res) {
       : []
 
     try {
-      const { data: personnelRows, error: personnelError } = await supabase
-        .from('personnel')
-        .select('sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status')
+      // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
+      // so we don't fetch every row in both tables just to filter them in JS.
+      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status'
+      const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
+      const upperIds   = requestedIds.map(id => id.toUpperCase())
+      const useDbFilter = !rootParam && requestedIds.length > 0
+
+      const [
+        { data: personnelRows, error: personnelError },
+        { data: promoRows,     error: promoError     },
+      ] = await Promise.all([
+        useDbFilter
+          ? supabase.from('personnel').select(PERS_COLS).in('sfg_id', upperIds)
+          : supabase.from('personnel').select(PERS_COLS),
+        useDbFilter
+          ? supabase.from('agent_promotions').select(PROMO_COLS).in('sfg_id', upperIds)
+          : supabase.from('agent_promotions').select(PROMO_COLS),
+      ])
 
       if (personnelError) throw personnelError
-      if (!personnelRows?.length) return res.status(200).json([])
-
-      const { data: promoRows, error: promoError } = await supabase
-        .from('agent_promotions')
-        .select('sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot')
-
-      if (promoError) throw promoError
+      if (promoError)     throw promoError
+      if (!personnelRows?.length) return res.status(200).json(
+        req.query.include === 'policies' ? { personnel: [], policies: [] } : []
+      )
 
       const promosBySfgId = {}
       for (const row of (promoRows ?? [])) {
@@ -189,9 +235,39 @@ export default async function handler(req, res) {
           results = all.filter(p => baseshopIds.has(p.sfg_id.toLowerCase()))
         }
       } else if (requestedIds.length) {
-        results = all.filter(p => requestedIds.includes(p.sfg_id.toLowerCase()))
+        // If useDbFilter, the DB already scoped the rows; JS filter is a no-op safety net
+        results = useDbFilter ? all : all.filter(p => requestedIds.includes(p.sfg_id.toLowerCase()))
       } else {
         results = all
+      }
+
+      // Cache-Control: Vercel's CDN caches the response for 30 s at the edge so
+      // subsequent loads skip the function entirely (cold start = 0 on cache hits).
+      // stale-while-revalidate gives a further 5-minute window of stale serving
+      // while the CDN refreshes in the background.
+      res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=300')
+
+      // ?include=policies — fetch policies for the result set and return both
+      // together so callers need only one round-trip instead of two.
+      // Apply the same field aliases used by GET /api/policies?sfg_ids so pages
+      // receive the expected names (subm_apv, policy_type, policy_no, face_amt).
+      if (req.query.include === 'policies') {
+        const sfgIds = results.map(p => p.sfg_id)
+        const raw    = sfgIds.length ? await fetchPolicies(supabase, sfgIds) : []
+
+        // Build name lookup from the personnel we already have — no extra query needed
+        const nameById = {}
+        for (const p of results) nameById[p.sfg_id.toLowerCase()] = p.name || ''
+
+        const policies = raw.map(p => ({
+          ...p,
+          agent:       nameById[p.sfg_id?.toLowerCase()] ?? '',
+          subm_apv:    p.submitted_apv  ?? null,
+          policy_type: p.policy_name    ?? '',
+          policy_no:   p.policy_number  ?? '',
+          face_amt:    p.face_amount != null ? String(p.face_amount) : '',
+        }))
+        return res.status(200).json({ personnel: results, policies })
       }
 
       return res.status(200).json(results)
@@ -210,36 +286,98 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'updates object is required' })
     }
 
+    const normalSfgId = sfg_id.trim().toUpperCase()
     const patch = {}
+    const milChanges = {} // { 'commission:2': { type, level, 0: val, 1: val }, ... }
+
     for (const [key, val] of Object.entries(updates)) {
-      if (!ALLOWED_FIELDS.has(key)) continue
-      if (key === 'no_eando') {
-        if (typeof val === 'boolean') {
-          patch[key] = val
-        } else {
-          const s = String(val ?? '').toLowerCase()
-          patch[key] = ['true', 'yes', 'y', '1', 'x'].includes(s)
-        }
-      } else if (['hire_date', 'contracting_to_producer', 'contracting_complete', 'surelc_profile_date'].includes(key)) {
-        patch[key] = val?.trim() || null
+      // Milestone fields → agent_promotions table
+      const milMatch      = key.match(/^mil_(\d+)_(\d+)$/)
+      const namedMilMatch = key.match(/^namedmil_([A-Za-z0-9]+)_(\d+)$/)
+      if (milMatch) {
+        const [, level, idx] = milMatch
+        const k = `commission:${level}`
+        if (!milChanges[k]) milChanges[k] = { type: 'commission', level }
+        milChanges[k][Number(idx)] = val?.trim() || null
+        continue
+      }
+      if (namedMilMatch) {
+        const [, level, idx] = namedMilMatch
+        const k = `named:${level.toUpperCase()}`
+        if (!milChanges[k]) milChanges[k] = { type: 'named', level: level.toUpperCase() }
+        milChanges[k][Number(idx)] = val?.trim() || null
+        continue
+      }
+
+      // Map frontend key → DB column (e.g. name → preferred_name)
+      const col = FIELD_MAP[key] ?? key
+      if (!ALLOWED_FIELDS.has(col)) continue
+
+      if (col === 'no_eando') {
+        patch[col] = typeof val === 'boolean' ? val : ['true', 'yes', 'y', '1', 'x'].includes(String(val ?? '').toLowerCase())
+      } else if (DATE_FIELDS.has(col)) {
+        patch[col] = val?.trim() || null
       } else {
-        patch[key] = val?.trim() || null
+        patch[col] = val?.trim() || null
       }
     }
 
-    if (Object.keys(patch).length === 0) {
+    const hasPatch      = Object.keys(patch).length > 0
+    const hasMilChanges = Object.keys(milChanges).length > 0
+
+    if (!hasPatch && !hasMilChanges) {
       return res.status(400).json({ error: 'No valid fields to update' })
     }
 
     try {
-      const { data, error } = await supabase
-        .from('personnel')
-        .update(patch)
-        .eq('sfg_id', sfg_id.trim().toUpperCase())
-        .select()
-        .single()
-      if (error) return res.status(500).json({ error: error.message })
-      return res.status(200).json({ personnel: data })
+      // Update personnel table
+      if (hasPatch) {
+        const { error } = await supabase
+          .from('personnel')
+          .update(patch)
+          .eq('sfg_id', normalSfgId)
+        if (error) return res.status(500).json({ error: error.message })
+      }
+
+      // Update agent_promotions — fetch existing rows first to preserve non-month fields
+      if (hasMilChanges) {
+        const levels       = [...new Set(Object.values(milChanges).map(c => c.level))]
+        const types        = [...new Set(Object.values(milChanges).map(c => c.type))]
+        const { data: existingRows } = await supabase
+          .from('agent_promotions')
+          .select('*')
+          .eq('sfg_id', normalSfgId)
+
+        const existingMap = {}
+        for (const row of (existingRows ?? [])) {
+          existingMap[`${row.promotion_type}:${String(row.level).toUpperCase()}`] = row
+        }
+
+        const upsertRows = Object.values(milChanges).map(change => {
+          const mapKey  = `${change.type}:${String(change.level).toUpperCase()}`
+          const existing = existingMap[mapKey] ?? {}
+          const monthFields = {
+            month_1: 0 in change ? change[0] : (existing.month_1 ?? null),
+            month_2: 1 in change ? change[1] : (existing.month_2 ?? null),
+            month_3: 2 in change ? change[2] : (existing.month_3 ?? null),
+          }
+          return {
+            sfg_id:         normalSfgId,
+            promotion_type: change.type,
+            level:          isNaN(Number(change.level)) ? change.level : Number(change.level),
+            ...monthFields,
+            slingshot_month: existing.slingshot_month ?? null,
+            is_slingshot:    existing.is_slingshot    ?? false,
+          }
+        })
+
+        const { error: milError } = await supabase
+          .from('agent_promotions')
+          .upsert(upsertRows, { onConflict: 'sfg_id,promotion_type,level' })
+        if (milError) return res.status(500).json({ error: milError.message })
+      }
+
+      return res.status(200).json({ ok: true })
     } catch (err) {
       console.error('[personnel/put]', err)
       return res.status(500).json({ error: 'Failed to update personnel data' })

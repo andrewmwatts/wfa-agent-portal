@@ -1,63 +1,52 @@
 import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
-import { google } from 'googleapis'
+import { createClient } from '@supabase/supabase-js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
-const SHEET_ID  = '1fbkq51BkFOY07RY2pASi-lHCYfjEPzPUD5BvkZZxhTU'
-const SHEET_TAB = 'Qualifications'
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+)
 
-function parseAmt(str) {
-  if (str == null || str === '') return null
-  const n = parseFloat(str.toString().replace(/[$,]/g, ''))
-  return isNaN(n) ? null : n
-}
+// Simple in-memory cache — qualifications change rarely so we avoid a Supabase
+// round-trip on every page load after the first hit within a function instance.
+let cache = null
+let cacheTs = 0
+const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    })
-    const sheets = google.sheets({ version: 'v4', auth })
+    const now = Date.now()
+    if (!cache || now - cacheTs > CACHE_TTL_MS) {
+      const { data, error } = await supabase
+        .from('qualifications')
+        .select('level, regular, slingshot, writers')
 
-    const { data } = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `'${SHEET_TAB}'`,
-    })
+      if (error) throw error
 
-    const rows = data.values
-    if (!rows?.length) return res.status(200).json({ qualifications: {} })
-
-    const headers = rows[0].map(h => h?.trim().toLowerCase() ?? '')
-
-    // Column indices — flexible matching
-    const idxLevel    = headers.findIndex(h => ['qualification', 'level', 'qual'].includes(h))
-    const idxRegular  = headers.findIndex(h => ['regular', 'apv', 'monthly apv'].includes(h))
-    const idxSlingshot = headers.findIndex(h => h === 'slingshot')
-    const idxWriters  = headers.findIndex(h => h === 'writers')
-
-    // Build level → { regular, slingshot, writers } map
-    const qualifications = {}
-    for (const row of rows.slice(1)) {
-      const level = idxLevel !== -1 ? row[idxLevel]?.trim() : null
-      if (!level) continue
-
-      qualifications[level] = {
-        regular:   parseAmt(idxRegular   !== -1 ? row[idxRegular]   : null),
-        slingshot: parseAmt(idxSlingshot !== -1 ? row[idxSlingshot] : null),
-        writers:   parseAmt(idxWriters   !== -1 ? row[idxWriters]   : null),
+      const qualifications = {}
+      for (const row of data ?? []) {
+        if (!row.level) continue
+        qualifications[String(row.level)] = {
+          regular:   row.regular   ?? null,
+          slingshot: row.slingshot ?? null,
+          writers:   row.writers   ?? null,
+        }
       }
+
+      cache   = qualifications
+      cacheTs = now
     }
 
-    return res.status(200).json({ qualifications })
+    return res.status(200).json({ qualifications: cache })
   } catch (err) {
     console.error('[qualifications]', err)
-    return res.status(500).json({ error: 'Failed to read qualifications data' })
+    return res.status(500).json({ error: 'Failed to load qualifications' })
   }
 }

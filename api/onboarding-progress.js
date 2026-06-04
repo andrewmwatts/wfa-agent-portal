@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { sfg_ids, sfg_id, detail } = req.query
+  const { sfg_ids, sfg_id, detail, root: rootParam } = req.query
 
   try {
     // ── Active lessons (IDs + count) — used by both modes ────────────────
@@ -82,10 +82,33 @@ export default async function handler(req, res) {
     }
 
     // ── Batch summary mode: completion counts for a list of sfg_ids ───────
-    const requestedIds = (sfg_ids ?? '')
+
+    // Build requestedIds from explicit sfg_ids list OR from root= tree traversal
+    let requestedIds = (sfg_ids ?? '')
       .split(',')
       .map(s => s.trim().toUpperCase())
       .filter(Boolean)
+
+    // root= param: do a lightweight personnel tree lookup so the caller can
+    // fire this endpoint in parallel with /api/personnel instead of sequentially.
+    if (!requestedIds.length && rootParam?.trim()) {
+      const { data: treeRows } = await supabase
+        .from('personnel')
+        .select('sfg_id, upline_sfg_id')
+      const childrenOf = {}
+      for (const p of treeRows ?? []) {
+        const up = p.upline_sfg_id?.trim().toLowerCase()
+        if (!up) continue
+        ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+      }
+      const teamIds = new Set()
+      function traverse(id) {
+        teamIds.add(id)
+        for (const child of childrenOf[id] ?? []) traverse(child)
+      }
+      traverse(rootParam.trim().toLowerCase())
+      requestedIds = [...teamIds].map(id => id.toUpperCase())
+    }
 
     if (!requestedIds.length) {
       return res.status(200).json({ summaries: {}, totalLessons })
@@ -104,43 +127,37 @@ export default async function handler(req, res) {
     const sfgToEmail = {}
     const emailToSfg = {}
     for (const m of emailMaps) {
-      if (!m.sfg_id || !m.kajabi_email) continue   // skip incomplete rows
-      sfgToEmail[m.sfg_id.toLowerCase()] = m.kajabi_email
+      if (!m.sfg_id || !m.kajabi_email) continue
+      sfgToEmail[m.sfg_id.toLowerCase()]      = m.kajabi_email
       emailToSfg[m.kajabi_email.toLowerCase()] = m.sfg_id.toLowerCase()
     }
 
     const kajabiEmails = Object.values(sfgToEmail)
 
-    // Fetch completions per-agent using individual .eq() queries (parallel) —
-    // mirrors the detail path exactly, avoiding .in() encoding issues.
-    const completionResults = await Promise.all(
-      emailMaps.map(m =>
-        supabase
-          .from('onboarding_progress')
-          .select('lesson_id, completed, completed_at')
-          .eq('kajabi_email', m.kajabi_email)
-      )
-    )
+    // Single bulk query instead of N parallel .eq() queries — major perf win
+    const { data: allCompletions } = await supabase
+      .from('onboarding_progress')
+      .select('kajabi_email, lesson_id, completed, completed_at')
+      .in('kajabi_email', kajabiEmails)
+
+    // Group completions by email for O(1) lookup
+    const completionsByEmail = {}
+    for (const c of allCompletions ?? []) {
+      ;(completionsByEmail[c.kajabi_email.toLowerCase()] ??= []).push(c)
+    }
 
     // Aggregate per sfg_id
     const summaries = {}
-
-    // Seed all linked agents (even those with zero completions)
     for (const sfgId of Object.keys(sfgToEmail)) {
       summaries[sfgId] = { count: 0, latestDate: null }
     }
 
-    for (let i = 0; i < emailMaps.length; i++) {
-      const email = emailMaps[i].kajabi_email
-      const sfgId = emailToSfg[email.toLowerCase()]
+    for (const [emailLower, completions] of Object.entries(completionsByEmail)) {
+      const sfgId = emailToSfg[emailLower]
       if (!sfgId || !summaries[sfgId]) continue
-
-      for (const c of completionResults[i].data ?? []) {
-        // Mirror the detail path: check completed as a truthy value in JS
+      for (const c of completions) {
         if (!c.completed) continue
-        // Skip completions for lessons that are no longer active
         if (!activeLessonIds.has(c.lesson_id)) continue
-
         summaries[sfgId].count++
         if (!summaries[sfgId].latestDate || c.completed_at > summaries[sfgId].latestDate) {
           summaries[sfgId].latestDate = c.completed_at

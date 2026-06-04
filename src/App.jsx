@@ -17,12 +17,15 @@ import MonthlyMetricsPage from './pages/MonthlyMetricsPage'
 import WeeklyMetricsPage from './pages/WeeklyMetricsPage'
 import MonthlyAgentTotalsPage from './pages/MonthlyAgentTotalsPage'
 import AgentsPage from './pages/AgentsPage'
+import AccountabilityPage from './pages/AccountabilityPage'
 import CoachingPage from './pages/CoachingPage'
 import ActivityPage from './pages/ActivityPage'
 import LeadsPage from './pages/LeadsPage'
 import RecruitingPage from './pages/RecruitingPage'
 import CarrierMetricsPage from './pages/CarrierMetricsPage'
 import Admin from './pages/Admin'
+import AdminToolsPage from './pages/AdminToolsPage'
+import SnapshotPage from './pages/SnapshotPage'
 
 export default function App() {
   return (
@@ -57,7 +60,9 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/onboarding"           element={<OnboardingPage />} />
                 <Route path="/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
+                <Route path="/accountability"        element={<AccountabilityPage />} />
                 <Route path="/coaching"             element={<CoachingPage />} />
+                <Route path="/snapshot"             element={<SnapshotPage />} />
               </Route>
             </Route>
 
@@ -71,7 +76,8 @@ export default function App() {
             {/* Admin only */}
             <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
               <Route element={<AppLayout />}>
-                <Route path="/admin" element={<Admin />} />
+                <Route path="/admin"       element={<Admin />} />
+                <Route path="/admin-tools" element={<AdminToolsPage />} />
               </Route>
             </Route>
 

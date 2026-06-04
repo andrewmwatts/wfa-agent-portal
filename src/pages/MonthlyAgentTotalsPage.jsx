@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
+import ScopeDropdown from '../components/ScopeDropdown'
+import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
 
 // ─── Milestone helpers (mirrors AgentsPage) ───────────────────────────────────
 
@@ -149,11 +151,6 @@ function leadStatuses(teamIssued, writers, qual, maxLegApv = 0) {
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
-function isOwnerRecord(p) {
-  const ao = p.named_milestones?.AO ?? []
-  return !!(ao[0] && ao[1])
-}
-
 function toYearMonth(str) {
   if (!str) return null
   // Parse ISO dates (YYYY-MM-DD) directly to avoid UTC→local timezone shift
@@ -278,10 +275,10 @@ export default function MonthlyAgentTotalsPage() {
   const [masterPersonnel,  setMasterPersonnel]  = useState([])
   const [displayPersonnel, setDisplayPersonnel] = useState([])
   const [policies,         setPolicies]         = useState([])
+  const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [qualMap,          setQualMap]          = useState({}) // levelKey → { regular, slingshot, writers }
   const [loading,          setLoading]          = useState(true)
-  const [mode,             setMode]             = useState('master')
-  const [isDirector,       setIsDirector]       = useState(false)
+  const [selectedScope,    setSelectedScope]    = useState('master')
   const [modal,            setModal]            = useState(null)
   const [includeLikelyCb,  setIncludeLikelyCb]  = useState(false)
 
@@ -291,43 +288,28 @@ export default function MonthlyAgentTotalsPage() {
   useEffect(() => {
     if (!activeSubject?.sfg_id) return
     setLoading(true)
-    load(activeSubject.sfg_id, mode)
-  }, [activeSubject?.sfg_id, mode])
+    load(activeSubject.sfg_id)
+  }, [activeSubject?.sfg_id])
 
-  async function load(sfgId, viewMode) {
+  async function load(sfgId) {
     try {
-      // Always load master — needed for downline tree, all team policies, and director detection
-      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
-      const master    = masterRes.ok ? await masterRes.json() : []
+      // Fire personnel+policies and qualifications in parallel — personnel no longer
+      // blocks qualifications, and policies are bundled with personnel (one cold start).
+      const [teamRes, qualRes] = await Promise.all([
+        fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master&include=policies`),
+        fetch('/api/qualifications'),
+      ])
+
+      const { personnel: master, policies: pols } = teamRes.ok
+        ? await teamRes.json()
+        : { personnel: [], policies: [] }
+
       setMasterPersonnel(master)
+      setDisplayPersonnel(master)
+      setPolicies(pols ?? [])
 
-      // Detect director status from the master data we just fetched (no extra round-trip)
-      const root = sfgId.toLowerCase()
-      const dir  = master.some(p => p.sfg_id.toLowerCase() !== root && isOwnerRecord(p))
-      setIsDirector(dir)
+      setSelectedScope('master')
 
-      // Display list may be baseshop-filtered
-      let display
-      if (viewMode === 'master') {
-        display = master
-      } else {
-        const bsRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}`)
-        display = bsRes.ok ? await bsRes.json() : []
-      }
-      setDisplayPersonnel(display)
-
-      // Policies for ALL master agents (needed for team roll-ups)
-      const sfgIds = master.map(p => p.sfg_id)
-      if (sfgIds.length) {
-        const polRes = await fetch(`/api/policies?sfg_ids=${encodeURIComponent(sfgIds.join(','))}`)
-        if (polRes.ok) {
-          const { policies: pols } = await polRes.json()
-          setPolicies(pols ?? [])
-        }
-      }
-
-      // Qualifications — level-keyed map
-      const qualRes = await fetch('/api/qualifications')
       if (qualRes.ok) {
         const { qualifications } = await qualRes.json()
         setQualMap(qualifications ?? {})
@@ -337,6 +319,14 @@ export default function MonthlyAgentTotalsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleScopeChange(scope) {
+    setSelectedScope(scope)
+    const display = scope === 'master'
+      ? masterPersonnel
+      : masterPersonnel.filter(p => getBaseshopIds(scope, masterPersonnel).has(p.sfg_id.toLowerCase()))
+    setDisplayPersonnel(display)
   }
 
   // ── Downline tree ──────────────────────────────────────────────────────────
@@ -641,14 +631,12 @@ export default function MonthlyAgentTotalsPage() {
         </select>
 
         {isDirector && (
-          <select
-            value={mode}
-            onChange={e => setMode(e.target.value)}
-            className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-          >
-            <option value="master"   style={optionStyle}>Master Agency</option>
-            <option value="baseshop" style={optionStyle}>My Baseshop</option>
-          </select>
+          <ScopeDropdown
+            masterPersonnel={masterPersonnel}
+            selfId={activeSubject?.sfg_id}
+            value={selectedScope}
+            onChange={handleScopeChange}
+          />
         )}
 
         {/* Likely-chargeback toggle */}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const STATUS_OPTIONS = [
   'Pending', 'Incomplete', 'Issued', 'Declined',
@@ -16,9 +16,11 @@ const EMPTY = {
   policy_no:   '',
   face_amt:    '',
   subm_apv:    '',
+  issued_apv:  '',
   status:      'Pending',
   submit_date: new Date().toISOString().slice(0, 10),
-  app_notes:   '',
+  app_notes:    '',
+  policy_notes: '',
   not_in_opt:  false,
   split_reset: false,
 }
@@ -26,11 +28,40 @@ const EMPTY = {
 const INPUT_CLS = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:ring-accent/30 focus:border-accent/60'
 const INPUT_ERR = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white border-red-400 focus:ring-red-400/30 focus:border-red-400'
 
-export default function AddPolicyModal({ personnel, onClose, onPolicyAdded }) {
-  const [form,     setForm]     = useState(EMPTY)
-  const [errors,   setErrors]   = useState({})
-  const [saving,   setSaving]   = useState(false)
-  const [apiError, setApiError] = useState('')
+export default function AddPolicyModal({ personnel, existingCarriers = [], existingPolicyTypes = [], onClose, onPolicyAdded }) {
+  const [form,      setForm]      = useState(EMPTY)
+  const [errors,    setErrors]    = useState({})
+  const [saving,    setSaving]    = useState(false)
+  const [apiError,  setApiError]  = useState('')
+  const [crosswalk, setCrosswalk] = useState([])   // [{ carrier, policy_name }]
+
+  // Fetch crosswalk once on mount
+  useEffect(() => {
+    fetch('/api/policies?type=crosswalk')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (Array.isArray(d)) setCrosswalk(d) })
+      .catch(() => {})
+  }, [])
+
+  // Merge crosswalk carriers with existing policy carriers, deduplicated + sorted
+  const carrierSuggestions = useMemo(() => {
+    const s = new Set([
+      ...existingCarriers,
+      ...crosswalk.map(r => r.carrier).filter(Boolean),
+    ])
+    return [...s].sort()
+  }, [existingCarriers, crosswalk])
+
+  // Policy type suggestions: prefer crosswalk rows matching the current carrier,
+  // fall back to all crosswalk policy_names + existing policy types
+  const policyTypeSuggestions = useMemo(() => {
+    const carrier = form.carrier.trim().toLowerCase()
+    const fromCrosswalk = carrier
+      ? crosswalk.filter(r => r.carrier?.toLowerCase() === carrier).map(r => r.policy_name)
+      : crosswalk.map(r => r.policy_name)
+    const s = new Set([...fromCrosswalk, ...existingPolicyTypes].filter(Boolean))
+    return [...s].sort()
+  }, [crosswalk, existingPolicyTypes, form.carrier])
 
   // Close on Escape
   useEffect(() => {
@@ -134,12 +165,22 @@ export default function AddPolicyModal({ personnel, onClose, onPolicyAdded }) {
           <FormSection label="Policy">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Carrier" required error={errors.carrier}>
-                <input type="text" value={form.carrier} onChange={e => set('carrier', e.target.value)}
-                  placeholder="Banner, Foresters…" className={errors.carrier ? INPUT_ERR : INPUT_CLS} />
+                <SuggestInput
+                  value={form.carrier}
+                  onChange={v => set('carrier', v)}
+                  suggestions={carrierSuggestions}
+                  placeholder="Banner, Foresters…"
+                  className={errors.carrier ? INPUT_ERR : INPUT_CLS}
+                />
               </Field>
               <Field label="Policy Type">
-                <input type="text" value={form.policy_type} onChange={e => set('policy_type', e.target.value)}
-                  placeholder="Term 20, WL…" className={INPUT_CLS} />
+                <SuggestInput
+                  value={form.policy_type}
+                  onChange={v => set('policy_type', v)}
+                  suggestions={policyTypeSuggestions}
+                  placeholder="Term 20, WL…"
+                  className={INPUT_CLS}
+                />
               </Field>
               <Field label="Policy No.">
                 <input type="text" value={form.policy_no} onChange={e => set('policy_no', e.target.value)}
@@ -157,6 +198,10 @@ export default function AddPolicyModal({ personnel, onClose, onPolicyAdded }) {
             <div className="grid grid-cols-2 gap-3">
               <Field label="Submitted APV">
                 <input type="number" value={form.subm_apv} onChange={e => set('subm_apv', e.target.value)}
+                  placeholder="0" className={INPUT_CLS} />
+              </Field>
+              <Field label="Issued APV">
+                <input type="number" value={form.issued_apv} onChange={e => set('issued_apv', e.target.value)}
                   placeholder="0" className={INPUT_CLS} />
               </Field>
               <Field label="Status" required error={errors.status}>
@@ -186,14 +231,27 @@ export default function AddPolicyModal({ personnel, onClose, onPolicyAdded }) {
           </FormSection>
 
           {/* Notes */}
-          <FormSection label="Application Notes">
-            <textarea
-              value={form.app_notes}
-              onChange={e => set('app_notes', e.target.value)}
-              rows={3}
-              placeholder="Open requirements, follow-up items…"
-              className={INPUT_CLS + ' resize-y'}
-            />
+          <FormSection label="Notes">
+            <div className="space-y-3">
+              <Field label="Application Notes">
+                <textarea
+                  value={form.app_notes}
+                  onChange={e => set('app_notes', e.target.value)}
+                  rows={2}
+                  placeholder="Open requirements, follow-up items…"
+                  className={INPUT_CLS + ' resize-y'}
+                />
+              </Field>
+              <Field label="Policy Notes">
+                <textarea
+                  value={form.policy_notes}
+                  onChange={e => set('policy_notes', e.target.value)}
+                  rows={2}
+                  placeholder="Coverage details, rider info…"
+                  className={INPUT_CLS + ' resize-y'}
+                />
+              </Field>
+            </div>
           </FormSection>
 
           {apiError && <p className="text-sm text-red-500 dark:text-red-400">{apiError}</p>}
@@ -319,6 +377,59 @@ function AgentLookup({ personnel, value, onSelect, onClear, error }) {
         <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-400 dark:text-white/40">
           No matches found
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── Generic combobox (free-text + dropdown suggestions) ───────────────────────
+
+function SuggestInput({ value, onChange, suggestions, placeholder, className }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function onMouseDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase()
+    const list = q
+      ? suggestions.filter(s => s.toLowerCase().includes(q))
+      : suggestions
+    return list.slice(0, 12)
+  }, [value, suggestions])
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        type="text"
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className={className}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+          {filtered.map(s => (
+            <li key={s}>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(s); setOpen(false) }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 text-gray-900 dark:text-white transition-colors"
+              >
+                {s}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )

@@ -14,10 +14,13 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  * Header: X-WFA-Secret: <WFA_INGEST_SECRET>
  *
  * Actions:
- *   lookup_agent   { action, email }            → { sfg_id }
- *   check_duplicate{ action, phone, sfg_id }    → { duplicate }
- *   insert_lead    { action, lead: {...} }       → { success }
- *   insert_error   { action, error: {...} }      → { success }
+ *   lookup_agent          { action, email }                        → { sfg_id }
+ *   check_duplicate       { action, phone, sfg_id }               → { duplicate }
+ *   insert_lead           { action, lead: {...} }                  → { success }
+ *   insert_error          { action, error: {...} }                 → { success }
+ *   insert_contract_number{ action, sfg_id, carrier,
+ *                           contract_number, effective_date,
+ *                           source }                               → { success }
  *
  * Required table — run once in Supabase:
  *
@@ -127,6 +130,30 @@ export default async function handler(req, res) {
 
     if (error) return res.status(500).json({ success: false, error: error.message })
     return res.status(201).json({ success: true })
+  }
+
+  // ── insert_contract_number ───────────────────────────────────────────────
+  if (action === 'insert_contract_number') {
+    const { sfg_id, carrier, contract_number, effective_date, source } = body
+    if (!sfg_id || !carrier || !contract_number || !source) {
+      return res.status(400).json({
+        error: 'sfg_id, carrier, contract_number, and source are required',
+      })
+    }
+
+    const { error } = await sb.from('contract_numbers').upsert(
+      {
+        sfg_id:          sfg_id.toUpperCase(),
+        carrier:         carrier.trim(),
+        contract_number: contract_number.trim(),
+        effective_date:  effective_date || null,
+        source:          source.trim(),
+      },
+      { onConflict: 'sfg_id,carrier,contract_number', ignoreDuplicates: true },
+    )
+
+    if (error) return res.status(500).json({ success: false, error: error.message })
+    return res.status(200).json({ success: true })
   }
 
   // ── Unknown action ────────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import AddPolicyModal from '../components/AddPolicyModal'
 import BulkImportModal from '../components/BulkImportModal'
+import ScopeDropdown from '../components/ScopeDropdown'
+import { getBaseshopIds } from '../utils/agencyScope'
 
 function isTruthy(val) {
   if (!val) return false
@@ -31,33 +33,6 @@ function toInputDate(str) {
   return `${y}-${m}-${dy}`
 }
 
-// ─── Director detection (same logic as MetricsSection) ────────────────────────
-
-function isOwnerRecord(p) {
-  const ao = p.named_milestones?.AO ?? []
-  return !!(ao[0] && ao[1] && ao[2])
-}
-
-function getBaseshopIds(ownerSfgId, allPersonnel) {
-  const ownerIds = new Set(allPersonnel.filter(isOwnerRecord).map(p => p.sfg_id.toLowerCase()))
-  const childrenOf = {}
-  for (const p of allPersonnel) {
-    const up = p.upline_sfg_id?.trim().toLowerCase()
-    if (!up) continue
-    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
-  }
-  const root   = ownerSfgId.toLowerCase()
-  const result = new Set()
-  function traverse(id) {
-    result.add(id)
-    for (const child of (childrenOf[id] ?? [])) {
-      if (ownerIds.has(child) && child !== root) continue
-      traverse(child)
-    }
-  }
-  traverse(root)
-  return result
-}
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -113,8 +88,8 @@ function computeChargebackExempt(conservation_status, conservation_date, issue_d
       const mo = monthsBetween(issue_date, conservation_date)
       if (mo !== null && mo < 12) return false
     }
-    // Lapsed more than 14 months after issue → not exempt (carrier charges back)
-    if (status === 'lapsed') {
+    // Lapsed (or Lapse Pending) more than 14 months after issue → not exempt (carrier charges back)
+    if (status === 'lapsed' || status === 'lapse pending') {
       const mo = monthsBetween(issue_date, conservation_date)
       if (mo !== null && mo > 14) return false
     }
@@ -196,13 +171,13 @@ export default function PoliciesPage() {
   const { activeSubject, permissions } = useViewing()
   const { userProfile }                = useAuth()
   const { theme } = useTheme()
+  const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [policies,   setPolicies]   = useState([])
   const [personnel,        setPersonnel]        = useState([])
   const [masterPersonnel,  setMasterPersonnel]  = useState([])
   const [loading,          setLoading]          = useState(true)
   const [error,            setError]            = useState(null)
   const [selectedScope,    setSelectedScope]    = useState('master')
-  const [isDirector,       setIsDirector]       = useState(false)
   const [showAddPolicy,   setShowAddPolicy]   = useState(false)
   const [showBulkImport, setShowBulkImport] = useState(false)
 
@@ -267,17 +242,15 @@ export default function PoliciesPage() {
 
   async function initLoad(sfgId) {
     try {
-      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
-      const masterPersonnel = masterRes.ok ? await masterRes.json() : []
+      // Single request returns both personnel + policies — one cold start, one round-trip
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master&include=policies`)
+      if (!res.ok) throw new Error('Failed to load data')
+      const { personnel: masterPersonnel, policies } = await res.json()
 
-      const root  = sfgId.toLowerCase()
-      const isDir = masterPersonnel.some(p => p.sfg_id?.toLowerCase() !== root && isOwnerRecord(p))
-      setIsDirector(isDir)
       setMasterPersonnel(masterPersonnel)
       setPersonnel(masterPersonnel)
-      setSelectedScope(isDir ? 'master' : sfgId)
-
-      await loadPolicies(masterPersonnel)
+      setSelectedScope('master')
+      setPolicies(policies ?? [])
     } catch (e) {
       setError(e.message)
     } finally {
@@ -336,6 +309,11 @@ export default function PoliciesPage() {
 
   const carrierOptions = useMemo(() => {
     const s = new Set(policies.map(p => normalizeCarrier(p.carrier)).filter(Boolean))
+    return [...s].sort()
+  }, [policies])
+
+  const policyTypeOptions = useMemo(() => {
+    const s = new Set(policies.map(p => p.policy_type).filter(Boolean))
     return [...s].sort()
   }, [policies])
 
@@ -469,25 +447,14 @@ export default function PoliciesPage() {
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Policies</h3>
           <div className="flex items-center gap-3">
-            {isDirector && (() => {
-              const self     = masterPersonnel.find(p => p.sfg_id?.toLowerCase() === activeSubject?.sfg_id?.toLowerCase())
-              const subOwners = masterPersonnel
-                .filter(p => p.sfg_id?.toLowerCase() !== activeSubject?.sfg_id?.toLowerCase() && isOwnerRecord(p))
-                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-              const owners = self ? [self, ...subOwners] : subOwners
-              return (
-                <select
-                  value={selectedScope}
-                  onChange={e => handleScopeChange(e.target.value)}
-                  className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-                >
-                  <option value="master" style={optionStyle}>Master Agency</option>
-                  {owners.map(o => (
-                    <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>{o.name}</option>
-                  ))}
-                </select>
-              )
-            })()}
+            {isDirector && (
+              <ScopeDropdown
+                masterPersonnel={masterPersonnel}
+                selfId={activeSubject?.sfg_id}
+                value={selectedScope}
+                onChange={handleScopeChange}
+              />
+            )}
             <button
               onClick={() => setQuickSearchOpen(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-white/15 hover:border-gray-300 dark:hover:border-white/30 rounded-lg px-2.5 py-1 transition-colors"
@@ -744,6 +711,8 @@ export default function PoliciesPage() {
       {showAddPolicy && (
         <AddPolicyModal
           personnel={personnel}
+          existingCarriers={carrierOptions}
+          existingPolicyTypes={policyTypeOptions}
           onClose={() => setShowAddPolicy(false)}
           onPolicyAdded={() => {
             setShowAddPolicy(false)
@@ -755,7 +724,7 @@ export default function PoliciesPage() {
       {/* Bulk Import Modal */}
       {showBulkImport && (
         <BulkImportModal
-          personnel={personnel}
+          personnel={masterPersonnel}
           existingPolicies={policies}
           onClose={() => {
             setShowBulkImport(false)

@@ -1,34 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function isOwnerRecord(p) {
-  const ao = p.named_milestones?.AO ?? []
-  return !!(ao[0] && ao[1])
-}
-
-function getBaseshopIds(ownerSfgId, allPersonnel) {
-  const ownerIds = new Set(allPersonnel.filter(isOwnerRecord).map(p => p.sfg_id.toLowerCase()))
-  const childrenOf = {}
-  for (const p of allPersonnel) {
-    const up = p.upline_sfg_id?.trim().toLowerCase()
-    if (!up) continue
-    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
-  }
-  const root   = ownerSfgId.toLowerCase()
-  const result = new Set()
-  function traverse(id) {
-    result.add(id)
-    for (const child of (childrenOf[id] ?? [])) {
-      if (ownerIds.has(child) && child !== root) continue
-      traverse(child)
-    }
-  }
-  traverse(root)
-  return result
-}
+import ScopeDropdown from '../components/ScopeDropdown'
+import { getBaseshopIds } from '../utils/agencyScope'
 
 const CARRIER_ALIASES = {
   'american amicable group': 'American Amicable',
@@ -94,11 +68,12 @@ export default function LapsePage() {
   const { activeSubject, permissions } = useViewing()
   const { theme } = useTheme()
 
-  const [policies, setPolicies]           = useState([])
+  const [policies,    setPolicies]        = useState([])
+  const [allPolicies, setAllPolicies]     = useState([])
+  const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [loading, setLoading]             = useState(false)
   const [selectedScope, setSelectedScope] = useState('master')
-  const [isDirector, setIsDirector]       = useState(false)
   const [quickFilter, setQuickFilter]     = useState('pending')
   const [search, setSearch]               = useState('')
   const [statusFilter, setStatusFilter]   = useState('')
@@ -121,17 +96,16 @@ export default function LapsePage() {
 
   async function initLoad(sfgId) {
     try {
-      // Always fetch master first — detects director AND reuses data so no second fetch needed
-      const masterRes = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
-      const masterPersonnel = masterRes.ok ? await masterRes.json() : []
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master&include=policies`)
+      if (!res.ok) return
+      const { personnel: masterPersonnel, policies: rows } = await res.json()
 
-      const root  = sfgId.toLowerCase()
-      const isDir = masterPersonnel.some(p => p.sfg_id?.toLowerCase() !== root && isOwnerRecord(p))
-      setIsDirector(isDir)
       setMasterPersonnel(masterPersonnel)
-      setSelectedScope(isDir ? 'master' : sfgId)
+      setSelectedScope('master')
 
-      await loadPolicies(masterPersonnel)
+      const normalized = (rows ?? []).map(p => ({ ...p, carrier: normalizeCarrier(p.carrier) }))
+      setAllPolicies(normalized)
+      setPolicies(normalized.filter(p => p.conservation_status?.trim()))
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
@@ -158,12 +132,10 @@ export default function LapsePage() {
     if (!polRes.ok) return
     const { policies: rows } = await polRes.json()
 
-    // Normalize carriers and keep only conservation/lapse records
-    const normalized = (rows ?? [])
-      .map(p => ({ ...p, carrier: normalizeCarrier(p.carrier) }))
-      .filter(p => p.conservation_status?.trim())
-
-    setPolicies(normalized)
+    // Normalize carriers; keep all for quick search, filter to conservation records for the table
+    const normalized = (rows ?? []).map(p => ({ ...p, carrier: normalizeCarrier(p.carrier) }))
+    setAllPolicies(normalized)
+    setPolicies(normalized.filter(p => p.conservation_status?.trim()))
   }
 
   // ── Derived filter options ────────────────────────────────────────────────────
@@ -176,8 +148,11 @@ export default function LapsePage() {
     return policies.filter(p => {
       const days = daysToLapse(p.conservation_date)
 
-      // "Pending" = not yet past the lapse date (future or no date set)
-      if (quickFilter === 'pending' && days !== null && days < 0) return false
+      // "Pending" = conservation_status is Lapse Pending or First Premium Not Paid
+      if (quickFilter === 'pending') {
+        const cs = (p.conservation_status || '').toLowerCase()
+        if (cs !== 'lapse pending' && cs !== 'first premium not paid') return false
+      }
 
       if (statusFilter  && p.conservation_status !== statusFilter)  return false
       if (carrierFilter && p.carrier !== carrierFilter)              return false
@@ -211,8 +186,8 @@ export default function LapsePage() {
   const quickSearchResults = useMemo(() => {
     if (!quickSearchQuery.trim()) return []
     const q = quickSearchQuery.toLowerCase()
-    return policies.filter(p => p.applicant?.toLowerCase().includes(q)).slice(0, 20)
-  }, [policies, quickSearchQuery])
+    return allPolicies.filter(p => p.applicant?.toLowerCase().includes(q)).slice(0, 20)
+  }, [allPolicies, quickSearchQuery])
 
   function openFromTable(policy)  { setSelected(policy); setSelectedSource('table') }
   function openFromSearch(policy) { setSelected(policy); setSelectedSource('search') }
@@ -234,25 +209,14 @@ export default function LapsePage() {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Lapse / Pending Lapse</h1>
-          {isDirector && (() => {
-            const self      = masterPersonnel.find(p => p.sfg_id?.toLowerCase() === activeSubject?.sfg_id?.toLowerCase())
-            const subOwners = masterPersonnel
-              .filter(p => p.sfg_id?.toLowerCase() !== activeSubject?.sfg_id?.toLowerCase() && isOwnerRecord(p))
-              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-            const owners = self ? [self, ...subOwners] : subOwners
-            return (
-              <select
-                value={selectedScope}
-                onChange={e => handleScopeChange(e.target.value)}
-                className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
-              >
-                <option value="master" style={optionStyle}>Master Agency</option>
-                {owners.map(o => (
-                  <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>{o.name}</option>
-                ))}
-              </select>
-            )
-          })()}
+          {isDirector && (
+            <ScopeDropdown
+              masterPersonnel={masterPersonnel}
+              selfId={activeSubject?.sfg_id}
+              value={selectedScope}
+              onChange={handleScopeChange}
+            />
+          )}
         </div>
         <button
           onClick={() => { setQuickSearchOpen(true); setQuickSearchQuery('') }}
@@ -348,7 +312,7 @@ export default function LapsePage() {
             <table className="w-full text-sm min-w-[820px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
-                  {['Agent', 'Client', 'Carrier', 'Status', 'Issued APV', 'Expected Lapse Date', 'Days', 'Last Update'].map(h => (
+                  {['Agent', 'Client', 'Carrier', 'Status', 'Issued APV', 'Expected Lapse Date', 'Days'].map(h => (
                     <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 first:pl-5 last:pr-5 whitespace-nowrap">
                       {h}
                     </th>
@@ -378,8 +342,7 @@ export default function LapsePage() {
                       <td className="px-4 py-3"><ConsBadge status={p.conservation_status} urg={urg} /></td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
-                      <td className="px-4 py-3"><DaysBadge days={days} /></td>
-                      <td className="px-4 py-3 pr-5 text-gray-400 dark:text-white/40 text-xs whitespace-nowrap">{fmtDate(p.last_update)}</td>
+                      <td className="px-4 py-3 pr-5"><DaysBadge days={days} /></td>
                     </tr>
                   )
                 })}
@@ -398,7 +361,18 @@ export default function LapsePage() {
           canWrite={permissions?.appsAndPolicies?.write ?? false}
           onUpdate={updated => {
             setSelected(updated)
-            setPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
+            setAllPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
+            if (updated.conservation_status?.trim()) {
+              // Add to table list if newly given a conservation status, otherwise update in place
+              setPolicies(prev =>
+                prev.some(p => p.id === updated.id)
+                  ? prev.map(p => p.id === updated.id ? updated : p)
+                  : [...prev, updated]
+              )
+            } else {
+              // Conservation status removed — drop from table
+              setPolicies(prev => prev.filter(p => p.id !== updated.id))
+            }
           }}
         />
       )}

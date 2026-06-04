@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
-import { useTheme } from '../context/ThemeContext'
+
 import AddAgentModal from '../components/AddAgentModal'
+import ScopeDropdown from '../components/ScopeDropdown'
+import { getBaseshopIds } from '../utils/agencyScope'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,37 +40,6 @@ function fmtDate(d) {
   return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// Given an owner's SFG ID and the full master-agency list, return the set of
-// SFG IDs in that owner's baseshop (stops descending at sub-owners).
-function getBaseshopIds(ownerSfgId, allPersonnel) {
-  const ownerIds = new Set(
-    allPersonnel
-      .filter(p => {
-        const ao = p.named_milestones?.AO ?? []
-        return !!(ao[0] && ao[1] && ao[2])
-      })
-      .map(p => p.sfg_id.toLowerCase()),
-  )
-
-  const childrenOf = {}
-  for (const p of allPersonnel) {
-    const up = p.upline_sfg_id?.trim().toLowerCase()
-    if (!up) continue
-    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
-  }
-
-  const root   = ownerSfgId.toLowerCase()
-  const result = new Set()
-  function traverse(id) {
-    result.add(id)
-    for (const child of (childrenOf[id] ?? [])) {
-      if (ownerIds.has(child) && child !== root) continue
-      traverse(child)
-    }
-  }
-  traverse(root)
-  return result
-}
 
 // ─── Quick-filter definitions ──────────────────────────────────────────────────
 // All         = show all visible agents
@@ -85,7 +56,6 @@ const QUICK_FILTERS = [
 export default function OnboardingPage() {
   const { userProfile }                = useAuth()
   const { activeSubject, permissions } = useViewing()
-  const { theme }                      = useTheme()
 
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [kajabiMap,       setKajabiMap]       = useState({})   // sfg_id → { count, latestDate }
@@ -108,7 +78,7 @@ export default function OnboardingPage() {
 
   const isSuperAdmin = userProfile?.role === 'super_admin'
 
-  const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
+
 
   // ── Load user's hidden list from Supabase ──────────────────────────────────
   useEffect(() => {
@@ -136,11 +106,16 @@ export default function OnboardingPage() {
 
   async function load(sfgId) {
     try {
-      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
-      if (!res.ok) throw new Error('Failed to load personnel data')
-      const rows = await res.json()
+      // Fire personnel and onboarding-progress in parallel — onboarding now resolves
+      // the team tree internally so it no longer has to wait for personnel to finish.
+      const [personnelRes, kajabiRes] = await Promise.all([
+        fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`),
+        fetch(`/api/onboarding-progress?root=${encodeURIComponent(sfgId)}`),
+      ])
 
-      // Sort: incomplete contracting first, then newest hire date
+      if (!personnelRes.ok) throw new Error('Failed to load personnel data')
+      const rows = await personnelRes.json()
+
       const sorted = [...rows].sort((a, b) => {
         const ac = !!a.contracting_complete, bc = !!b.contracting_complete
         if (ac !== bc) return ac ? 1 : -1
@@ -148,9 +123,11 @@ export default function OnboardingPage() {
       })
       setMasterPersonnel(sorted)
 
-      // Batch load Kajabi progress for the full master set
-      const sfgIds = rows.map(r => r.sfg_id)
-      await loadKajabi(sfgIds)
+      if (kajabiRes.ok) {
+        const { summaries, totalLessons: total } = await kajabiRes.json()
+        setTotalLessons(total ?? 0)
+        setKajabiMap(summaries ?? {})
+      }
     } catch (e) {
       setError(e.message)
     } finally {
@@ -202,17 +179,6 @@ export default function OnboardingPage() {
       }),
     }).catch(err => console.error('[OnboardingPage] hide toggle', err))
   }
-
-  // ── Owners derived from master data (AO Month 1 + Month 2 both filled) ──────
-  const owners = useMemo(() =>
-    masterPersonnel
-      .filter(p => {
-        const ao = p.named_milestones?.AO ?? []
-        return !!(ao[0] && ao[1] && ao[2])
-      })
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    [masterPersonnel],
-  )
 
   // ── Personnel scoped to current selection (client-side baseshop filter) ────
   const personnel = useMemo(() => {
@@ -276,16 +242,13 @@ export default function OnboardingPage() {
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Onboarding</h3>
           <div className="flex items-center gap-3">
-            {isDirector && owners.length > 0 && (
-              <select value={selectedScope} onChange={e => setSelectedScope(e.target.value)}
-                className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer">
-                <option value="master" style={optionStyle}>Master Agency</option>
-                {owners.map(o => (
-                  <option key={o.sfg_id} value={o.sfg_id} style={optionStyle}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
+            {isDirector && (
+              <ScopeDropdown
+                masterPersonnel={masterPersonnel}
+                selfId={activeSubject?.sfg_id}
+                value={selectedScope}
+                onChange={setSelectedScope}
+              />
             )}
             <span className="text-xs text-gray-400 dark:text-white/30">
               {rows.length.toLocaleString()} of {visibleCount.toLocaleString()} agents

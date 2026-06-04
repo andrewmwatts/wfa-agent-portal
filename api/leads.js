@@ -30,16 +30,27 @@ const sb = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 )
 
+// Token → sfgId cache — avoids two sequential Supabase calls (auth.getUser + users lookup)
+// on every leads/scripts request. Keyed by bearer token with a 10-minute TTL.
+const tokenCache = new Map()
+const TOKEN_TTL  = 10 * 60 * 1000
+
 async function resolveCallerSfgId(req, fallback) {
   if (process.env.VITE_BYPASS_AUTH === 'true') {
     return fallback ? String(fallback).trim().toUpperCase() : null
   }
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
   if (!token) return null
+
+  const hit = tokenCache.get(token)
+  if (hit && hit.exp > Date.now()) return hit.sfgId
+
   const { data: { user }, error } = await sb.auth.getUser(token)
   if (error || !user) return null
   const { data } = await sb.from('users').select('sfg_id').eq('id', user.id).single()
-  return data?.sfg_id?.toUpperCase() ?? null
+  const sfgId = data?.sfg_id?.toUpperCase() ?? null
+  if (sfgId) tokenCache.set(token, { sfgId, exp: Date.now() + TOKEN_TTL })
+  return sfgId
 }
 
 export default async function handler(req, res) {
@@ -240,7 +251,24 @@ export default async function handler(req, res) {
     const sfgId = await resolveCallerSfgId(req, req.query.sfg_id)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { category } = req.query
+    const { category, include } = req.query
+
+    // ?include=scripts returns leads + scripts in one round-trip so the page
+    // doesn't need a second fetch to the same function.
+    if (include === 'scripts') {
+      let leadsQuery = sb.from('leads').select('*').eq('sfg_id', sfgId)
+      if (category) leadsQuery = leadsQuery.eq('category', category)
+      leadsQuery = leadsQuery.order('added', { ascending: false }).order('id', { ascending: false })
+
+      const [{ data: leads, error: leadsErr }, { data: scripts, error: scriptsErr }] = await Promise.all([
+        leadsQuery,
+        sb.from('lead_scripts').select('*').eq('sfg_id', sfgId).order('category').order('created_at'),
+      ])
+      if (leadsErr)   return res.status(500).json({ error: leadsErr.message })
+      if (scriptsErr) return res.status(500).json({ error: scriptsErr.message })
+      return res.status(200).json({ leads: leads ?? [], scripts: scripts ?? [] })
+    }
+
     let query = sb.from('leads').select('*').eq('sfg_id', sfgId)
     if (category) query = query.eq('category', category)
     query = query.order('added', { ascending: false }).order('id', { ascending: false })

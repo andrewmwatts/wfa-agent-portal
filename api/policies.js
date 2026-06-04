@@ -30,13 +30,15 @@ const POLICY_COLS = [
   'snapshot_chargeback_month', 'snapshot_chargeback_apv',
 ].join(', ')
 
-async function fetchPolicies(supabase, sfgIds) {
-  const PAGE = 1000
+// applyFilter is an optional function (q => q) for caller-specific WHERE clauses
+async function fetchPolicies(supabase, sfgIds, applyFilter = null) {
+  const PAGE = 10000
   const results = []
   let from = 0
   while (true) {
     let q = supabase.from('policies').select(POLICY_COLS).order('id')
     if (sfgIds?.length) q = q.in('sfg_id', sfgIds.map(id => id.toUpperCase()))
+    if (applyFilter)    q = applyFilter(q)
     const { data, error } = await q.range(from, from + PAGE - 1)
     if (error) throw error
     results.push(...(data ?? []))
@@ -46,8 +48,47 @@ async function fetchPolicies(supabase, sfgIds) {
   return results
 }
 
+// ── Carrier-metrics cache ─────────────────────────────────────────────────────
+let carrierMetricsCache = null
+let carrierMetricsCacheTs = 0
+const CARRIER_METRICS_TTL = 60 * 60 * 1000 // 1 hour
+
+// ── Resolve master-agency SFG IDs from a root sfg_id ─────────────────────────
+// Lightweight alternative to calling /api/personnel — skips promotions/milestones
+// and just builds the tree. Used so type=apps can be fired in parallel with
+// the full personnel call instead of waiting for it.
+// Results are cached for 1 hour per root — the team tree changes rarely and
+// this eliminates a full personnel table scan on every apps request.
+const masterIdsCache = new Map()
+const MASTER_IDS_TTL = 60 * 60 * 1000
+
+async function resolveMasterIds(supabase, rootSfgId) {
+  const key = rootSfgId.trim().toLowerCase()
+  const hit = masterIdsCache.get(key)
+  if (hit && hit.exp > Date.now()) return hit.ids
+
+  const { data } = await supabase
+    .from('personnel')
+    .select('sfg_id, upline_sfg_id')
+  const childrenOf = {}
+  for (const p of data ?? []) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+  const ids = new Set()
+  function traverse(id) {
+    ids.add(id.toUpperCase())
+    for (const child of childrenOf[id] ?? []) traverse(child)
+  }
+  traverse(key)
+  const result = [...ids]
+  masterIdsCache.set(key, { ids: result, exp: Date.now() + MASTER_IDS_TTL })
+  return result
+}
+
 async function fetchAll(supabase, table, columns) {
-  const PAGE = 1000
+  const PAGE = 10000
   const results = []
   let from = 0
   while (true) {
@@ -181,6 +222,11 @@ export default async function handler(req, res) {
   // issued, declined, withdrawn, not taken.
   if (req.method === 'GET' && type === 'carrier-metrics') {
     try {
+      const now = Date.now()
+      if (carrierMetricsCache && now - carrierMetricsCacheTs < CARRIER_METRICS_TTL) {
+        return res.status(200).json(carrierMetricsCache)
+      }
+
       // Paginated fetch — same pattern as fetchAll so we get every row
       const [policies, crosswalk] = await Promise.all([
         fetchAll(supabase, 'policies', 'carrier, policy_name, status, submit_date, issue_date'),
@@ -279,6 +325,8 @@ export default async function handler(req, res) {
         return (a.subtype ?? '').localeCompare(b.subtype ?? '')
       })
 
+      carrierMetricsCache   = rows
+      carrierMetricsCacheTs = Date.now()
       return res.status(200).json(rows)
     } catch (err) {
       console.error('[policies/carrier-metrics]', err)
@@ -286,17 +334,41 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── GET /api/policies?type=apps&sfg_ids=X ──────────────────────────────────
+  // ── GET /api/policies?type=apps&sfg_ids=X  (or &root=X&mode=master) ─────────
   if (req.method === 'GET' && type === 'apps') {
     const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''
-    const requestedIds = raw
-      ? raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    let requestedIds = raw
+      ? raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
       : []
 
     try {
+      // root= lets callers skip a separate personnel round-trip — we resolve the
+      // tree internally so the Dashboard can fire this in parallel with /api/personnel.
+      if (!requestedIds.length && req.query.root?.trim()) {
+        requestedIds = await resolveMasterIds(supabase, req.query.root)
+      }
+
+      // 6-month filter: keeps the pagination loop to 1 round for most teams.
+      // Always includes pending/incomplete (current state) and conservation policies
+      // (lapse list) regardless of age — only the date-filtered path is trimmed.
+      const sixMonthsAgo = new Date()
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+      const since = sixMonthsAgo.toISOString().slice(0, 10)
+      const appsFilter = q => q.or(
+        `submit_date.gte.${since},issue_date.gte.${since},status.in.(pending,incomplete),conservation_status.not.is.null`
+      )
+
+      // Fetch policies + agent names in parallel.
+      // Name lookup is scoped to requested agents only — no longer a full-table scan.
+      const upperIds = requestedIds.map(id => id.toUpperCase())
       const [allRows, people] = await Promise.all([
-        fetchPolicies(supabase, requestedIds.length ? requestedIds : null),
-        fetchAll(supabase, 'personnel', 'sfg_id, preferred_name, opt_name'),
+        fetchPolicies(supabase, requestedIds.length ? requestedIds.map(id => id.toLowerCase()) : null, appsFilter),
+        requestedIds.length
+          ? supabase.from('personnel')
+              .select('sfg_id, preferred_name, opt_name')
+              .in('sfg_id', upperIds)
+              .then(r => r.data ?? [])
+          : fetchAll(supabase, 'personnel', 'sfg_id, preferred_name, opt_name'),
       ])
 
       if (!allRows.length) return res.status(200).json({ pending: [], incomplete: [], lapse: [], metrics: null })
@@ -462,6 +534,9 @@ export default async function handler(req, res) {
         newWritersItems:   [...newWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
       }
 
+      // 30-second edge cache — dashboard metrics tolerate brief staleness and
+      // this eliminates cold starts for back-to-back or near-simultaneous loads.
+      res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=300')
       return res.status(200).json({ pending, incomplete, lapse, metrics, detail })
     } catch (err) {
       console.error('[policies/apps]', err)

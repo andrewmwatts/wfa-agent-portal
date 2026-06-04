@@ -30,7 +30,9 @@ const NAV_SECTIONS = [
     items: [
       { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
       { path: '/onboarding',           label: 'Onboarding',           roles: LEADER_ROLES },
+      { path: '/accountability',        label: 'Accountability',       roles: LEADER_ROLES },
       { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
+      { path: '/snapshot',              label: 'Snapshot',             roles: LEADER_ROLES },
       { path: '/agents',               label: 'Agents',               roles: OWNER_ROLES  },
     ],
   },
@@ -40,6 +42,12 @@ const NAV_SECTIONS = [
       { path: '/monthly-metrics',  label: 'Monthly Metrics'  },
       { path: '/weekly-metrics',   label: 'Weekly Metrics'   },
       { path: '/carrier-metrics',  label: 'Carrier Metrics'  },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { path: '/admin-tools', label: 'Admin Tools', roles: ADMIN_ROLES },
     ],
   },
 ]
