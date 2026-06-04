@@ -220,7 +220,7 @@ export default function ActivityPage() {
     setGoalsLoading(true)
     try {
       const res = await fetch(
-        `/api/activity-goals?sfg_id=${encodeURIComponent(activeSubject.sfg_id)}&month=${toYearMonth(goalsMonth)}`,
+        `/api/activity?type=goals&sfg_id=${encodeURIComponent(activeSubject.sfg_id)}&month=${toYearMonth(goalsMonth)}`,
       )
       if (res.ok) { const { goals: g } = await res.json(); setGoals(g ?? {}) }
     } catch { /* ignore */ } finally { setGoalsLoading(false) }
@@ -232,7 +232,7 @@ export default function ActivityPage() {
     if (!activeSubject?.sfg_id || !goalsDraft) return
     setGoalsSaving(true)
     try {
-      const res = await fetch('/api/activity-goals', {
+      const res = await fetch('/api/activity?type=goals', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

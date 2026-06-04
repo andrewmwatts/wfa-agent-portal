@@ -8,33 +8,16 @@ loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 /**
- * Activity Logs API
+ * Activity API  (logs + goals combined)
  *
- * GET  /api/activity?sfg_id=X&start=YYYY-MM-DD&end=YYYY-MM-DD
- * POST /api/activity  { sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued, notes }
+ * Activity logs (default, no type param):
+ *   GET  /api/activity?sfg_id=X&start=YYYY-MM-DD&end=YYYY-MM-DD
+ *   POST /api/activity  { sfg_id, log_date, dials, ... }
  *
- * Required Supabase table:
- *
- * CREATE TABLE public.activity_logs (
- *   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- *   sfg_id        text NOT NULL,
- *   log_date      date NOT NULL,
- *   dials         integer NOT NULL DEFAULT 0,
- *   contacts      integer NOT NULL DEFAULT 0,
- *   appts_set     integer NOT NULL DEFAULT 0,
- *   appts_kept    integer NOT NULL DEFAULT 0,
- *   apps_written  integer NOT NULL DEFAULT 0,
- *   resets        integer NOT NULL DEFAULT 0,
- *   notes         text,
- *   created_at    timestamptz NOT NULL DEFAULT now(),
- *   updated_at    timestamptz NOT NULL DEFAULT now(),
- *   UNIQUE(sfg_id, log_date)
- * );
- * ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "Authenticated users can manage activity_logs"
- *   ON public.activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
- * GRANT ALL ON public.activity_logs TO authenticated;
- * GRANT USAGE, SELECT ON SEQUENCE activity_logs_id_seq TO authenticated;
+ * Activity goals (type=goals):
+ *   GET  /api/activity?type=goals&sfg_id=X&month=YYYY-MM
+ *   POST /api/activity?type=goals  { sfg_id, year_month, weekly_dials, weekly_appts,
+ *                                    monthly_apv_submitted, monthly_apv_issued }
  */
 
 const supabase = createClient(
@@ -42,8 +25,68 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 )
 
+function parseOptionalInt(val) {
+  if (val === null || val === undefined || val === '') return null
+  const n = parseInt(val)
+  return isNaN(n) ? null : Math.max(0, n)
+}
+
+function parseOptionalNum(val) {
+  if (val === null || val === undefined || val === '') return null
+  const n = parseFloat(val)
+  return isNaN(n) ? null : Math.max(0, n)
+}
+
 export default async function handler(req, res) {
-  // ── GET ─────────────────────────────────────────────────────────────────────
+  const isGoals = req.query.type === 'goals'
+
+  // ── Goals branch ─────────────────────────────────────────────────────────────
+  if (isGoals) {
+    if (req.method === 'GET') {
+      const { sfg_id, month } = req.query
+      if (!sfg_id || !month) return res.status(400).json({ error: 'sfg_id and month required' })
+
+      const { data, error } = await supabase
+        .from('activity_goals')
+        .select('*')
+        .eq('sfg_id', sfg_id.trim().toUpperCase())
+        .eq('year_month', month.trim())
+        .maybeSingle()
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ goals: data ?? {} })
+    }
+
+    if (req.method === 'POST') {
+      const { sfg_id, year_month, weekly_dials, weekly_appts, monthly_apv_submitted, monthly_apv_issued } = req.body ?? {}
+
+      if (!sfg_id || !year_month) return res.status(400).json({ error: 'sfg_id and year_month required' })
+
+      const { data, error } = await supabase
+        .from('activity_goals')
+        .upsert(
+          {
+            sfg_id:                sfg_id.trim().toUpperCase(),
+            year_month:            year_month.trim(),
+            weekly_dials:          parseOptionalInt(weekly_dials),
+            weekly_appts:          parseOptionalInt(weekly_appts),
+            monthly_apv_submitted: parseOptionalNum(monthly_apv_submitted),
+            monthly_apv_issued:    parseOptionalNum(monthly_apv_issued),
+            updated_at:            new Date().toISOString(),
+          },
+          { onConflict: 'sfg_id,year_month' },
+        )
+        .select()
+        .single()
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ goals: data })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  // ── Activity logs branch ──────────────────────────────────────────────────────
   if (req.method === 'GET') {
     const { sfg_id, start, end } = req.query
     if (!sfg_id) return res.status(400).json({ error: 'sfg_id required' })
@@ -61,7 +104,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ logs: data ?? [] })
   }
 
-  // ── POST ─────────────────────────────────────────────────────────────────────
   if (req.method === 'POST') {
     const {
       sfg_id, log_date,
