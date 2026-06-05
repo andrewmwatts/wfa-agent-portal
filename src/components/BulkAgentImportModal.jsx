@@ -40,6 +40,10 @@ function parseCSVDate(val) {
   const dmy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/)
   if (dmy) return new Date(parseInt(dmy[3]), parseInt(dmy[1]) - 1, parseInt(dmy[2]))
 
+  // YYYYMMDD (no separators, e.g. 19850315)
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (compact) return new Date(parseInt(compact[1]), parseInt(compact[2]) - 1, parseInt(compact[3]))
+
   return null
 }
 
@@ -171,6 +175,9 @@ function PreviewRow({ row, onUpdate, idx }) {
         </span>
         <span className="w-28 text-gray-500 flex-shrink-0 text-xs">
           {fmtDate(row.hire_date) || '—'}
+        </span>
+        <span className="w-28 text-gray-500 flex-shrink-0 text-xs">
+          {fmtDate(row.birth_date) || <em className="text-red-400">no DOB</em>}
         </span>
 
         <div className="ml-auto flex items-center gap-2 flex-shrink-0">
@@ -387,6 +394,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
                 <span className="w-44">Name</span>
                 <span className="w-24">Upline</span>
                 <span className="w-28">Hire Date</span>
+                <span className="w-28">Birth Date</span>
               </div>
 
               {/* Row list */}
