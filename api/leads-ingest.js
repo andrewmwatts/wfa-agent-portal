@@ -18,9 +18,9 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   check_duplicate       { action, phone, sfg_id }               → { duplicate }
  *   insert_lead           { action, lead: {...} }                  → { success }
  *   insert_error          { action, error: {...} }                 → { success }
- *   insert_contract_number{ action, sfg_id, carrier,
+ *   insert_contract_number{ action, contract: { sfg_id, carrier,
  *                           contract_number, effective_date,
- *                           source }                               → { success }
+ *                           source } }                            → { success }
  *
  * Required table — run once in Supabase:
  *
@@ -135,7 +135,7 @@ export default async function handler(req, res) {
 
   // ── insert_contract_number ───────────────────────────────────────────────
   if (action === 'insert_contract_number') {
-    const { sfg_id, carrier, contract_number, effective_date, source } = body
+    const { sfg_id, carrier, contract_number, effective_date, source } = body.contract ?? {}
     if (!sfg_id || !carrier || !contract_number || !source) {
       return res.status(400).json({
         error: 'sfg_id, carrier, contract_number, and source are required',
