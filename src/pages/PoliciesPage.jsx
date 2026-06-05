@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Component, useEffect, useMemo, useRef, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -694,17 +694,19 @@ export default function PoliciesPage() {
 
       {/* Detail Modal */}
       {selected && (
-        <PolicyModal
-          policy={selected}
-          onClose={closeDetail}
-          onBack={selectedSource === 'search' ? closeDetail : null}
-          canWrite={permissions?.appsAndPolicies?.write ?? false}
-          onUpdate={updated => {
-            setSelected(updated)
-            setPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
-          }}
-          onDelete={id => setPolicies(prev => prev.filter(p => p.id !== id))}
-        />
+        <PolicyModalErrorBoundary onClose={closeDetail}>
+          <PolicyModal
+            policy={selected}
+            onClose={closeDetail}
+            onBack={selectedSource === 'search' ? closeDetail : null}
+            canWrite={permissions?.appsAndPolicies?.write ?? false}
+            onUpdate={updated => {
+              setSelected(updated)
+              setPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
+            }}
+            onDelete={id => setPolicies(prev => prev.filter(p => p.id !== id))}
+          />
+        </PolicyModalErrorBoundary>
       )}
 
       {/* Add Policy Modal */}
@@ -745,6 +747,31 @@ function StatChip({ label, value }) {
       <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">{value}</p>
     </div>
   )
+}
+
+// ─── Error boundary — prevents a bad policy record from crashing the page ─────
+
+class PolicyModalErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={this.props.onClose}>
+          <div className="bg-gray-50 dark:bg-secondary border border-red-300 dark:border-red-700/50 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <p className="text-sm font-semibold text-red-600 dark:text-red-400">Could not display this policy</p>
+            <p className="text-xs text-gray-500 dark:text-white/50">{String(this.state.error)}</p>
+            <button onClick={this.props.onClose}
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-white/70 hover:bg-gray-300 dark:hover:bg-white/20 transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 // ─── Policy Detail Modal ───────────────────────────────────────────────────────
@@ -1365,8 +1392,9 @@ function DetailItem({ label, value, accent }) {
 }
 
 function CheckItem({ label, value }) {
-  // Treat any truthy-looking value as checked
-  const checked = !!value && !['false', '0', 'no', 'n', ''].includes(value.trim().toLowerCase())
+  // Coerce to string first — DB may return boolean true/false instead of 'TRUE'/'FALSE'
+  const str     = value == null ? '' : String(value)
+  const checked = !!str && !['false', '0', 'no', 'n', ''].includes(str.trim().toLowerCase())
   return (
     <div className="flex items-center gap-2">
       <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
