@@ -57,6 +57,7 @@ export default async function handler(req, res) {
   }
 
   const body = req.body ?? {}
+  console.log('leads-ingest received:', JSON.stringify(body).substring(0, 200))
   const { action } = body
 
   // ── lookup_agent ──────────────────────────────────────────────────────────
