@@ -76,7 +76,7 @@ function processRows(csvRows, existingPersonnel) {
     const rawLastName  = getField(raw, 'LastName',  'Last Name',  'last_name')
     const rawUpline    = getField(raw, 'Upline', 'UplineCode', 'Upline SFG ID', 'upline_sfg_id', 'UplineAgentCode')
     const rawHire      = getField(raw, 'ContractStartDt', 'hire_date')
-    const rawBirth     = getField(raw, 'BirthDate', 'Birth Date', 'birth_date', 'DOB', 'Date of Birth', 'DateOfBirth')
+    const rawBirth     = getField(raw, 'BirthDt', 'BirthDate', 'Birth Date', 'birth_date', 'DOB', 'Date of Birth', 'DateOfBirth', 'Birthday', 'Birth_Date')
     const rawNPN       = getField(raw, 'NPN', 'npn', 'NPN Number')
     const rawStatus    = getField(raw, 'Status', 'status')
 
@@ -318,7 +318,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
                   <span><span className="font-mono bg-gray-100 px-1 rounded">AgentName</span> → Opt Name</span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">UplineCode</span> → Upline SFG ID</span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">Hire Date</span> / <span className="font-mono bg-gray-100 px-1 rounded">ContractDate</span> → Hire Date</span>
-                  <span><span className="font-mono bg-gray-100 px-1 rounded">BirthDate</span> / <span className="font-mono bg-gray-100 px-1 rounded">DOB</span> → Birth Date</span>
+                  <span><span className="font-mono bg-gray-100 px-1 rounded">BirthDt</span> / <span className="font-mono bg-gray-100 px-1 rounded">BirthDate</span> / <span className="font-mono bg-gray-100 px-1 rounded">DOB</span> → Birth Date</span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">NPN</span> → NPN</span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">Status</span> → Status</span>
                 </div>
