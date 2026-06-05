@@ -7,11 +7,6 @@ import BulkImportModal from '../components/BulkImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
 
-function isTruthy(val) {
-  if (!val) return false
-  return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
-}
-
 // Parse a YYYY-MM-DD string as LOCAL midnight (avoids UTC-offset date shifting)
 function parseDateLocal(str) {
   if (!str) return null
@@ -803,6 +798,9 @@ const POLICY_COL_MAP = {
 // Fields that must be stored as numbers, not strings
 const POLICY_NUMERIC_KEYS = new Set(['subm_apv', 'issued_apv', 'face_amt', 'cb_apv'])
 
+// Fields that are boolean — passed as-is, not coerced to String
+const POLICY_BOOLEAN_KEYS = new Set(['not_in_opt', 'split_reset', 'chargeback_exempt'])
+
 const INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
 const STATUS_OPTIONS = ['Pending', 'Incomplete', 'Issued', 'Declined', 'Withdrawn', 'Not taken']
@@ -898,7 +896,9 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete 
       const updates = {}
       for (const [key, col] of Object.entries(POLICY_COL_MAP)) {
         const v = typedDraft[key]
-        updates[col] = POLICY_NUMERIC_KEYS.has(key) ? v : String(v ?? '')
+        if      (POLICY_NUMERIC_KEYS.has(key))  updates[col] = v
+        else if (POLICY_BOOLEAN_KEYS.has(key))  updates[col] = !!v
+        else                                    updates[col] = String(v ?? '')
       }
       // chargeback_exempt is nullable — omit it entirely if never computed
       // so we don't accidentally overwrite a null DB value with false
@@ -1145,8 +1145,8 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete 
           <ModalSection title="Flags">
             {editing ? (
               <div className="flex gap-6">
-                <CheckEditField label="Not in Opt"   checked={isTruthy(String(draft.not_in_opt ?? ''))} onChange={v => setField('not_in_opt', v ? 'TRUE' : '')} />
-                <CheckEditField label="Split / Reset" checked={isTruthy(String(draft.split_reset ?? ''))} onChange={v => setField('split_reset', v ? 'TRUE' : '')} />
+                <CheckEditField label="Not in Opt"   checked={!!draft.not_in_opt}  onChange={v => setField('not_in_opt',  v)} />
+                <CheckEditField label="Split / Reset" checked={!!draft.split_reset} onChange={v => setField('split_reset', v)} />
               </div>
             ) : (
               <div className="flex gap-6">
@@ -1392,9 +1392,9 @@ function DetailItem({ label, value, accent }) {
 }
 
 function CheckItem({ label, value }) {
-  // Coerce to string first — DB may return boolean true/false instead of 'TRUE'/'FALSE'
-  const str     = value == null ? '' : String(value)
-  const checked = !!str && !['false', '0', 'no', 'n', ''].includes(str.trim().toLowerCase())
+  const checked = typeof value === 'boolean'
+    ? value
+    : !!value && !['false', '0', 'no', 'n', ''].includes(String(value).trim().toLowerCase())
   return (
     <div className="flex items-center gap-2">
       <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0

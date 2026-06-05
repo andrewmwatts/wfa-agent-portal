@@ -135,6 +135,7 @@ const CB_MONTH_NAMES = {
 
 function coerce(col, val) {
   if (BOOLEAN_COLS.has(col)) {
+    if (typeof val === 'boolean') return val          // already boolean — fast path
     const v = String(val ?? '').trim().toLowerCase()
     return ['true', '1', 'yes', 'x'].includes(v)
   }
@@ -585,8 +586,8 @@ export default async function handler(req, res) {
           issue_date:          p.issue_date                     ?? '',
           application_notes:   p.application_notes              ?? '',
           policy_notes:        p.policy_notes                   ?? '',
-          not_in_opt:          p.not_in_opt   ? 'x' : '',
-          split_reset:         p.split_reset  ? 'x' : '',
+          not_in_opt:          p.not_in_opt        ?? false,
+          split_reset:         p.split_reset       ?? false,
           chargeback_exempt:   p.chargeback_exempt ?? null,
           cb_month:            formatCbMonth(p.snapshot_chargeback_month),
           cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
