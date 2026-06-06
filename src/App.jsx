@@ -58,7 +58,7 @@ export default function App() {
             {/* Leader, Owner, Director, Admin */}
             <Route element={<ProtectedRoute allowedRoles={['leader', 'owner', 'director', 'super_admin']} />}>
               <Route element={<AppLayout />}>
-                <Route path="/onboarding"           element={<OnboardingPage />} />
+                <Route path="/contracting"           element={<OnboardingPage />} />
                 <Route path="/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
                 <Route path="/accountability"        element={<AccountabilityPage />} />
                 <Route path="/coaching"             element={<CoachingPage />} />
