@@ -527,14 +527,16 @@ function PolicyCrosswalkTab({ adminFetch }) {
 function AgencySettingsTab({ adminFetch }) {
   const [agencies, setAgencies] = useState([])
   const [loading,  setLoading]  = useState(true)
+  const [loadErr,  setLoadErr]  = useState('')
   const [editing,  setEditing]  = useState(null)  // owner sfg_id
   const [draft,    setDraft]    = useState({})
   const [saving,   setSaving]   = useState(false)
   const [err,      setErr]      = useState('')
 
   const load = useCallback(async () => {
+    setLoadErr('')
     try { const d = await adminFetch('agencies'); setAgencies(d.agencies ?? []) }
-    catch { /* silent */ } finally { setLoading(false) }
+    catch (e) { setLoadErr(e.message) } finally { setLoading(false) }
   }, [adminFetch])
 
   useEffect(() => { load() }, [load])
@@ -559,6 +561,7 @@ function AgencySettingsTab({ adminFetch }) {
   }
 
   if (loading) return <p className="text-sm text-gray-400">Loading…</p>
+  if (loadErr) return <p className="text-sm text-red-500">Error: {loadErr}</p>
 
   return (
     <div className="space-y-3">
@@ -629,6 +632,7 @@ function AgencySettingsTab({ adminFetch }) {
 function ParseErrorsTab({ adminFetch }) {
   const [errors,   setErrors]   = useState([])
   const [loading,  setLoading]  = useState(true)
+  const [loadErr,  setLoadErr]  = useState('')
   const [showAll,  setShowAll]  = useState(false)
   const [expanded, setExpanded] = useState({})
   const [inserting, setInserting] = useState(null) // error row being manually inserted
@@ -636,10 +640,11 @@ function ParseErrorsTab({ adminFetch }) {
   const [saving,    setSaving]    = useState(false)
 
   const load = useCallback(async () => {
+    setLoadErr('')
     try {
       const d = await adminFetch('parse-errors', 'GET', null, showAll ? '&all=true' : '')
       setErrors(d.errors ?? [])
-    } catch { /* silent */ } finally { setLoading(false) }
+    } catch (e) { setLoadErr(e.message) } finally { setLoading(false) }
   }, [adminFetch, showAll])
 
   useEffect(() => { setLoading(true); load() }, [load])
@@ -679,6 +684,7 @@ function ParseErrorsTab({ adminFetch }) {
   }
 
   if (loading) return <p className="text-sm text-gray-400">Loading…</p>
+  if (loadErr) return <p className="text-sm text-red-500">Error: {loadErr}</p>
 
   return (
     <div className="space-y-4">

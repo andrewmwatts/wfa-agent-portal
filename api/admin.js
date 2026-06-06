@@ -280,7 +280,12 @@ export default async function handler(req, res) {
     const showAll = req.query.all === 'true'
     let q = sb.from('parse_errors').select('*').order('created_at', { ascending: false })
     if (!showAll) q = q.eq('resolved', false)
-    const { data, error } = await q
+    let { data, error } = await q
+    // If resolved column doesn't exist yet, fall back to all records
+    if (error?.code === '42703') {
+      const fb = await sb.from('parse_errors').select('*').order('created_at', { ascending: false })
+      data = fb.data; error = fb.error
+    }
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ errors: data ?? [] })
   }
