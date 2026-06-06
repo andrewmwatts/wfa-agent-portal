@@ -128,7 +128,7 @@ export default function Dashboard() {
           canBreakdown={isSuperAdmin}
         />
       )}
-      {showActivitySummary && (
+      {showActivitySummary && permissions.activity.read && (
         <ActivitySummarySection
           subject={activeSubject}
           loading={loading}

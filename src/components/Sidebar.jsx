@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useViewing } from '../context/ViewingContext'
 import { HEADER_TOP } from './AppLayout'
 
 // ── Nav item definitions (mirrors NavMenu role filtering) ──────────────────────
@@ -55,9 +56,11 @@ const NAV_SECTIONS = [
 // ── Shared nav + branding content ─────────────────────────────────────────────
 
 function NavContent({ onNav }) {
-  const location        = useLocation()
-  const { userProfile } = useAuth()
-  const role = userProfile?.role ?? 'agent'
+  const location                   = useLocation()
+  const { userProfile }            = useAuth()
+  const { activeSubject, isSelf }  = useViewing()
+  // When viewing as a delegate, show nav items appropriate to the subject's role
+  const role = (isSelf ? userProfile?.role : activeSubject?.role) ?? userProfile?.role ?? 'agent'
 
   return (
     <div className="flex flex-col h-full">

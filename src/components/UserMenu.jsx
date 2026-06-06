@@ -5,10 +5,18 @@ import { BugReportModal } from '../pages/AdminToolsPage'
 
 // Sections available for delegation (maps to assistant_permissions.section values)
 const SECTIONS = [
-  { key: 'onboarding',        label: 'Onboarding & Agents' },
-  { key: 'apps_and_policies', label: 'Policies & Apps'     },
-  { key: 'metrics',           label: 'Metrics'             },
+  { key: 'onboarding',        label: 'Contracting & Agents' },
+  { key: 'apps_and_policies', label: 'Apps & Policies'      },
+  { key: 'metrics',           label: 'Metrics'              },
+  { key: 'leads',             label: 'Leads'                },
+  { key: 'recruiting',        label: 'Recruiting'           },
+  { key: 'activity',          label: 'Activity'             },
+  { key: 'accountability',    label: 'Accountability'       },
+  { key: 'snapshot',          label: 'Snapshot'             },
 ]
+
+// Sections where write access can always be delegated (no admin grant needed)
+const ALWAYS_WRITABLE = new Set(['leads', 'recruiting'])
 
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 
@@ -350,7 +358,7 @@ function DelegationModal({ userProfile, onClose }) {
         ) : (
           <div className="space-y-2">
             {delegations.map(d => (
-              <DelegationRow key={d.id} delegation={d} onRevoke={() => revoke(d.id)} />
+              <DelegationRow key={d.id} delegation={d} userProfile={userProfile} onRevoke={() => revoke(d.id)} onUpdated={load} />
             ))}
           </div>
         )}
@@ -359,6 +367,7 @@ function DelegationModal({ userProfile, onClose }) {
         {showAdd ? (
           <AddDelegationForm
             agentSfgId={userProfile.sfg_id}
+            userProfile={userProfile}
             onSaved={() => { setShowAdd(false); load() }}
             onCancel={() => setShowAdd(false)}
           />
@@ -372,11 +381,72 @@ function DelegationModal({ userProfile, onClose }) {
   )
 }
 
-function DelegationRow({ delegation, onRevoke }) {
+function DelegationRow({ delegation, userProfile, onRevoke, onUpdated }) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState({})
+  const [saving,  setSaving]  = useState(false)
+  const [err,     setErr]     = useState('')
+
+  const canWriteSections = new Set([
+    ...ALWAYS_WRITABLE,
+    ...(userProfile?.write_sections ?? []),
+  ])
+
+  function initDraft() {
+    const base = Object.fromEntries(SECTIONS.map(s => [s.key, { read: false, write: false }]))
+    for (const p of (delegation.assistant_permissions ?? [])) {
+      if (base[p.section] !== undefined) base[p.section] = { read: !!p.can_read, write: !!p.can_write }
+    }
+    return base
+  }
+
+  function startEdit() { setDraft(initDraft()); setErr(''); setEditing(true) }
+
+  async function saveEdit() {
+    const sections = SECTIONS
+      .filter(s => draft[s.key]?.read || draft[s.key]?.write)
+      .map(s => ({ section: s.key, can_read: !!draft[s.key]?.read, can_write: !!draft[s.key]?.write }))
+    setSaving(true); setErr('')
+    const res = await fetch('/api/users?action=delegate', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: delegation.id, sections }),
+    })
+    setSaving(false)
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setErr(d.error ?? 'Save failed'); return }
+    setEditing(false); onUpdated()
+  }
+
   const granted = delegation.assistant_permissions
-    ?.filter(p => p.can_read)
-    .map(p => SECTIONS.find(s => s.key === p.section)?.label)
+    ?.filter(p => p.can_read || p.can_write)
+    .map(p => {
+      const s = SECTIONS.find(x => x.key === p.section)
+      if (!s) return null
+      return p.can_write ? `${s.label} (R/W)` : s.label
+    })
     .filter(Boolean) ?? []
+
+  if (editing) {
+    return (
+      <div className="p-3 rounded-lg border border-accent/30 dark:border-accent/20 bg-accent/[0.03] space-y-3">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{delegation.assistantName}</p>
+        <SectionPicker sectionPerms={draft} onToggle={(key, type) => setDraft(prev => {
+          const curr = prev[key] ?? { read: false, write: false }
+          if (type === 'read') {
+            const newRead = !curr.read
+            return { ...prev, [key]: { read: newRead, write: newRead ? curr.write : false } }
+          }
+          const newWrite = !curr.write
+          return { ...prev, [key]: { read: newWrite ? true : curr.read, write: newWrite } }
+        })} canWriteSections={canWriteSections} />
+        {err && <p className="text-xs text-accent">{err}</p>}
+        <div className="flex gap-2">
+          <button onClick={saveEdit} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button>
+          <button onClick={() => setEditing(false)} className={btnSecondary}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-primary/10 dark:border-white/10 bg-primary/[0.02] dark:bg-white/[0.02]">
@@ -386,25 +456,39 @@ function DelegationRow({ delegation, onRevoke }) {
           {granted.length ? granted.join(' · ') : 'No sections granted'}
         </p>
       </div>
-      <button
-        onClick={onRevoke}
-        className="flex-shrink-0 text-xs text-accent hover:text-accent-dark transition-colors"
-      >
-        Revoke
-      </button>
+      <div className="flex gap-3 flex-shrink-0">
+        <button onClick={startEdit} className="text-xs text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white transition-colors">Edit</button>
+        <button onClick={onRevoke} className="text-xs text-accent hover:text-accent-dark transition-colors">Revoke</button>
+      </div>
     </div>
   )
 }
 
-function AddDelegationForm({ agentSfgId, onSaved, onCancel }) {
-  const [tab, setTab]             = useState('sfg') // 'sfg' | 'email'
-  const [sections, setSections]   = useState({ onboarding: false, apps_and_policies: false, metrics: false })
-  const [saving, setSaving]       = useState(false)
-  const [error, setError]         = useState(null)
+function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
+  const [tab,          setTab]         = useState('sfg')
+  const [sectionPerms, setSectionPerms] = useState(
+    Object.fromEntries(SECTIONS.map(s => [s.key, { read: false, write: false }]))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState(null)
 
-  function toggleSection(key) { setSections(s => ({ ...s, [key]: !s[key] })) }
+  const canWriteSections = new Set([...ALWAYS_WRITABLE, ...(userProfile?.write_sections ?? [])])
 
-  const selectedSections = Object.entries(sections).filter(([, v]) => v).map(([k]) => k)
+  function toggleSection(key, type) {
+    setSectionPerms(prev => {
+      const curr = prev[key]
+      if (type === 'read') {
+        const newRead = !curr.read
+        return { ...prev, [key]: { read: newRead, write: newRead ? curr.write : false } }
+      }
+      const newWrite = !curr.write
+      return { ...prev, [key]: { read: newWrite ? true : curr.read, write: newWrite } }
+    })
+  }
+
+  const selectedSections = SECTIONS
+    .filter(s => sectionPerms[s.key].read || sectionPerms[s.key].write)
+    .map(s => ({ section: s.key, can_read: sectionPerms[s.key].read, can_write: sectionPerms[s.key].write }))
 
   return (
     <div className="border border-primary/15 dark:border-white/10 rounded-xl p-4 space-y-4 bg-primary/[0.02] dark:bg-white/[0.02]">
@@ -432,9 +516,10 @@ function AddDelegationForm({ agentSfgId, onSaved, onCancel }) {
       {tab === 'sfg' ? (
         <SfgLookupTab
           agentSfgId={agentSfgId}
-          sections={sections}
+          sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
+          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -445,9 +530,10 @@ function AddDelegationForm({ agentSfgId, onSaved, onCancel }) {
       ) : (
         <EmailInviteTab
           agentSfgId={agentSfgId}
-          sections={sections}
+          sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
+          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -460,7 +546,7 @@ function AddDelegationForm({ agentSfgId, onSaved, onCancel }) {
   )
 }
 
-function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
+function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [sfgId, setSfgId]         = useState('')
   const [lookupResult, setLookup] = useState(null)
   const [looking, setLooking]     = useState(false)
@@ -529,7 +615,7 @@ function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection,
       )}
 
       {lookupResult?.found && lookupResult?.hasAccount && (
-        <SectionPicker sections={sections} onToggle={onToggleSection} />
+        <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
       )}
 
       {error && <p className="text-xs text-accent">{error}</p>}
@@ -546,7 +632,7 @@ function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection,
   )
 }
 
-function EmailInviteTab({ agentSfgId, sections, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
+function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [email, setEmail]   = useState('')
   const [sent, setSent]     = useState(false)
 
@@ -593,7 +679,7 @@ function EmailInviteTab({ agentSfgId, sections, selectedSections, onToggleSectio
         placeholder="name@example.com"
         className={inputCls}
       />
-      <SectionPicker sections={sections} onToggle={onToggleSection} />
+      <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
       {error && <p className="text-xs text-accent">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className={btnSecondary}>Cancel</button>
@@ -605,21 +691,35 @@ function EmailInviteTab({ agentSfgId, sections, selectedSections, onToggleSectio
   )
 }
 
-function SectionPicker({ sections, onToggle }) {
+function SectionPicker({ sectionPerms, onToggle, canWriteSections }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-gray-500 dark:text-white/50">Grant read access to:</p>
-      {SECTIONS.map(s => (
-        <label key={s.key} className="flex items-center gap-2.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={sections[s.key]}
-            onChange={() => onToggle(s.key)}
-            className="w-4 h-4 rounded accent-accent cursor-pointer"
-          />
-          <span className="text-sm text-gray-700 dark:text-white/70">{s.label}</span>
-        </label>
-      ))}
+    <div>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 mb-1.5 px-1">
+        <span className="text-xs text-gray-400 dark:text-white/40">Section</span>
+        <span className="text-xs text-gray-400 dark:text-white/40 w-8 text-center">Read</span>
+        <span className="text-xs text-gray-400 dark:text-white/40 w-8 text-center">Write</span>
+      </div>
+      {SECTIONS.map(s => {
+        const perms    = sectionPerms[s.key] ?? { read: false, write: false }
+        const canWrite = canWriteSections.has(s.key)
+        return (
+          <div key={s.key} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1 px-1">
+            <span className="text-sm text-gray-700 dark:text-white/70">{s.label}</span>
+            <div className="flex justify-center w-8">
+              <input type="checkbox" checked={perms.read}
+                onChange={() => onToggle(s.key, 'read')}
+                className="w-4 h-4 accent-accent cursor-pointer" />
+            </div>
+            <div className="flex justify-center w-8">
+              <input type="checkbox" checked={perms.write}
+                onChange={() => onToggle(s.key, 'write')}
+                disabled={!canWrite}
+                title={canWrite ? '' : 'Write access not granted for this section'}
+                className="w-4 h-4 accent-accent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -144,7 +144,7 @@ export default async function handler(req, res) {
   if (action === 'user' && req.method === 'PATCH') {
     const { id, ...fields } = b
     if (!id) return res.status(400).json({ error: 'id required' })
-    const allowed = ['email', 'leads_email', 'role', 'agency_owner', 'is_active']
+    const allowed = ['email', 'leads_email', 'role', 'agency_owner', 'is_active', 'write_sections']
     const patch = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)))
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'No valid fields' })
 

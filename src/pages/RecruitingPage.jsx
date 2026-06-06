@@ -63,7 +63,12 @@ const TABS = [
 
 export default function RecruitingPage() {
   const { session } = useAuth()
-  const { activeSubject } = useViewing()
+  const { activeSubject, permissions } = useViewing()
+  if (!permissions.recruiting.read) return (
+    <main className="max-w-4xl mx-auto px-6 py-8">
+      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    </main>
+  )
 
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...extra }

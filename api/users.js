@@ -313,9 +313,13 @@ export default async function handler(req, res) {
       if (assignErr) throw assignErr
 
       const sections = Array.isArray(invite.sections) ? invite.sections : JSON.parse(invite.sections ?? '[]')
-      const permRows = sections.map(section => ({
-        agent_assistant_id: assignment.id, section, can_read: true, can_write: false,
-      }))
+      const permRows = sections
+        .filter(s => s)
+        .map(s => typeof s === 'string'
+          ? { agent_assistant_id: assignment.id, section: s, can_read: true,       can_write: false }
+          : { agent_assistant_id: assignment.id, section: s.section, can_read: !!s.can_read, can_write: !!s.can_write }
+        )
+        .filter(r => r.section)
       if (permRows.length) {
         const { error: permErr } = await supabase.from('assistant_permissions').insert(permRows)
         if (permErr) throw permErr
@@ -362,16 +366,53 @@ export default async function handler(req, res) {
         .select('id').single()
       if (assignErr) throw assignErr
 
-      const permRows = sections.map(section => ({
-        agent_assistant_id: assignment.id, section, can_read: true, can_write: false,
-      }))
-      const { error: permErr } = await supabase.from('assistant_permissions').insert(permRows)
-      if (permErr) throw permErr
+      const permRows = sections
+        .filter(s => s.can_read || s.can_write)
+        .map(({ section, can_read = false, can_write = false }) => ({
+          agent_assistant_id: assignment.id, section, can_read, can_write,
+        }))
+      if (permRows.length) {
+        const { error: permErr } = await supabase.from('assistant_permissions').insert(permRows)
+        if (permErr) throw permErr
+      }
 
       return res.status(200).json({ success: true, id: assignment.id })
     } catch (err) {
       console.error('[users/delegate POST]', err)
       return res.status(500).json({ error: err.message ?? 'Failed to create delegation' })
+    }
+  }
+
+  // ── PATCH ?action=delegate  (update delegation permissions) ──────────────
+  if (req.method === 'PATCH' && action === 'delegate') {
+    let id, sections
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
+      id       = body.id
+      sections = body.sections
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON body' })
+    }
+
+    if (!id || !Array.isArray(sections)) {
+      return res.status(400).json({ error: 'id and sections are required' })
+    }
+
+    try {
+      await supabase.from('assistant_permissions').delete().eq('agent_assistant_id', id)
+      const permRows = sections
+        .filter(s => s.can_read || s.can_write)
+        .map(({ section, can_read = false, can_write = false }) => ({
+          agent_assistant_id: id, section, can_read, can_write,
+        }))
+      if (permRows.length) {
+        const { error: permErr } = await supabase.from('assistant_permissions').insert(permRows)
+        if (permErr) throw permErr
+      }
+      return res.status(200).json({ success: true })
+    } catch (err) {
+      console.error('[users/delegate PATCH]', err)
+      return res.status(500).json({ error: err.message ?? 'Failed to update delegation' })
     }
   }
 

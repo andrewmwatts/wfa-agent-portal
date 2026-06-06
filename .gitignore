@@ -26,3 +26,5 @@ npm-debug.log*
 # Reference / scratch HTML exports
 *.html
 *_files/
+
+.vercel

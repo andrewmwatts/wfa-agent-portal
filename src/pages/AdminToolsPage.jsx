@@ -9,6 +9,16 @@ const BTN = 'px-3 py-1 text-xs font-semibold rounded-lg transition-colors'
 const INP = 'w-full text-sm rounded-lg px-3 py-2 border bg-white dark:bg-white/5 text-gray-800 dark:text-white border-gray-200 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60'
 const LBL = 'block text-xs font-medium text-gray-500 dark:text-white/50 mb-1'
 
+// Sections that admins can grant write access for (leads/recruiting are always writable)
+const WRITE_SECTIONS = [
+  { key: 'onboarding',        label: 'Contracting & Agents' },
+  { key: 'apps_and_policies', label: 'Apps & Policies'      },
+  { key: 'metrics',           label: 'Metrics'              },
+  { key: 'activity',          label: 'Activity'             },
+  { key: 'accountability',    label: 'Accountability'       },
+  { key: 'snapshot',          label: 'Snapshot'             },
+]
+
 const TABS = [
   { key: 'users',    label: 'User Management'       },
   { key: 'bugs',     label: 'Bug Reports'           },
@@ -138,7 +148,7 @@ function UserManagementTab({ adminFetch }) {
 
   function startEdit(u) {
     setEditing(u.id)
-    setDraft({ email: u.email || '', leads_email: u.leads_email || '', role: u.role || 'agent', agency_owner: u.agency_owner || '' })
+    setDraft({ email: u.email || '', leads_email: u.leads_email || '', role: u.role || 'agent', agency_owner: u.agency_owner || '', write_sections: u.write_sections || [] })
     setSaveErr('')
   }
 
@@ -182,7 +192,7 @@ function UserManagementTab({ adminFetch }) {
           <table className="w-full">
             <thead className="border-b border-gray-100 dark:border-white/10">
               <tr className="px-4">
-                {['Name','SFG ID','Email','Role','Agency Owner','Leads Email','Last Sign In',''].map(h => (
+                {['Name','SFG ID','Email','Role','Agency Owner','Leads Email','Write Access','Last Sign In',''].map(h => (
                   <th key={h} className={TH + ' first:pl-4 last:pr-4'}>{h}</th>
                 ))}
               </tr>
@@ -212,6 +222,22 @@ function UserManagementTab({ adminFetch }) {
                         <input value={draft.leads_email} onChange={e => setDraft(d => ({...d, leads_email: e.target.value}))}
                           className={INP + ' text-xs py-1 min-w-[140px]'} />
                       </td>
+                      <td className={TD}>
+                        <div className="space-y-1 min-w-[160px]">
+                          {WRITE_SECTIONS.map(s => (
+                            <label key={s.key} className="flex items-center gap-1.5 cursor-pointer">
+                              <input type="checkbox"
+                                checked={(draft.write_sections || []).includes(s.key)}
+                                onChange={() => setDraft(d => {
+                                  const cur = d.write_sections || []
+                                  return { ...d, write_sections: cur.includes(s.key) ? cur.filter(k => k !== s.key) : [...cur, s.key] }
+                                })}
+                                className="accent-accent" />
+                              <span className="text-xs text-gray-600 dark:text-white/60">{s.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </td>
                       <td className={TD}>{fmtDateTime(u.last_sign_in_at)}</td>
                       <td className={TD + ' pr-4'}>
                         <div className="flex gap-1 items-center flex-wrap">
@@ -237,6 +263,17 @@ function UserManagementTab({ adminFetch }) {
                       </td>
                       <td className={TD + ' text-xs'}>{u.agency_owner_name || '—'}</td>
                       <td className={TD + ' text-xs'}>{u.leads_email || '—'}</td>
+                      <td className={TD}>
+                        <div className="flex flex-wrap gap-1">
+                          {(u.write_sections || []).length === 0
+                            ? <span className="text-xs text-gray-400 dark:text-white/30">—</span>
+                            : (u.write_sections || []).map(k => {
+                                const s = WRITE_SECTIONS.find(x => x.key === k)
+                                return s ? <span key={k} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-accent/10 text-accent">{s.label}</span> : null
+                              })
+                          }
+                        </div>
+                      </td>
                       <td className={TD + ' text-xs'}>{fmtDateTime(u.last_sign_in_at)}</td>
                       <td className={TD + ' pr-4'}>
                         <div className="flex gap-1 flex-wrap">
