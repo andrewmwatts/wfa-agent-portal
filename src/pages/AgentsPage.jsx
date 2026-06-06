@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import AddAgentModal from '../components/AddAgentModal'
+import HireMatchingModal from '../components/HireMatchingModal'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ function milestoneDates(months) {
 
 export default function AgentsPage() {
   const { activeSubject, permissions } = useViewing()
-  const { userProfile }                = useAuth()
+  const { userProfile, session }       = useAuth()
   const { theme }                      = useTheme()
 
   const isSuperAdmin = userProfile?.role === 'super_admin'
@@ -114,9 +115,16 @@ export default function AgentsPage() {
   const [uplineFilter, setUplineFilter] = useState('')
   const [sort, setSort]             = useState({ col: 'name', dir: 1 })
   const [selected, setSelected]     = useState(null)
-  const [showImport, setShowImport] = useState(false)
-  const [showAdd,    setShowAdd]    = useState(false)
-  const [addSuccess, setAddSuccess] = useState(null) // { uplineWarning } | null
+  const [showImport,   setShowImport]   = useState(false)
+  const [showAdd,      setShowAdd]      = useState(false)
+  const [addSuccess,   setAddSuccess]   = useState(null)
+  const [matchingHires, setMatchingHires] = useState(null) // array of newly added agents to match
+
+  function authHeaders() {
+    const h = { 'Content-Type': 'application/json' }
+    if (session?.access_token) h['Authorization'] = `Bearer ${session.access_token}`
+    return h
+  }
 
   const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 
@@ -276,6 +284,7 @@ export default function AgentsPage() {
       {showImport && (
         <BulkAgentImportModal
           existingPersonnel={personnel}
+          authHeaders={authHeaders}
           onClose={() => setShowImport(false)}
           onImportDone={() => reloadPersonnel()}
         />
@@ -286,12 +295,24 @@ export default function AgentsPage() {
         <AddAgentModal
           existingPersonnel={personnel}
           onClose={() => setShowAdd(false)}
-          onAgentAdded={({ uplineWarning }) => {
+          onAgentAdded={({ uplineWarning, agent }) => {
             setShowAdd(false)
             setAddSuccess({ uplineWarning })
             setTimeout(() => setAddSuccess(null), 5000)
             reloadPersonnel()
+            if (agent?.sfg_id && agent?.upline_sfg_id) {
+              setMatchingHires([agent])
+            }
           }}
+        />
+      )}
+
+      {/* ── Hire Matching Modal ─────────────────────────────────────────────── */}
+      {matchingHires && (
+        <HireMatchingModal
+          newHires={matchingHires}
+          authHeaders={authHeaders}
+          onClose={() => setMatchingHires(null)}
         />
       )}
 

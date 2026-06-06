@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
+import HireMatchingModal from './HireMatchingModal'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -220,12 +221,14 @@ function PreviewRow({ row, onUpdate, idx }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BulkAgentImportModal({ onClose, existingPersonnel = [], onImportDone }) {
-  const [phase,      setPhase]      = useState('upload')  // upload | preview | confirm | importing | result
-  const [rows,       setRows]       = useState([])
-  const [parseError, setParseError] = useState('')
-  const [result,     setResult]     = useState(null)
-  const [filterStatus, setFilterStatus] = useState('all')
+export default function BulkAgentImportModal({ onClose, existingPersonnel = [], onImportDone, authHeaders }) {
+  const [phase,          setPhase]          = useState('upload')  // upload | preview | confirm | importing | result
+  const [rows,           setRows]           = useState([])
+  const [parseError,     setParseError]     = useState('')
+  const [result,         setResult]         = useState(null)
+  const [filterStatus,   setFilterStatus]   = useState('all')
+  const [insertedAgents, setInsertedAgents] = useState([])
+  const [showMatching,   setShowMatching]   = useState(false)
   const fileRef = useRef()
 
   function handleFile(file) {
@@ -289,6 +292,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
       })
       const data = await res.json()
       setResult(data)
+      setInsertedAgents(data.insertedAgents ?? [])
       setPhase('result')
     } catch (err) {
       setResult({ inserted: 0, skipped: 0, errors: [{ error: err.message }] })
@@ -548,15 +552,33 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
           )}
 
           {phase === 'result' && (
-            <button
-              onClick={() => { onImportDone?.(); onClose() }}
-              className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
-            >
-              Done
-            </button>
+            <div className="flex gap-2">
+              {insertedAgents.length > 0 && authHeaders && (
+                <button
+                  onClick={() => setShowMatching(true)}
+                  className="px-4 py-2 text-sm rounded-lg border border-accent text-accent font-medium hover:bg-accent/10 transition-colors"
+                >
+                  Link to Recruiting Leads →
+                </button>
+              )}
+              <button
+                onClick={() => { onImportDone?.(); onClose() }}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
+              >
+                Done
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {showMatching && insertedAgents.length > 0 && (
+        <HireMatchingModal
+          newHires={insertedAgents}
+          authHeaders={authHeaders}
+          onClose={() => { setShowMatching(false); onImportDone?.(); onClose() }}
+        />
+      )}
     </div>
   )
 }

@@ -85,7 +85,10 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
         return
       }
 
-      onAgentAdded({ uplineWarning: uplineMissing })
+      // Pass back the inserted agent record (first element) so callers can
+      // trigger hire matching without a separate personnel lookup.
+      const agent = data.insertedAgents?.[0] ?? null
+      onAgentAdded({ uplineWarning: uplineMissing, agent })
     } catch (err) {
       setApiError(err.message)
     } finally {

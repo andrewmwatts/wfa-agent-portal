@@ -785,9 +785,61 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
               </span>
             )}
           </div>
+
+          {/* Contracting status — shown on recruiting leads linked to a hire */}
+          {l.hired_sfg_id && l.contracting && (
+            <ContractingStatus contracting={l.contracting} isStub={l.is_stub} />
+          )}
         </div>
       </div>
     </>
+  )
+}
+
+// ─── Contracting Status Card ────────────────────────────────────────────────────
+
+function ContractingStatus({ contracting: c, isStub }) {
+  const fields = [
+    { label: 'SureLC Profile',       value: c.surelc_profile_date,      isDate: true  },
+    { label: 'E&O',                  value: c.no_eando ? 'On File' : 'Needed',         isDate: false },
+    { label: 'Contracting Sent',     value: c.contracting_to_producer,  isDate: true  },
+    { label: 'Contracting Complete', value: c.contracting_complete,     isDate: true  },
+  ]
+  const filled   = fields.filter(f => f.value && f.value !== 'Needed').length
+  const hasIssue = !!c.profile_issues
+
+  const headerCls = hasIssue
+    ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'
+    : filled === fields.length
+    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/20'
+    : filled > 0
+    ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
+    : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/10'
+
+  return (
+    <div className={`mt-2 rounded-lg border text-[10px] overflow-hidden ${headerCls}`}>
+      <div className="flex items-center justify-between px-2 py-1 font-semibold uppercase tracking-widest">
+        <span>Contracting</span>
+        <div className="flex items-center gap-1.5">
+          {isStub   && <span className="font-bold px-1.5 py-0.5 rounded bg-gray-200/60 dark:bg-white/10 text-gray-500 dark:text-white/40 normal-case tracking-normal">Auto-generated</span>}
+          {hasIssue && <span className="font-bold px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 normal-case tracking-normal">⚠ Issues</span>}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-2 pb-1.5 pt-0.5 bg-white/60 dark:bg-primary/20">
+        {fields.map(f => (
+          <div key={f.label} className="flex items-center justify-between gap-1">
+            <span className="text-gray-400 dark:text-white/30 truncate">{f.label}</span>
+            <span className={`font-semibold truncate ${
+              !f.value || f.value === 'Needed'
+                ? 'text-gray-400 dark:text-white/25'
+                : 'text-gray-700 dark:text-white/70'
+            }`}>
+              {f.value || 'Pending'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

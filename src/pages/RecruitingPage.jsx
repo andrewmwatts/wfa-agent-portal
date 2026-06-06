@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
+import HireMatchingModal from '../components/HireMatchingModal'
 import {
   fmtDateTime,
   isCallbackDue,
@@ -43,10 +44,11 @@ const REC_SOURCES = [
 const INPUT_CLS = 'w-full text-sm rounded-lg px-3 py-1.5 border bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors'
 
 const TABS = [
-  { key: 'leads',     label: 'Leads'     },
-  { key: 'callbacks', label: 'Callbacks' },
-  { key: 'scripts',   label: 'Scripts'   },
-  { key: 'pipeline',  label: 'Pipeline'  },
+  { key: 'leads',          label: 'Leads'          },
+  { key: 'callbacks',      label: 'Callbacks'      },
+  { key: 'scripts',        label: 'Scripts'        },
+  { key: 'pipeline',       label: 'Pipeline'       },
+  { key: 'unlinked_hires', label: 'Unlinked Hires' },
 ]
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -84,6 +86,12 @@ export default function RecruitingPage() {
   const [showAddLead,   setShowAddLead]   = useState(false)
   const [showAddScript, setShowAddScript] = useState(false)
 
+  // Unlinked hires tab
+  const [unlinkedHires,        setUnlinkedHires]        = useState([])
+  const [unlinkedLoading,      setUnlinkedLoading]      = useState(false)
+  const [unlinkedLoaded,       setUnlinkedLoaded]       = useState(false)
+  const [matchingHires,        setMatchingHires]        = useState(null)
+
   // ── Load ───────────────────────────────────────────────────────────────────
 
   const sfgId = activeSubject?.sfg_id
@@ -105,6 +113,25 @@ export default function RecruitingPage() {
   }, [sfgId])
 
   useEffect(() => { loadLeads() }, [loadLeads])
+  useEffect(() => {
+    if (tab === 'unlinked_hires' && !unlinkedLoaded) loadUnlinkedHires()
+  }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadUnlinkedHires() {
+    if (!sfgId || unlinkedLoading) return
+    setUnlinkedLoading(true)
+    try {
+      const res = await fetch(
+        `/api/leads?action=unlinked_hires&sfg_id=${encodeURIComponent(sfgId)}`,
+        { headers: authHeaders() },
+      )
+      if (res.ok) {
+        const { unlinked } = await res.json()
+        setUnlinkedHires(unlinked ?? [])
+        setUnlinkedLoaded(true)
+      }
+    } finally { setUnlinkedLoading(false) }
+  }
 
   async function openLead(lead) {
     setSelected(lead)
@@ -505,6 +532,54 @@ export default function RecruitingPage() {
           {/* ── Pipeline tab ──────────────────────────────────────────────── */}
           {tab === 'pipeline' && <PipelineTab leads={leads} />}
 
+          {/* ── Unlinked Hires tab ────────────────────────────────────────── */}
+          {tab === 'unlinked_hires' && (
+            <div className="px-4 sm:px-6 py-4">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-gray-400 dark:text-white/30 font-medium">
+                  {unlinkedLoading ? 'Loading…' : `${unlinkedHires.length} unlinked hire${unlinkedHires.length !== 1 ? 's' : ''} in your direct downline`}
+                </p>
+                <button
+                  onClick={loadUnlinkedHires}
+                  disabled={unlinkedLoading}
+                  className="text-xs text-accent hover:text-accent/80 transition-colors disabled:opacity-40"
+                >
+                  ↺ Refresh
+                </button>
+              </div>
+
+              {unlinkedLoading ? (
+                <div className="space-y-3 animate-pulse">
+                  {[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-gray-100 dark:bg-white/5 rounded-xl" />)}
+                </div>
+              ) : unlinkedHires.length === 0 ? (
+                <div className="text-center py-16 text-gray-400 dark:text-white/30">
+                  <p className="text-3xl mb-3">✓</p>
+                  <p className="text-sm">All hires are linked to recruiting leads</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {unlinkedHires.map(p => (
+                    <div key={p.sfg_id} className="flex items-center gap-3 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{p.preferred_name || p.sfg_id}</p>
+                        <p className="text-xs text-gray-400 dark:text-white/40">
+                          {p.hire_date ? `Hired ${p.hire_date}` : 'No hire date'} · {p.sfg_id}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setMatchingHires([p])}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-accent text-accent hover:bg-accent/10 transition-colors whitespace-nowrap"
+                      >
+                        Link →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* ── Lead detail drawer ────────────────────────────────────────── */}
@@ -550,6 +625,13 @@ export default function RecruitingPage() {
           onClose={() => setShowSetup(false)}
           userId={activeSubject?.id}
           authHeaders={authHeaders}
+        />
+      )}
+      {matchingHires && (
+        <HireMatchingModal
+          newHires={matchingHires}
+          authHeaders={authHeaders}
+          onClose={() => { setMatchingHires(null); setUnlinkedLoaded(false) }}
         />
       )}
     </div>

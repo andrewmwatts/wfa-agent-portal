@@ -401,13 +401,15 @@ export default async function handler(req, res) {
       let inserted = 0, skipped = 0
       const errors = []
 
+      let insertedAgents = []
       if (rows.length > 0) {
         const { data, error } = await supabase
           .from('personnel')
           .upsert(rows, { onConflict: 'sfg_id', ignoreDuplicates: true })
-          .select('sfg_id')
+          .select('sfg_id, preferred_name, hire_date, upline_sfg_id')
         if (error) throw error
-        inserted = data?.length ?? 0
+        insertedAgents = data ?? []
+        inserted = insertedAgents.length
         skipped  = rows.length - inserted
       }
 
@@ -419,7 +421,7 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.status(200).json({ inserted, skipped, statusUpdated, errors })
+      return res.status(200).json({ inserted, skipped, statusUpdated, errors, insertedAgents })
     } catch (err) {
       console.error('[personnel/post]', err)
       return res.status(500).json({ error: err?.message ?? 'Failed to import agents' })

@@ -12,7 +12,10 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *
  * Leads
  *   GET    /api/leads?sfg_id=X
+ *   GET    /api/leads?action=hire_candidates&upline_sfg_id=X  → recruiting leads eligible for matching
+ *   GET    /api/leads?action=unlinked_hires&sfg_id=X          → personnel with no hired_sfg_id lead
  *   POST   /api/leads
+ *   POST   /api/leads?action=create_stub                      → insert stub lead for unmatched hire
  *   PATCH  /api/leads?id=X
  *
  * Lead Activity  (?resource=activity)
@@ -183,6 +186,95 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // ── HIRE CANDIDATE LOOKUP ─────────────────────────────────────────────────
+  // Returns recruiting leads owned by upline_sfg_id that are not yet linked
+  // and not Dead — used as the candidate pool for fuzzy name matching.
+  if (req.method === 'GET' && req.query.action === 'hire_candidates') {
+    const callerSfgId = await resolveCallerSfgId(req, req.query.sfg_id)
+    if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+
+    const uplineSfgId = (req.query.upline_sfg_id ?? '').trim().toUpperCase()
+    if (!uplineSfgId) return res.status(400).json({ error: 'upline_sfg_id required' })
+
+    const { data, error } = await sb
+      .from('leads')
+      .select('id, name, phone, email, state, city, added, source, status')
+      .eq('sfg_id', uplineSfgId)
+      .eq('category', 'recruiting')
+      .is('hired_sfg_id', null)
+      .neq('status', 'dead')
+      .order('added', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(200).json({ candidates: data ?? [] })
+  }
+
+  // ── UNLINKED HIRES LOOKUP ─────────────────────────────────────────────────
+  // Returns personnel who are direct reports of sfg_id and have no lead with
+  // hired_sfg_id set, ordered by hire_date desc.
+  if (req.method === 'GET' && req.query.action === 'unlinked_hires') {
+    const callerSfgId = await resolveCallerSfgId(req, req.query.sfg_id)
+    if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+
+    const ownerSfgId = (req.query.sfg_id ?? '').trim().toUpperCase() || callerSfgId
+
+    // Fetch direct-report personnel
+    const { data: personnel, error: pErr } = await sb
+      .from('personnel')
+      .select('sfg_id, preferred_name, hire_date, upline_sfg_id')
+      .eq('upline_sfg_id', ownerSfgId)
+      .order('hire_date', { ascending: false })
+
+    if (pErr) return res.status(500).json({ error: pErr.message })
+    if (!personnel?.length) return res.status(200).json({ unlinked: [] })
+
+    // Fetch which sfg_ids already have a linked lead
+    const { data: linked } = await sb
+      .from('leads')
+      .select('hired_sfg_id')
+      .in('hired_sfg_id', personnel.map(p => p.sfg_id))
+      .not('hired_sfg_id', 'is', null)
+
+    const linkedSet = new Set((linked ?? []).map(r => r.hired_sfg_id))
+    const unlinked  = personnel.filter(p => !linkedSet.has(p.sfg_id))
+
+    return res.status(200).json({ unlinked })
+  }
+
+  // ── CREATE STUB ───────────────────────────────────────────────────────────
+  if (req.method === 'POST' && req.query.action === 'create_stub') {
+    const callerSfgId = await resolveCallerSfgId(req, req.body?.sfg_id)
+    if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+
+    const { upline_sfg_id, name, hire_date, hired_sfg_id } = req.body ?? {}
+    if (!upline_sfg_id || !name || !hired_sfg_id) {
+      return res.status(400).json({ error: 'upline_sfg_id, name, and hired_sfg_id are required' })
+    }
+
+    const now = new Date().toISOString()
+    const { data, error } = await sb
+      .from('leads')
+      .insert({
+        sfg_id:       upline_sfg_id.trim().toUpperCase(),
+        name:         name.trim(),
+        hire_date:    hire_date || null,
+        hired_sfg_id: hired_sfg_id.trim().toUpperCase(),
+        is_stub:      true,
+        source:       'stub',
+        category:     'recruiting',
+        lead_type:    'recruiting',
+        status:       'hired',
+        added:        now.slice(0, 10),
+        created_at:   now,
+        updated_at:   now,
+      })
+      .select()
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ lead: data })
+  }
+
   // ── BULK IMPORT ───────────────────────────────────────────────────────────
   if (req.method === 'POST' && req.query.action === 'bulk') {
     const body   = req.body ?? {}
@@ -255,18 +347,39 @@ export default async function handler(req, res) {
 
     // ?include=scripts returns leads + scripts in one round-trip so the page
     // doesn't need a second fetch to the same function.
+    // For recruiting leads, also merges contracting fields from personnel for
+    // any lead that has hired_sfg_id set.
     if (include === 'scripts') {
       let leadsQuery = sb.from('leads').select('*').eq('sfg_id', sfgId)
       if (category) leadsQuery = leadsQuery.eq('category', category)
       leadsQuery = leadsQuery.order('added', { ascending: false }).order('id', { ascending: false })
 
-      const [{ data: leads, error: leadsErr }, { data: scripts, error: scriptsErr }] = await Promise.all([
+      const [{ data: rawLeads, error: leadsErr }, { data: scripts, error: scriptsErr }] = await Promise.all([
         leadsQuery,
         sb.from('lead_scripts').select('*').eq('sfg_id', sfgId).order('category').order('created_at'),
       ])
       if (leadsErr)   return res.status(500).json({ error: leadsErr.message })
       if (scriptsErr) return res.status(500).json({ error: scriptsErr.message })
-      return res.status(200).json({ leads: leads ?? [], scripts: scripts ?? [] })
+
+      // Merge contracting fields for hired leads
+      let leads = rawLeads ?? []
+      const hiredIds = leads.map(l => l.hired_sfg_id).filter(Boolean)
+      if (hiredIds.length > 0) {
+        const { data: personnel } = await sb
+          .from('personnel')
+          .select('sfg_id, preferred_name, surelc_profile_date, contracting_to_producer, contracting_complete, no_eando, profile_issues')
+          .in('sfg_id', hiredIds)
+        if (personnel?.length) {
+          const byId = Object.fromEntries(personnel.map(p => [p.sfg_id, p]))
+          leads = leads.map(l =>
+            l.hired_sfg_id && byId[l.hired_sfg_id]
+              ? { ...l, contracting: byId[l.hired_sfg_id] }
+              : l
+          )
+        }
+      }
+
+      return res.status(200).json({ leads, scripts: scripts ?? [] })
     }
 
     let query = sb.from('leads').select('*').eq('sfg_id', sfgId)
