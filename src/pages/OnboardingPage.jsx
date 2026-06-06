@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
@@ -404,17 +404,13 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
   async function loadContractData(sfgId) {
     setCnLoading(true)
     try {
-      const { createClient } = await import('@supabase/supabase-js').catch(() => ({ createClient: null }))
-      // Use the existing supabase client from the app's lib
-      const { supabase: sb } = await import('../lib/supabaseClient')
-
       const [{ data: cnData }, { data: carrierData }] = await Promise.all([
-        sb.from('contract_numbers')
+        supabase.from('contract_numbers')
           .select('carrier, contract_number, effective_date, source')
           .eq('sfg_id', sfgId.toUpperCase())
           .order('carrier')
           .order('contract_number', { ascending: false }),
-        sb.from('carriers')
+        supabase.from('carriers')
           .select('name, alert_threshold_days')
           .order('name'),
       ])
