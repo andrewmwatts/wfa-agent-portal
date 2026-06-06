@@ -49,13 +49,15 @@ async function getCallerProfile(req) {
 }
 
 async function audit(adminSfgId, action, target_table, target_id, details) {
-  await sb.from('admin_audit_log').insert({
-    admin_sfg_id: adminSfgId,
-    action,
-    target_table: target_table ?? null,
-    target_id:    target_id   ? String(target_id) : null,
-    details:      details     ?? null,
-  }).catch(() => {})
+  try {
+    await sb.from('admin_audit_log').insert({
+      admin_sfg_id: adminSfgId,
+      action,
+      target_table: target_table ?? null,
+      target_id:    target_id   ? String(target_id) : null,
+      details:      details     ?? null,
+    })
+  } catch { /* audit failures are non-fatal */ }
 }
 
 function body(req) {
