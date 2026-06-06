@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+import { BugReportModal } from '../pages/AdminToolsPage'
 
 // Sections available for delegation (maps to assistant_permissions.section values)
 const SECTIONS = [
@@ -142,6 +143,10 @@ export default function UserMenu({ userProfile, onSignOut }) {
               </DropItem>
             )}
             <div className="my-1 border-t border-gray-100 dark:border-white/10" />
+            <DropItem onClick={() => { setOpen(false); openModal('bug') }}>
+              <BugIcon /> Report a Bug
+            </DropItem>
+            <div className="my-1 border-t border-gray-100 dark:border-white/10" />
             <DropItem onClick={onSignOut} danger>
               <SignOutIcon /> Sign out
             </DropItem>
@@ -151,6 +156,7 @@ export default function UserMenu({ userProfile, onSignOut }) {
 
       {modal === 'profile'    && <ProfileModal    userProfile={userProfile} onClose={() => setModal(null)} />}
       {modal === 'delegation' && <DelegationModal userProfile={userProfile} onClose={() => setModal(null)} />}
+      {modal === 'bug'        && <BugReportModal  session={session} onClose={() => setModal(null)} />}
     </>
   )
 }
@@ -712,6 +718,13 @@ function CalendarIcon() {
   return (
     <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
+  )
+}
+function BugIcon() {
+  return (
+    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
     </svg>
   )
 }

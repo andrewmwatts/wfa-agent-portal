@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -12,14 +12,43 @@ export const HEADER_H = 'h-14'
 export const HEADER_TOP = 'top-14'
 
 export default function AppLayout() {
-  const { userProfile, signOut } = useAuth()
-  const navigate                 = useNavigate()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { userProfile, signOut, session } = useAuth()
+  const navigate                          = useNavigate()
+  const [sidebarOpen, setSidebarOpen]     = useState(false)
+  const [sysMessages, setSysMessages]     = useState([])
+  const [dismissed,   setDismissed]       = useState([]) // ids dismissed this session
 
   async function handleSignOut() {
     await signOut()
     navigate('/login', { replace: true })
   }
+
+  // Fetch active system messages on mount and on each page load
+  useEffect(() => {
+    if (!session?.access_token) return
+    fetch('/api/admin?action=system-messages', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.messages) return
+        // Client-side audience filter
+        const role    = userProfile?.role ?? 'agent'
+        const ownerId = userProfile?.agency_owner ?? null
+        const visible = d.messages.filter(m => {
+          if (m.audience === 'all') return true
+          if (m.audience === `role:${role}`) return true
+          if (ownerId && m.audience === `owner:${ownerId}`) return true
+          return false
+        })
+        setSysMessages(visible)
+      })
+      .catch(() => {})
+  }, [session?.access_token, userProfile?.role, userProfile?.agency_owner])
+
+  const visibleMessages = sysMessages.filter(m =>
+    m.priority === 'Critical' || !dismissed.includes(m.id)
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-secondary">
@@ -37,6 +66,25 @@ export default function AppLayout() {
       {/* Main content: pushed down by header, pushed right by sidebar on desktop */}
       <div className="pt-14 lg:pl-56 flex flex-col min-h-screen">
         <ViewingBanner />
+
+        {/* System message banners */}
+        {visibleMessages.map(m => {
+          const cls = m.priority === 'Critical'
+            ? 'bg-red-600 text-white border-red-700'
+            : m.priority === 'Warning'
+            ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20'
+            : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20'
+          return (
+            <div key={m.id} className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-2.5 border-b text-sm ${cls}`}>
+              <p><span className="font-semibold mr-2">{m.priority}:</span>{m.message}</p>
+              {m.priority !== 'Critical' && (
+                <button onClick={() => setDismissed(d => [...d, m.id])}
+                  className="shrink-0 opacity-70 hover:opacity-100 text-lg leading-none">✕</button>
+              )}
+            </div>
+          )
+        })}
+
         <main className="flex-1">
           <Outlet />
         </main>
