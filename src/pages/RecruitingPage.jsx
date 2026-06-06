@@ -18,17 +18,25 @@ import {
 // ─── Recruiting-specific statuses ──────────────────────────────────────────────
 
 export const REC_STATUSES = [
-  { key: 'new',             label: 'New',                       pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',             bar: 'bg-blue-500'    },
-  { key: 'noshow',          label: 'Interview No-Show',         pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',             bar: 'bg-rose-500'    },
-  { key: 'interviewed',     label: 'Interviewed',               pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',       bar: 'bg-amber-500'   },
-  { key: 'pre_lic',         label: 'Enrolled in Pre-Licensing', pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',                   bar: 'bg-sky-500'     },
-  { key: 'pre_lic_done',    label: 'Pre-Licensing Complete',    pill: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20',             bar: 'bg-cyan-500'    },
-  { key: 'exam_done',       label: 'Exam Complete',             pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20', bar: 'bg-violet-500'  },
-  { key: 'licensed',        label: 'Licensed',                  pill: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20',             bar: 'bg-teal-500'    },
-  { key: 'app_sent',        label: 'Application Sent',          pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20', bar: 'bg-orange-500'  },
-  { key: 'app_submitted',   label: 'Application Submitted',     pill: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20', bar: 'bg-indigo-500'  },
-  { key: 'hired',           label: 'Hired',                     pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',       bar: 'bg-green-500'   },
-  { key: 'dead',            label: 'Not Interested / Dead',     pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                   bar: 'bg-gray-400'    },
+  { key: 'new',                label: 'New',                       pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',                 bar: 'bg-blue-500'    },
+  { key: 'noshow',             label: 'Interview No-Show',         pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',                 bar: 'bg-rose-500'    },
+  { key: 'interviewed',        label: 'Interviewed',               pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',           bar: 'bg-amber-500'   },
+  { key: 'pre_lic',            label: 'Enrolled in Pre-Licensing', pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',                       bar: 'bg-sky-500'     },
+  { key: 'pre_lic_done',       label: 'Pre-Licensing Complete',    pill: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20',                 bar: 'bg-cyan-500'    },
+  { key: 'exam_done',          label: 'Exam Complete',             pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20',     bar: 'bg-violet-500'  },
+  { key: 'licensed',           label: 'Licensed',                  pill: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20',                 bar: 'bg-teal-500'    },
+  { key: 'app_sent',           label: 'Application Sent',          pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20',     bar: 'bg-orange-500'  },
+  { key: 'app_submitted',      label: 'Application Submitted',     pill: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20',     bar: 'bg-indigo-500'  },
+  { key: 'hired',              label: 'Hired',                     pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',           bar: 'bg-green-500'   },
+  { key: 'fully_contracted',   label: 'Fully Contracted',          pill: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20', bar: 'bg-emerald-600' },
+  { key: 'dead',               label: 'Not Interested / Dead',     pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                       bar: 'bg-gray-400'    },
+]
+
+// Workflow sort order — most advanced at top, Dead always last
+const REC_STATUS_ORDER = [
+  'fully_contracted', 'hired', 'app_submitted', 'app_sent',
+  'licensed', 'exam_done', 'pre_lic_done', 'pre_lic',
+  'interviewed', 'noshow', 'new', 'dead',
 ]
 
 // ─── Recruiting lead sources ────────────────────────────────────────────────────
@@ -70,7 +78,6 @@ export default function RecruitingPage() {
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
-  const [sortDesc,     setSortDesc]     = useState(true)
   const [hideTerminal, setHideTerminal] = useState(false)
   const [showSetup,    setShowSetup]    = useState(false)
 
@@ -301,12 +308,17 @@ export default function RecruitingPage() {
       if (!matchQ) return false
       if (statusFilter !== 'all' && l.status !== statusFilter) return false
       if (sourceFilter !== 'all' && (l.source || '') !== sourceFilter) return false
-      if (hideTerminal && (l.status === 'hired' || l.status === 'dead')) return false
+      if (hideTerminal && (l.status === 'hired' || l.status === 'fully_contracted' || l.status === 'dead')) return false
       return true
     })
     list.sort((a, b) => {
-      const cmp = (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
-      return sortDesc ? cmp : -cmp
+      const aIdx = REC_STATUS_ORDER.indexOf(a.status)
+      const bIdx = REC_STATUS_ORDER.indexOf(b.status)
+      const aOrd = aIdx === -1 ? REC_STATUS_ORDER.length - 1 : aIdx
+      const bOrd = bIdx === -1 ? REC_STATUS_ORDER.length - 1 : bIdx
+      if (aOrd !== bOrd) return aOrd - bOrd
+      // Within same status, newest first
+      return (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
     })
     return list
   }, [leads, search, statusFilter, sourceFilter, hideTerminal, sortDesc])
@@ -377,7 +389,7 @@ export default function RecruitingPage() {
           {tab === 'leads' && (
             <div className="px-4 sm:px-6 py-4">
 
-              {/* Search + sort */}
+              {/* Search */}
               <div className="flex gap-2 mb-3">
                 <div className="flex-1 flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/15 rounded-lg px-3 py-1.5">
                   <svg className="w-3.5 h-3.5 text-gray-400 dark:text-white/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -394,12 +406,6 @@ export default function RecruitingPage() {
                     <button onClick={() => setSearch('')} className="text-gray-300 dark:text-white/20 hover:text-gray-500 dark:hover:text-white/50 text-xs leading-none">✕</button>
                   )}
                 </div>
-                <button
-                  onClick={() => setSortDesc(d => !d)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
-                >
-                  {sortDesc ? '↓ Newest' : '↑ Oldest'}
-                </button>
               </div>
 
               {/* Filters */}
@@ -440,7 +446,7 @@ export default function RecruitingPage() {
                       : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
                   }`}
                 >
-                  Hide Hired / Dead
+                  Hide Hired / Contracted / Dead
                 </button>
                 {(statusFilter !== 'all' || sourceFilter !== 'all') && (
                   <button
