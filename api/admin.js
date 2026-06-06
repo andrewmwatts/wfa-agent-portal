@@ -244,20 +244,30 @@ export default async function handler(req, res) {
 
   // ── GET agencies ──────────────────────────────────────────────────────────
   if (action === 'agencies' && req.method === 'GET') {
-    const { data: owners, error } = await sb.from('users')
-      .select('sfg_id, role').in('role', ['owner', 'director', 'super_admin'])
-    if (error) return res.status(500).json({ error: error.message })
-    const ownerSfgIds = owners.map(o => o.sfg_id).filter(Boolean)
-    const [{ data: personnel }, { data: agencies }] = await Promise.all([
-      sb.from('personnel').select('sfg_id, preferred_name').in('sfg_id', ownerSfgIds),
-      sb.from('agencies').select('*').in('owner_sfg_id', ownerSfgIds),
+    // Fetch all existing agency rows directly, then get all owners from users
+    // so we can show owners that don't have a row yet too.
+    const [{ data: agencyRows, error: agErr }, { data: ownerUsers, error: ouErr }] = await Promise.all([
+      sb.from('agencies').select('*'),
+      sb.from('users').select('sfg_id').in('role', ['owner', 'director', 'super_admin']),
     ])
-    const nameMap   = Object.fromEntries((personnel ?? []).map(p => [p.sfg_id, p.preferred_name]))
-    const agencyMap = Object.fromEntries((agencies   ?? []).map(a => [a.owner_sfg_id, a]))
-    const result = owners.map(o => ({
-      sfg_id:         o.sfg_id,
-      preferred_name: nameMap[o.sfg_id]   ?? o.sfg_id,
-      agency:         agencyMap[o.sfg_id] ?? null,
+    if (agErr) return res.status(500).json({ error: agErr.message })
+    if (ouErr) return res.status(500).json({ error: ouErr.message })
+
+    // Union of sfg_ids: owners in users table + owners already in agencies table
+    const agencyMap  = Object.fromEntries((agencyRows  ?? []).map(a => [a.owner_sfg_id, a]))
+    const ownerSfgIds = [...new Set([
+      ...(ownerUsers ?? []).map(u => u.sfg_id),
+      ...(agencyRows ?? []).map(a => a.owner_sfg_id),
+    ].filter(Boolean))]
+
+    const { data: personnel } = await sb.from('personnel')
+      .select('sfg_id, preferred_name').in('sfg_id', ownerSfgIds)
+    const nameMap = Object.fromEntries((personnel ?? []).map(p => [p.sfg_id, p.preferred_name]))
+
+    const result = ownerSfgIds.map(sfgId => ({
+      sfg_id:         sfgId,
+      preferred_name: nameMap[sfgId]   ?? sfgId,
+      agency:         agencyMap[sfgId] ?? null,
     }))
     return res.status(200).json({ agencies: result })
   }
