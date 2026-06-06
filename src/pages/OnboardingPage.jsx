@@ -567,26 +567,32 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
             </div>
           ) : (
             <>
-              {/* Core 11 carriers */}
+              {/* Core carriers — inline-editable */}
               <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
-                      {['Carrier', 'Contract Number', 'Effective Date', 'Status'].map(h => (
+                      {['Carrier', 'Contract Number', 'Status'].map(h => (
                         <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-3 py-2 first:pl-4 last:pr-4 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                     {carriers.map(c => {
-                      const cn = contractNums[c.name]
+                      const cn     = contractNums[c.name]
                       const status = computeContractStatus(cn, agent, c.alert_threshold_days)
                       return (
                         <tr key={c.name} className="bg-white dark:bg-primary/20">
-                          <td className="px-3 pl-4 py-2.5 text-xs font-medium text-gray-800 dark:text-white/80 whitespace-nowrap">{c.name}</td>
-                          <td className="px-3 py-2.5 text-xs font-mono text-gray-600 dark:text-white/60">{cn?.contract_number || '—'}</td>
-                          <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">{cn?.effective_date ? fmtDate(cn.effective_date) : '—'}</td>
-                          <td className="px-3 pr-4 py-2.5">
+                          <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-800 dark:text-white/80 whitespace-nowrap w-40">{c.name}</td>
+                          <td className="px-3 py-1.5">
+                            <ContractNumberInput
+                              sfgId={agent.sfg_id}
+                              carrier={c.name}
+                              initialValue={cn?.contract_number ?? ''}
+                              onSaved={loadContractData}
+                            />
+                          </td>
+                          <td className="px-3 pr-4 py-2 whitespace-nowrap">
                             <ContractStatusBadge status={status} />
                           </td>
                         </tr>
@@ -596,7 +602,7 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
                 </table>
               </div>
 
-              {/* Other carriers (collapsible) */}
+              {/* Other carriers (collapsible, read-only) */}
               {otherContracts.length > 0 && (
                 <div>
                   <button
@@ -614,9 +620,8 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
                         <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                           {otherContracts.map(cn => (
                             <tr key={cn.carrier} className="bg-white dark:bg-primary/20">
-                              <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-700 dark:text-white/70">{cn.carrier}</td>
-                              <td className="px-3 py-2 text-xs font-mono text-gray-500 dark:text-white/50">{cn.contract_number}</td>
-                              <td className="px-3 pr-4 py-2 text-xs text-gray-400 dark:text-white/40">{cn.effective_date ? fmtDate(cn.effective_date) : '—'}</td>
+                              <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-700 dark:text-white/70 w-40">{cn.carrier}</td>
+                              <td className="px-3 pr-4 py-2 text-xs font-mono text-gray-500 dark:text-white/50">{cn.contract_number}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -660,6 +665,55 @@ function computeContractStatus(cn, agent, thresholdDays) {
   }
 
   return { type: 'pending', days: days ?? 0 }
+}
+
+function ContractNumberInput({ sfgId, carrier, initialValue, onSaved }) {
+  const [value,   setValue]   = useState(initialValue)
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+  const [error,   setError]   = useState(null)
+
+  // Sync if the parent reloads data (agent switch)
+  useEffect(() => { setValue(initialValue) }, [initialValue])
+
+  async function handleBlur() {
+    if (value === initialValue) return  // no change
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    try {
+      const res = await fetch('/api/personnel?action=upsert_contract', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sfg_id: sfgId, carrier, contract_number: value }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      onSaved?.(sfgId)  // refresh counts + display
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="text"
+        value={value}
+        onChange={e => { setValue(e.target.value); setSaved(false); setError(null) }}
+        onBlur={handleBlur}
+        onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+        placeholder="—"
+        className="w-full max-w-[160px] bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white/80 text-xs font-mono rounded px-2 py-1 focus:outline-none focus:border-accent/60 focus:bg-white dark:focus:bg-white/10 transition-colors"
+      />
+      {saving && <span className="text-[10px] text-gray-400 dark:text-white/30 whitespace-nowrap">Saving…</span>}
+      {saved   && <span className="text-[10px] text-green-600 dark:text-green-400 whitespace-nowrap">✓</span>}
+      {error   && <span className="text-[10px] text-red-500 whitespace-nowrap">!</span>}
+    </div>
+  )
 }
 
 function ContractStatusBadge({ status }) {

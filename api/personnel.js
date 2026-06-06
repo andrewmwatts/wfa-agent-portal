@@ -183,6 +183,41 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── PUT ?action=upsert_contract — save or clear a single contract number ──────
+  if (req.method === 'PUT' && req.query.action === 'upsert_contract') {
+    const { sfg_id, carrier, contract_number } = req.body ?? {}
+    if (!sfg_id || !carrier) return res.status(400).json({ error: 'sfg_id and carrier required' })
+
+    try {
+      if (!contract_number?.trim()) {
+        // Empty → delete the record
+        const { error } = await supabase
+          .from('contract_numbers')
+          .delete()
+          .eq('sfg_id', sfg_id.trim().toUpperCase())
+          .eq('carrier', carrier.trim())
+        if (error) throw error
+      } else {
+        // Non-empty → upsert
+        const { error } = await supabase
+          .from('contract_numbers')
+          .upsert(
+            {
+              sfg_id:          sfg_id.trim().toUpperCase(),
+              carrier:         carrier.trim(),
+              contract_number: contract_number.trim(),
+              source:          'manual',
+            },
+            { onConflict: 'sfg_id,carrier,contract_number' },
+          )
+        if (error) throw error
+      }
+      return res.status(200).json({ ok: true })
+    } catch (err) {
+      return res.status(500).json({ error: err.message })
+    }
+  }
+
   // ── GET ?action=contracts — contract numbers + carriers for one agent ────────
   if (req.method === 'GET' && req.query.action === 'contracts') {
     const sfgId = req.query.sfg_id?.trim().toUpperCase()
