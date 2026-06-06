@@ -297,7 +297,7 @@ export default function MonthlyAgentTotalsPage() {
       // blocks qualifications, and policies are bundled with personnel (one cold start).
       const [teamRes, qualRes] = await Promise.all([
         fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master&include=policies`),
-        fetch('/api/qualifications'),
+        fetch('/api/activity?type=qualifications'),
       ])
 
       const { personnel: master, policies: pols } = teamRes.ok

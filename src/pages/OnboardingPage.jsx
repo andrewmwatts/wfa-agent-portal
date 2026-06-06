@@ -42,13 +42,9 @@ function fmtDate(d) {
 
 
 // ─── Quick-filter definitions ──────────────────────────────────────────────────
-// All         = show all visible agents
-// Contracting = agents with contracting incomplete
-// Launch      = agents with Kajabi progress < 100%
 const QUICK_FILTERS = [
   { id: 'all',         label: 'All'         },
   { id: 'contracting', label: 'Contracting' },
-  { id: 'launch',      label: 'Launch'      },
 ]
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
@@ -58,8 +54,6 @@ export default function OnboardingPage() {
   const { activeSubject, permissions } = useViewing()
 
   const [masterPersonnel, setMasterPersonnel] = useState([])
-  const [kajabiMap,       setKajabiMap]       = useState({})   // sfg_id → { count, latestDate }
-  const [totalLessons,    setTotalLessons]    = useState(0)
   const [hiddenIds,       setHiddenIds]       = useState(new Set())
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState(null)
@@ -106,49 +100,19 @@ export default function OnboardingPage() {
 
   async function load(sfgId) {
     try {
-      // Fire personnel and onboarding-progress in parallel — onboarding now resolves
-      // the team tree internally so it no longer has to wait for personnel to finish.
-      const [personnelRes, kajabiRes] = await Promise.all([
-        fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`),
-        fetch(`/api/onboarding-progress?root=${encodeURIComponent(sfgId)}`),
-      ])
-
-      if (!personnelRes.ok) throw new Error('Failed to load personnel data')
-      const rows = await personnelRes.json()
-
+      const res = await fetch(`/api/personnel?root=${encodeURIComponent(sfgId)}&mode=master`)
+      if (!res.ok) throw new Error('Failed to load personnel data')
+      const rows = await res.json()
       const sorted = [...rows].sort((a, b) => {
         const ac = !!a.contracting_complete, bc = !!b.contracting_complete
         if (ac !== bc) return ac ? 1 : -1
         return new Date(b.hire_date || 0) - new Date(a.hire_date || 0)
       })
       setMasterPersonnel(sorted)
-
-      if (kajabiRes.ok) {
-        const { summaries, totalLessons: total } = await kajabiRes.json()
-        setTotalLessons(total ?? 0)
-        setKajabiMap(summaries ?? {})
-      }
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function loadKajabi(sfgIds, merge = false) {
-    if (!sfgIds.length) return
-    try {
-      const res = await fetch(`/api/onboarding-progress?sfg_ids=${sfgIds.join(',')}`)
-      if (!res.ok) return
-      const { summaries, totalLessons: total } = await res.json()
-      setTotalLessons(total ?? 0)
-      if (merge) {
-        setKajabiMap(prev => ({ ...prev, ...(summaries ?? {}) }))
-      } else {
-        setKajabiMap(summaries ?? {})
-      }
-    } catch {
-      // Non-fatal — table will show "Not enrolled" for all agents
     }
   }
 
@@ -194,19 +158,10 @@ export default function OnboardingPage() {
       const id = r.sfg_id?.toLowerCase() ?? ''
       if (!showHidden && hiddenIds.has(id)) return false
       if (q && !r.name?.toLowerCase().includes(q)) return false
-
       if (quickFilter === 'contracting' && r.contracting_complete) return false
-      if (quickFilter === 'launch') {
-        const kajabi = kajabiMap[id]
-        const pct    = (kajabi && totalLessons > 0)
-          ? Math.round((kajabi.count / totalLessons) * 100)
-          : 0
-        if (pct >= 100) return false
-      }
-
       return true
     })
-  }, [personnel, hiddenIds, showHidden, quickFilter, search, kajabiMap, totalLessons])
+  }, [personnel, hiddenIds, showHidden, quickFilter, search])
 
   // Visible (non-hidden) count for the counter chip
   const visibleCount = useMemo(
@@ -321,7 +276,7 @@ export default function OnboardingPage() {
             <table className="w-full text-sm min-w-[680px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
-                  {['Agent', 'Upline', 'Hire Date', 'Issues', 'No E&O', 'Contracting', 'Course Progress', 'Last Completed'].map(h => (
+                  {['Agent', 'Upline', 'Hire Date', 'Issues', 'No E&O', 'Contracting'].map(h => (
                     <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
                       {h}
                     </th>
@@ -332,10 +287,6 @@ export default function OnboardingPage() {
                 {rows.map(r => {
                   const id       = r.sfg_id?.toLowerCase() ?? ''
                   const isHidden = hiddenIds.has(id)
-                  const kajabi   = kajabiMap[id]
-                  const linked   = kajabi !== undefined
-                  const pct      = linked && totalLessons > 0
-                    ? Math.round((kajabi.count / totalLessons) * 100) : null
                   const hasIssue = r.profile_issues || !!r.no_eando
 
                   return (
@@ -346,72 +297,23 @@ export default function OnboardingPage() {
                         ${hasIssue && !isHidden ? 'bg-amber-500/5' : ''}
                         ${isHidden ? 'opacity-40' : ''}`}
                     >
-                      {/* Agent */}
                       <td className="py-3 pr-4">
-                        <p className="font-medium text-gray-900 dark:text-white group-hover:text-accent transition-colors leading-tight text-sm">
-                          {r.name}
-                        </p>
+                        <p className="font-medium text-gray-900 dark:text-white group-hover:text-accent transition-colors leading-tight text-sm">{r.name}</p>
                       </td>
-
-                      {/* Upline */}
-                      <td className="py-3 pr-4 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">
-                        {r.upline_name || '—'}
-                      </td>
-
-                      {/* Hire Date */}
-                      <td className="py-3 pr-4 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">
-                        {fmtDate(r.hire_date)}
-                      </td>
-
-                      {/* Profile Issues */}
+                      <td className="py-3 pr-4 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">{r.upline_name || '—'}</td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(r.hire_date)}</td>
                       <td className="py-3 pr-4">
                         {r.profile_issues
                           ? <span className="text-xs bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>
                           : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
                       </td>
-
-                      {/* No E&O */}
                       <td className="py-3 pr-4 text-center">
                         {!!r.no_eando
                           ? <span className="text-xs font-bold text-accent">✕</span>
                           : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
                       </td>
-
-                      {/* Contracting */}
                       <td className="py-3 pr-4">
-                        <ContractingCell
-                          toProducerDate={r.contracting_to_producer}
-                          complete={r.contracting_complete}
-                        />
-                      </td>
-
-                      {/* Course Progress */}
-                      <td className="py-3 pr-4 min-w-[110px]">
-                        {!linked ? (
-                          <span className="text-xs text-gray-400 dark:text-white/25">Not enrolled</span>
-                        ) : (
-                          <div className="space-y-1">
-                            <div className="flex items-baseline gap-1.5">
-                              <span className={`text-sm font-bold tabular-nums
-                                ${pct === 100 ? 'text-green-600 dark:text-green-300' : pct > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/40'}`}>
-                                {pct}%
-                              </span>
-                              <span className="text-xs text-gray-400 dark:text-white/30">{kajabi.count}/{totalLessons}</span>
-                            </div>
-                            <div className="h-1 w-20 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all
-                                  ${pct === 100 ? 'bg-green-400' : 'bg-accent'}`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Last Completed */}
-                      <td className="py-3 text-gray-500 dark:text-white/50 text-xs whitespace-nowrap">
-                        {linked && kajabi.latestDate ? fmtDate(kajabi.latestDate) : (linked ? '—' : '')}
+                        <ContractingCell toProducerDate={r.contracting_to_producer} complete={r.contracting_complete} />
                       </td>
                     </tr>
                   )
@@ -426,8 +328,6 @@ export default function OnboardingPage() {
       {selected && (
         <AgentDetailModal
           agent={selected}
-          kajabi={kajabiMap[selected.sfg_id?.toLowerCase()]}
-          totalLessons={totalLessons}
           onClose={() => setSelected(null)}
           canWrite={permissions?.onboarding?.write ?? false}
           isHidden={hiddenIds.has(selected.sfg_id?.toLowerCase() ?? '')}
@@ -436,7 +336,6 @@ export default function OnboardingPage() {
             setSelected(updated)
             setMasterPersonnel(prev => prev.map(p => p.sfg_id === updated.sfg_id ? updated : p))
           }}
-          onKajabiLinked={sfgId => loadKajabi([sfgId], true)}
         />
       )}
 
@@ -481,58 +380,64 @@ function ContractingCell({ toProducerDate, complete }) {
 
 const OB_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
-function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHidden, onHideToggle, onUpdate, onKajabiLinked }) {
-  const [lessons,     setLessons]     = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [editing,     setEditing]     = useState(false)
-  const [draft,       setDraft]       = useState(null)
-  const [saving,      setSaving]      = useState(false)
-  const [saveError,   setSaveError]   = useState(null)
-  const [kajabiEmail, setKajabiEmail] = useState(null)
+function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, onUpdate }) {
+  const [contractNums,  setContractNums]  = useState([])
+  const [carriers,      setCarriers]      = useState([])
+  const [cnLoading,     setCnLoading]     = useState(true)
+  const [showOther,     setShowOther]     = useState(false)
+  const [editing,       setEditing]       = useState(false)
+  const [draft,         setDraft]         = useState(null)
+  const [saving,        setSaving]        = useState(false)
+  const [saveError,     setSaveError]     = useState(null)
 
-  // Close on Escape
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Load full lesson list for this agent
   useEffect(() => {
     if (!agent?.sfg_id) return
-    loadLessons(agent.sfg_id)
+    loadContractData(agent.sfg_id)
   }, [agent?.sfg_id])
 
-  async function loadLessons(sfgId) {
-    setLoading(true)
+  async function loadContractData(sfgId) {
+    setCnLoading(true)
     try {
-      const res = await fetch(`/api/onboarding-progress?sfg_id=${encodeURIComponent(sfgId)}&detail=true`)
-      if (!res.ok) { setLessons([]); return }
-      const { lessons: data, kajabiEmail: email } = await res.json()
-      setLessons(data ?? [])
-      setKajabiEmail(email ?? null)
+      const { createClient } = await import('@supabase/supabase-js').catch(() => ({ createClient: null }))
+      // Use the existing supabase client from the app's lib
+      const { supabase: sb } = await import('../lib/supabaseClient')
+
+      const [{ data: cnData }, { data: carrierData }] = await Promise.all([
+        sb.from('contract_numbers')
+          .select('carrier, contract_number, effective_date, source')
+          .eq('sfg_id', sfgId.toUpperCase())
+          .order('carrier')
+          .order('contract_number', { ascending: false }),
+        sb.from('carriers')
+          .select('name, alert_threshold_days')
+          .order('name'),
+      ])
+
+      // Keep only the "most recent" (alphanumerically highest) per carrier
+      const best = {}
+      for (const row of cnData ?? []) {
+        if (!best[row.carrier]) best[row.carrier] = row
+      }
+
+      setContractNums(best)
+      setCarriers(carrierData ?? [])
     } catch {
-      setLessons([])
+      setContractNums({})
+      setCarriers([])
     } finally {
-      setLoading(false)
+      setCnLoading(false)
     }
   }
 
-  function startEdit() {
-    setDraft({ ...agent })
-    setEditing(true)
-    setSaveError(null)
-  }
-
-  function cancelEdit() {
-    setEditing(false)
-    setDraft(null)
-    setSaveError(null)
-  }
-
-  function setField(key, value) {
-    setDraft(d => ({ ...d, [key]: value }))
-  }
+  function startEdit() { setDraft({ ...agent }); setEditing(true); setSaveError(null) }
+  function cancelEdit() { setEditing(false); setDraft(null); setSaveError(null) }
+  function setField(key, value) { setDraft(d => ({ ...d, [key]: value })) }
 
   async function handleSave() {
     if (!draft) return
@@ -546,12 +451,7 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
           updates[key] = String(draft[key] ?? '')
         }
       }
-
-      if (Object.keys(updates).length === 0) {
-        cancelEdit()
-        return
-      }
-
+      if (Object.keys(updates).length === 0) { cancelEdit(); return }
       const res = await fetch('/api/personnel', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -571,111 +471,70 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
     }
   }
 
-  const completedCount = lessons.filter(l => l.completed).length
-  const pct = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0
+  const coreCarrierNames = new Set(carriers.map(c => c.name))
+  const otherContracts   = Object.values(contractNums).filter(c => !coreCarrierNames.has(c.carrier))
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-gray-50 dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+      <div className="bg-gray-50 dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
 
         {/* Header */}
-        <div className="flex items-start justify-between p-6 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 dark:text-white truncate">{agent.name}</h2>
             <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">{agent.sfg_id}</p>
-
-            {/* Progress bar */}
-            <div className="mt-3">
-              <div className="flex justify-between text-xs text-gray-400 dark:text-white/40 mb-1.5">
-                <span>{completedCount} of {totalLessons} lessons</span>
-                <span className={`font-bold ${pct === 100 ? 'text-green-600 dark:text-green-300' : 'text-gray-900 dark:text-white'}`}>{pct}%</span>
-              </div>
-              <div className="h-1.5 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-400' : 'bg-accent'}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-            {/* Hide from page toggle */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => onHideToggle?.(agent.sfg_id, !isHidden)}
               className={`text-xs font-medium transition-colors px-2 py-1 rounded-lg
-                ${isHidden
-                  ? 'text-accent hover:text-accent/80 hover:bg-accent/10'
-                  : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'
-                }`}
+                ${isHidden ? 'text-accent hover:text-accent/80 hover:bg-accent/10'
+                : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'}`}
             >
-              {isHidden ? 'Unhide' : 'Hide from page'}
+              {isHidden ? 'Unhide' : 'Hide'}
             </button>
-
             {canWrite && !editing && (
-              <button
-                onClick={startEdit}
-                className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10"
-              >
+              <button onClick={startEdit} className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10">
                 Edit Details
               </button>
             )}
             {editing && (
               <>
-                <button
-                  onClick={cancelEdit}
-                  className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
-                >
-                  {saving && (
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                  )}
+                <button onClick={cancelEdit} className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10">Cancel</button>
+                <button onClick={handleSave} disabled={saving}
+                  className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+                  {saving && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
                   {saving ? 'Saving…' : 'Save'}
                 </button>
               </>
             )}
             <button onClick={onClose} className="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white transition-colors p-1">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
 
         {saveError && (
-          <div className="mx-4 mt-3 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300 flex-shrink-0">
-            {saveError}
-          </div>
+          <div className="mx-4 mt-3 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300 flex-shrink-0">{saveError}</div>
         )}
 
-        {/* Edit form panel */}
+        {/* Edit form */}
         {editing && draft && (
-          <div className="p-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Edit Details</p>
             <div className="grid grid-cols-2 gap-3">
-              <OBEditField label="Hire Date"          value={toInputDate(draft.hire_date)}               onChange={v => setField('hire_date', v)}               type="date" />
-              <OBEditField label="Upline SFG ID"       value={draft.upline_sfg_id ?? ''}                  onChange={v => setField('upline_sfg_id', v)} />
-              <OBEditField label="Profile Issues"     value={draft.profile_issues ?? ''}                 onChange={v => setField('profile_issues', v)} />
+              <OBEditField label="Hire Date"            value={toInputDate(draft.hire_date)}               onChange={v => setField('hire_date', v)}               type="date" />
+              <OBEditField label="Upline SFG ID"         value={draft.upline_sfg_id ?? ''}                  onChange={v => setField('upline_sfg_id', v)} />
+              <OBEditField label="Profile Issues"       value={draft.profile_issues ?? ''}                 onChange={v => setField('profile_issues', v)} />
               <div>
                 <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">No E&amp;O</p>
                 <label className="flex items-center gap-2 cursor-pointer mt-1.5">
-                  <input
-                    type="checkbox"
-                    checked={!!draft.no_eando}
+                  <input type="checkbox" checked={!!draft.no_eando}
                     onChange={e => setField('no_eando', e.target.checked ? 'TRUE' : '')}
-                    className="w-4 h-4 accent-accent rounded cursor-pointer"
-                  />
+                    className="w-4 h-4 accent-accent rounded cursor-pointer" />
                   <span className="text-sm text-gray-700 dark:text-white/80">No E&amp;O</span>
                 </label>
               </div>
@@ -686,136 +545,128 @@ function AgentDetailModal({ agent, kajabi, totalLessons, onClose, canWrite, isHi
           </div>
         )}
 
-        {/* Kajabi link — always visible to writers; read-only if linked, input if not */}
-        {canWrite && (
-          <div className="px-4 py-3 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
-            <KajabiLinkField
-              sfgId={agent.sfg_id}
-              kajabiEmail={kajabiEmail}
-              onLinked={email => {
-                setKajabiEmail(email)
-                onKajabiLinked?.(agent.sfg_id)
-              }}
-            />
-          </div>
-        )}
+        {/* Contract numbers */}
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">Contract Numbers</p>
 
-        {/* Lesson list */}
-        <div className="overflow-y-auto flex-1 p-4">
-          {loading ? (
+          {cnLoading ? (
             <div className="space-y-2 animate-pulse">
-              {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-9 bg-gray-100 dark:bg-white/10 rounded-lg" />)}
+              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 dark:bg-white/10 rounded-lg" />)}
             </div>
-          ) : lessons.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-white/40 text-center py-8">No Kajabi account linked to this agent.</p>
           ) : (
-            <div className="space-y-1">
-              {lessons.map(lesson => (
-                <div
-                  key={lesson.id}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg
-                    ${lesson.completed ? 'bg-gray-50 dark:bg-white/5' : ''}`}
-                >
-                  {/* Check circle */}
-                  <span className={`flex-shrink-0 w-4 h-4 rounded-full border flex items-center justify-center
-                    ${lesson.completed ? 'bg-accent border-accent' : 'border-gray-300 dark:border-white/20'}`}>
-                    {lesson.completed && (
-                      <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 6l3 3 5-5" />
-                      </svg>
-                    )}
-                  </span>
+            <>
+              {/* Core 11 carriers */}
+              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                      {['Carrier', 'Contract Number', 'Effective Date', 'Status'].map(h => (
+                        <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-3 py-2 first:pl-4 last:pr-4 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                    {carriers.map(c => {
+                      const cn = contractNums[c.name]
+                      const status = computeContractStatus(cn, agent, c.alert_threshold_days)
+                      return (
+                        <tr key={c.name} className="bg-white dark:bg-primary/20">
+                          <td className="px-3 pl-4 py-2.5 text-xs font-medium text-gray-800 dark:text-white/80 whitespace-nowrap">{c.name}</td>
+                          <td className="px-3 py-2.5 text-xs font-mono text-gray-600 dark:text-white/60">{cn?.contract_number || '—'}</td>
+                          <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">{cn?.effective_date ? fmtDate(cn.effective_date) : '—'}</td>
+                          <td className="px-3 pr-4 py-2.5">
+                            <ContractStatusBadge status={status} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-                  {/* Lesson name */}
-                  <span className={`text-sm flex-1 leading-snug
-                    ${lesson.completed ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/45'}`}>
-                    {lesson.lesson_name}
-                  </span>
-
-                  {/* Completed date */}
-                  {lesson.completed_at && (
-                    <span className="text-xs text-gray-400 dark:text-white/30 flex-shrink-0 tabular-nums">
-                      {new Date(lesson.completed_at).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                      })}
-                    </span>
+              {/* Other carriers (collapsible) */}
+              {otherContracts.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowOther(v => !v)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${showOther ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    Other carriers ({otherContracts.length})
+                  </button>
+                  {showOther && (
+                    <div className="mt-2 rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                          {otherContracts.map(cn => (
+                            <tr key={cn.carrier} className="bg-white dark:bg-primary/20">
+                              <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-700 dark:text-white/70">{cn.carrier}</td>
+                              <td className="px-3 py-2 text-xs font-mono text-gray-500 dark:text-white/50">{cn.contract_number}</td>
+                              <td className="px-3 pr-4 py-2 text-xs text-gray-400 dark:text-white/40">{cn.effective_date ? fmtDate(cn.effective_date) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* Footer */}
-        {!loading && lessons.length > 0 && (
-          <div className="px-6 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0 flex items-center justify-between">
-            <span className="text-xs text-gray-400 dark:text-white/25">{kajabi?.latestDate ? `Last activity ${fmtDate(kajabi.latestDate)}` : 'No completions yet'}</span>
-            <span className="text-xs text-gray-400 dark:text-white/25">Esc to close</span>
-          </div>
-        )}
+        <div className="px-6 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0 flex items-center justify-end">
+          <span className="text-xs text-gray-400 dark:text-white/25">Esc to close</span>
+        </div>
       </div>
     </div>
   )
 }
 
-function KajabiLinkField({ sfgId, kajabiEmail, onLinked }) {
-  const [input,   setInput]   = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const [linkErr, setLinkErr] = useState(null)
+// ─── Contract number status helpers ──────────────────────────────────────────
 
-  async function handleLink() {
-    const email = input.trim()
-    if (!email) return
-    setSaving(true)
-    setLinkErr(null)
-    try {
-      const res = await fetch('/api/onboarding-progress', {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ sfg_id: sfgId, kajabi_email: email }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Failed to link Kajabi email')
-      }
-      onLinked(email)
-      setInput('')
-    } catch (e) {
-      setLinkErr(e.message)
-    } finally {
-      setSaving(false)
-    }
+function daysSince(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr); d.setHours(0,0,0,0)
+  const now = new Date(); now.setHours(0,0,0,0)
+  return Math.floor((now - d) / 86400000)
+}
+
+function computeContractStatus(cn, agent, thresholdDays) {
+  if (cn) return { type: 'ok', cn }
+
+  const days = daysSince(agent.contracting_to_producer)
+
+  if (!agent.contracting_to_producer) return { type: 'not_requested' }
+
+  if (agent.contracting_complete) return { type: 'data_issue' }
+
+  if (days !== null && days > thresholdDays) {
+    return { type: 'overdue', days, overdueDays: days - thresholdDays }
   }
 
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-2">Kajabi</p>
-      {kajabiEmail ? (
-        <p className="text-sm text-gray-700 dark:text-white/70 font-mono">{kajabiEmail}</p>
-      ) : (
-        <>
-          <div className="flex gap-2 items-center">
-            <input
-              type="email"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleLink()}
-              placeholder="Enter Kajabi email to link…"
-              className={OB_INPUT_CLS}
-            />
-            <button
-              onClick={handleLink}
-              disabled={saving || !input.trim()}
-              className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap flex-shrink-0"
-            >
-              {saving ? 'Linking…' : 'Link'}
-            </button>
-          </div>
-          {linkErr && <p className="text-xs text-red-500 dark:text-red-400 mt-1">{linkErr}</p>}
-        </>
-      )}
-    </div>
-  )
+  return { type: 'pending', days: days ?? 0 }
+}
+
+function ContractStatusBadge({ status }) {
+  if (status.type === 'ok') {
+    return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600 dark:text-green-400"><span className="text-xs">✓</span>On file</span>
+  }
+  if (status.type === 'not_requested') {
+    return <span className="text-[10px] text-gray-400 dark:text-white/30">Not requested</span>
+  }
+  if (status.type === 'pending') {
+    return <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Pending {status.days}d</span>
+  }
+  if (status.type === 'overdue') {
+    return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">Overdue {status.overdueDays}d</span>
+  }
+  if (status.type === 'data_issue') {
+    return <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">Complete — # missing</span>
+  }
+  return null
 }
 
 function OBEditField({ label, value, onChange, type = 'text' }) {

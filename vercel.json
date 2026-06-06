@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/contract-alerts",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}

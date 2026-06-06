@@ -8,7 +8,7 @@ loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 /**
- * Activity API  (logs + goals combined)
+ * Activity API  (logs + goals + qualifications combined)
  *
  * Activity logs (default, no type param):
  *   GET  /api/activity?sfg_id=X&start=YYYY-MM-DD&end=YYYY-MM-DD
@@ -18,7 +18,15 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   GET  /api/activity?type=goals&sfg_id=X&month=YYYY-MM
  *   POST /api/activity?type=goals  { sfg_id, year_month, weekly_dials, weekly_appts,
  *                                    monthly_apv_submitted, monthly_apv_issued }
+ *
+ * Qualifications (type=qualifications):
+ *   GET  /api/activity?type=qualifications  → { qualifications }
  */
+
+// ── Qualifications cache (1 hour) ─────────────────────────────────────────────
+let qualCache = null
+let qualCacheTs = 0
+const QUAL_TTL = 60 * 60 * 1000
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -38,7 +46,38 @@ function parseOptionalNum(val) {
 }
 
 export default async function handler(req, res) {
-  const isGoals = req.query.type === 'goals'
+  const { type } = req.query
+
+  // ── Qualifications branch ─────────────────────────────────────────────────────
+  if (type === 'qualifications') {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+    try {
+      const now = Date.now()
+      if (!qualCache || now - qualCacheTs > QUAL_TTL) {
+        const { data, error } = await supabase
+          .from('qualifications')
+          .select('level, regular, slingshot, writers')
+        if (error) throw error
+        const qualifications = {}
+        for (const row of data ?? []) {
+          if (!row.level) continue
+          qualifications[String(row.level)] = {
+            regular:   row.regular   ?? null,
+            slingshot: row.slingshot ?? null,
+            writers:   row.writers   ?? null,
+          }
+        }
+        qualCache   = qualifications
+        qualCacheTs = now
+      }
+      return res.status(200).json({ qualifications: qualCache })
+    } catch (err) {
+      console.error('[qualifications]', err)
+      return res.status(500).json({ error: 'Failed to load qualifications' })
+    }
+  }
+
+  const isGoals = type === 'goals'
 
   // ── Goals branch ─────────────────────────────────────────────────────────────
   if (isGoals) {
