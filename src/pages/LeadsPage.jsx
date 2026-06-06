@@ -849,7 +849,7 @@ export function LeadDetail({
   lead: l, activity, actLoading,
   noteText, setNoteText, showNoteBox, setShowNoteBox,
   statusSaving, onClose, onCall, onText, onNote, onStatusChange, onCallbackChange, onPatch,
-  statuses = STATUSES,
+  statuses = STATUSES, isRecruiting = false,
 }) {
   const { userProfile } = useAuth()
   const calConnected = userProfile?.google_calendar_connected ?? false
@@ -1084,126 +1084,165 @@ export function LeadDetail({
           </div>
         </div>
 
-        {/* Lead details */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <SectionLabel>Lead Details</SectionLabel>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <div className="col-span-2">
-              <p className={FL}>Campaign</p>
-              <select value={form.lead_type ?? ''} onChange={e => { set('lead_type', e.target.value); onPatch('lead_type', e.target.value) }} className={F + ' cursor-pointer'}>
-                <option value="Life Insurance - Standard">Life Insurance - Standard</option>
-                <option value="Life Insurance - Premium">Life Insurance - Premium</option>
-                <option value="Mortgage Protection">Mortgage Protection</option>
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Gender</p>
-              <select value={form.gender ?? ''} onChange={e => { set('gender', e.target.value); onPatch('gender', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                <option value="">—</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Age</p>
-              <input type="number" min="0" max="120" value={form.age ?? ''} onChange={e => set('age', e.target.value)} onBlur={() => save('age', v => v === '' ? null : parseInt(v) || null)} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Date of Birth</p>
-              <input type="date" value={form.dob ?? ''} onChange={e => set('dob', e.target.value)} onBlur={() => save('dob')} className={F + ' dark:[color-scheme:dark]'} />
-            </div>
-            <div>
-              <p className={FL}>Marital Status</p>
-              <select value={form.marital_status ?? ''} onChange={e => { set('marital_status', e.target.value); onPatch('marital_status', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                <option value="">—</option>
-                <option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option>
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Coverage</p>
-              <input value={form.coverage ?? ''} onChange={e => set('coverage', e.target.value)} onBlur={() => save('coverage')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Beneficiary</p>
-              <input value={form.beneficiary ?? ''} onChange={e => set('beneficiary', e.target.value)} onBlur={() => save('beneficiary')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Employment</p>
-              <input value={form.employment ?? ''} onChange={e => set('employment', e.target.value)} onBlur={() => save('employment')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Income</p>
-              <input value={form.income ?? ''} onChange={e => set('income', e.target.value)} onBlur={() => save('income')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Motivation</p>
-              <input value={form.motivation ?? ''} onChange={e => set('motivation', e.target.value)} onBlur={() => save('motivation')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Hobby / Security Word</p>
-              <input value={form.hobby ?? ''} onChange={e => set('hobby', e.target.value)} onBlur={() => save('hobby')} className={F} placeholder="—" />
+        {isRecruiting ? (
+          /* ── Recruiting: Status section ── */
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
+            <SectionLabel>Status</SectionLabel>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <div className="col-span-2">
+                <p className={FL}>Source</p>
+                <select value={form.source ?? ''} onChange={e => { set('source', e.target.value); onPatch('source', e.target.value || null) }} className={F + ' cursor-pointer'}>
+                  <option value="">—</option>
+                  {Object.entries(SOURCE_DISPLAY).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className={FL}>Interview Date</p>
+                <input type="date" value={form.assigned_date ?? ''} onChange={e => set('assigned_date', e.target.value)} onBlur={() => save('assigned_date')} className={F + ' dark:[color-scheme:dark]'} />
+              </div>
+              <div>
+                <p className={FL}>Added</p>
+                <p className="text-xs font-semibold text-gray-800 dark:text-white/80 px-2 py-1">{fmtDate(l.added)}</p>
+              </div>
+              <div className="col-span-2">
+                <p className={FL}>Pre-Licensing Progress</p>
+                <textarea
+                  value={form.notes ?? ''}
+                  onChange={e => set('notes', e.target.value)}
+                  onBlur={() => save('notes')}
+                  rows={3}
+                  placeholder="e.g. Enrolled at Kaplan, chapter 5 of 15…"
+                  className={F + ' resize-y w-full'}
+                />
+              </div>
             </div>
           </div>
+        ) : (
+          <>
+            {/* Lead details */}
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
+              <SectionLabel>Lead Details</SectionLabel>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                <div className="col-span-2">
+                  <p className={FL}>Campaign</p>
+                  <select value={form.lead_type ?? ''} onChange={e => { set('lead_type', e.target.value); onPatch('lead_type', e.target.value) }} className={F + ' cursor-pointer'}>
+                    <option value="Life Insurance - Standard">Life Insurance - Standard</option>
+                    <option value="Life Insurance - Premium">Life Insurance - Premium</option>
+                    <option value="Mortgage Protection">Mortgage Protection</option>
+                  </select>
+                </div>
+                <div>
+                  <p className={FL}>Gender</p>
+                  <select value={form.gender ?? ''} onChange={e => { set('gender', e.target.value); onPatch('gender', e.target.value || null) }} className={F + ' cursor-pointer'}>
+                    <option value="">—</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <p className={FL}>Age</p>
+                  <input type="number" min="0" max="120" value={form.age ?? ''} onChange={e => set('age', e.target.value)} onBlur={() => save('age', v => v === '' ? null : parseInt(v) || null)} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Date of Birth</p>
+                  <input type="date" value={form.dob ?? ''} onChange={e => set('dob', e.target.value)} onBlur={() => save('dob')} className={F + ' dark:[color-scheme:dark]'} />
+                </div>
+                <div>
+                  <p className={FL}>Marital Status</p>
+                  <select value={form.marital_status ?? ''} onChange={e => { set('marital_status', e.target.value); onPatch('marital_status', e.target.value || null) }} className={F + ' cursor-pointer'}>
+                    <option value="">—</option>
+                    <option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option>
+                  </select>
+                </div>
+                <div>
+                  <p className={FL}>Coverage</p>
+                  <input value={form.coverage ?? ''} onChange={e => set('coverage', e.target.value)} onBlur={() => save('coverage')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Beneficiary</p>
+                  <input value={form.beneficiary ?? ''} onChange={e => set('beneficiary', e.target.value)} onBlur={() => save('beneficiary')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Employment</p>
+                  <input value={form.employment ?? ''} onChange={e => set('employment', e.target.value)} onBlur={() => save('employment')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Income</p>
+                  <input value={form.income ?? ''} onChange={e => set('income', e.target.value)} onBlur={() => save('income')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Motivation</p>
+                  <input value={form.motivation ?? ''} onChange={e => set('motivation', e.target.value)} onBlur={() => save('motivation')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Hobby / Security Word</p>
+                  <input value={form.hobby ?? ''} onChange={e => set('hobby', e.target.value)} onBlur={() => save('hobby')} className={F} placeholder="—" />
+                </div>
+              </div>
 
-          {/* Toggles */}
-          <div className="flex gap-4 mt-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={!!form.smoker} onChange={e => { set('smoker', e.target.checked); onPatch('smoker', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
-              <span className="text-xs text-gray-600 dark:text-white/60">🚬 Smoker</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={!!form.medical} onChange={e => { set('medical', e.target.checked); onPatch('medical', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
-              <span className="text-xs text-gray-600 dark:text-white/60">⚠️ Major Med History</span>
-            </label>
-          </div>
-        </div>
+              {/* Toggles */}
+              <div className="flex gap-4 mt-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!form.smoker} onChange={e => { set('smoker', e.target.checked); onPatch('smoker', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
+                  <span className="text-xs text-gray-600 dark:text-white/60">🚬 Smoker</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!form.medical} onChange={e => { set('medical', e.target.checked); onPatch('medical', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
+                  <span className="text-xs text-gray-600 dark:text-white/60">⚠️ Major Med History</span>
+                </label>
+              </div>
+            </div>
 
-        {/* Household */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <SectionLabel>Household</SectionLabel>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <div>
-              <p className={FL}>Household Size</p>
-              <input value={form.household_size ?? ''} onChange={e => set('household_size', e.target.value)} onBlur={() => save('household_size')} className={F} placeholder="—" />
+            {/* Household */}
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
+              <SectionLabel>Household</SectionLabel>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                <div>
+                  <p className={FL}>Household Size</p>
+                  <input value={form.household_size ?? ''} onChange={e => set('household_size', e.target.value)} onBlur={() => save('household_size')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Has Children</p>
+                  <select value={form.has_children ?? ''} onChange={e => { set('has_children', e.target.value); onPatch('has_children', e.target.value || null) }} className={F + ' cursor-pointer'}>
+                    <option value="">—</option>
+                    <option>Yes</option><option>No</option>
+                  </select>
+                </div>
+                <div>
+                  <p className={FL}>Children Age Range</p>
+                  <input value={form.children_age_range ?? ''} onChange={e => set('children_age_range', e.target.value)} onBlur={() => save('children_age_range')} className={F} placeholder="—" />
+                </div>
+                <div>
+                  <p className={FL}>Homeowner</p>
+                  <select value={form.homeowner ?? ''} onChange={e => { set('homeowner', e.target.value); onPatch('homeowner', e.target.value || null) }} className={F + ' cursor-pointer'}>
+                    <option value="">—</option>
+                    <option>Yes</option><option>No</option>
+                  </select>
+                </div>
+                <div>
+                  <p className={FL}>Length of Residence</p>
+                  <input value={form.length_of_residence ?? ''} onChange={e => set('length_of_residence', e.target.value)} onBlur={() => save('length_of_residence')} className={F} placeholder="—" />
+                </div>
+              </div>
             </div>
-            <div>
-              <p className={FL}>Has Children</p>
-              <select value={form.has_children ?? ''} onChange={e => { set('has_children', e.target.value); onPatch('has_children', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                <option value="">—</option>
-                <option>Yes</option><option>No</option>
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Children Age Range</p>
-              <input value={form.children_age_range ?? ''} onChange={e => set('children_age_range', e.target.value)} onBlur={() => save('children_age_range')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Homeowner</p>
-              <select value={form.homeowner ?? ''} onChange={e => { set('homeowner', e.target.value); onPatch('homeowner', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                <option value="">—</option>
-                <option>Yes</option><option>No</option>
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Length of Residence</p>
-              <input value={form.length_of_residence ?? ''} onChange={e => set('length_of_residence', e.target.value)} onBlur={() => save('length_of_residence')} className={F} placeholder="—" />
-            </div>
-          </div>
-        </div>
 
-        {/* Notes */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <SectionLabel>Notes</SectionLabel>
-          <textarea
-            value={form.notes ?? ''}
-            onChange={e => set('notes', e.target.value)}
-            onBlur={() => save('notes')}
-            rows={3}
-            placeholder="General notes about this lead…"
-            className={F + ' resize-y w-full'}
-          />
-        </div>
+            {/* Notes */}
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
+              <SectionLabel>Notes</SectionLabel>
+              <textarea
+                value={form.notes ?? ''}
+                onChange={e => set('notes', e.target.value)}
+                onBlur={() => save('notes')}
+                rows={3}
+                placeholder="General notes about this lead…"
+                className={F + ' resize-y w-full'}
+              />
+            </div>
+          </>
+        )}
 
         {/* Lead Metadata */}
         <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
