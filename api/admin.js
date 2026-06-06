@@ -64,6 +64,7 @@ function body(req) {
 }
 
 export default async function handler(req, res) {
+  try {
   const { action } = req.query
 
   // ── Bug report submission — any authenticated user ────────────────────────
@@ -348,4 +349,8 @@ export default async function handler(req, res) {
   }
 
   return res.status(404).json({ error: `Unknown action: ${action}` })
+  } catch (err) {
+    console.error('[admin] unhandled error:', err)
+    return res.status(500).json({ error: err?.message ?? 'Internal server error' })
+  }
 }

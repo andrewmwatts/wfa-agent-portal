@@ -128,6 +128,39 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── GET ?action=lookup-delegate ───────────────────────────────────────────
+  if (req.method === 'GET' && action === 'lookup-delegate') {
+    const sfg_id = req.query.sfg_id?.trim()
+    if (!sfg_id) return res.status(400).json({ error: 'sfg_id required' })
+
+    // Check users table first — only portal account holders can be delegated to
+    const { data: user } = await supabase
+      .from('users')
+      .select('sfg_id, full_name')
+      .ilike('sfg_id', sfg_id)
+      .maybeSingle()
+
+    if (user) {
+      return res.status(200).json({ found: true, hasAccount: true, sfgId: user.sfg_id, name: user.full_name || user.sfg_id })
+    }
+
+    // Not a portal user — check personnel to distinguish "unknown SFG ID" from "not yet registered"
+    const { data: person } = await supabase
+      .from('personnel')
+      .select('sfg_id, preferred_name, opt_name')
+      .ilike('sfg_id', sfg_id)
+      .maybeSingle()
+
+    if (!person) return res.status(200).json({ found: false })
+
+    return res.status(200).json({
+      found:      true,
+      hasAccount: false,
+      sfgId:      person.sfg_id,
+      name:       person.preferred_name || person.opt_name || person.sfg_id,
+    })
+  }
+
   // ── POST ?action=provision ─────────────────────────────────────────────────
   if (req.method === 'POST' && action === 'provision') {
     let user_id, email, sfg_id, full_name

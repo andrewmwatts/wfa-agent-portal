@@ -472,26 +472,13 @@ function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection,
     setLookup(null)
     setError(null)
 
-    const { data: person } = await supabase
-      .from('personnel')
-      .select('sfg_id, preferred_name, opt_name')
-      .ilike('sfg_id', id)
-      .maybeSingle()
-
-    if (!person) { setLookup({ found: false }); setLooking(false); return }
-
-    const { data: user } = await supabase
-      .from('users')
-      .select('sfg_id, full_name')
-      .eq('sfg_id', person.sfg_id)
-      .maybeSingle()
-
-    setLookup({
-      found:      true,
-      sfgId:      person.sfg_id,
-      name:       user?.full_name || person.preferred_name || person.opt_name || person.sfg_id,
-      hasAccount: !!user,
-    })
+    try {
+      const res  = await fetch(`/api/users?action=lookup-delegate&sfg_id=${encodeURIComponent(id)}`)
+      const data = await res.json()
+      setLookup(data.found ? data : { found: false })
+    } catch {
+      setError('Lookup failed. Please try again.')
+    }
     setLooking(false)
   }
 
@@ -536,7 +523,7 @@ function SfgLookupTab({ agentSfgId, sections, selectedSections, onToggleSection,
           : 'bg-green-500/10 text-green-700 dark:text-green-300'
         }`}>
           {!lookupResult.found ? 'SFG ID not found.'
-            : !lookupResult.hasAccount ? `${lookupResult.name} — not yet registered. Use Email Invite instead.`
+            : !lookupResult.hasAccount ? `${lookupResult.name} — user must be registered for portal first.`
             : lookupResult.name}
         </div>
       )}
