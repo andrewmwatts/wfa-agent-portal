@@ -646,7 +646,7 @@ function ContractStatusBadge({ status }) {
     return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">Overdue {status.overdueDays}d</span>
   }
   if (status.type === 'data_issue') {
-    return <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">Complete — # missing</span>
+    return <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">Requested — # missing</span>
   }
   return null
 }
