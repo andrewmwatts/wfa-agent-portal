@@ -89,7 +89,7 @@ export default function CarrierMetricsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gray-50 dark:bg-[#001a1c]">
+    <div className="flex flex-col h-full min-h-0">
 
       {/* Header */}
       <div className="px-6 pt-6 pb-4 shrink-0">
