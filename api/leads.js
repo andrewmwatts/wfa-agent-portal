@@ -340,7 +340,19 @@ export default async function handler(req, res) {
 
   // ── LEADS ─────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
-    const sfgId = await resolveCallerSfgId(req, req.query.sfg_id)
+    // Verify the caller is authenticated, then honour the requested sfg_id.
+    // resolveCallerSfgId() in production resolves from the JWT (the logged-in
+    // user), ignoring the query param. For "view as" scenarios (e.g. directors
+    // viewing a downline owner's leads) we need to use the requested sfg_id
+    // instead of locking to the caller's own identity.
+    const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+    if (!bypass) {
+      const callerSfgId = await resolveCallerSfgId(req, null)
+      if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
+    }
+    const sfgId = req.query.sfg_id
+      ? req.query.sfg_id.trim().toUpperCase()
+      : await resolveCallerSfgId(req, null)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
 
     const { category, include } = req.query
