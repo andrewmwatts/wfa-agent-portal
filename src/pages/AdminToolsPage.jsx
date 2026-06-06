@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 const TH  = 'text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 pb-2 pr-4 whitespace-nowrap'
@@ -525,6 +526,7 @@ function PolicyCrosswalkTab({ adminFetch }) {
 // ─── Tool 4: Agency Display Settings ─────────────────────────────────────────
 
 function AgencySettingsTab({ adminFetch }) {
+  const { theme } = useTheme()
   const [agencies, setAgencies] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [loadErr,  setLoadErr]  = useState('')
@@ -604,7 +606,13 @@ function AgencySettingsTab({ adminFetch }) {
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 {(a.agency?.logo_url_dark || a.agency?.logo_url_light) ? (
-                  <img src={a.agency.logo_url_dark || a.agency.logo_url_light} alt="logo" className="h-8 w-auto object-contain max-w-[80px] rounded" />
+                  <img
+                    src={theme === 'dark'
+                      ? (a.agency.logo_url_dark  || a.agency.logo_url_light)
+                      : (a.agency.logo_url_light || a.agency.logo_url_dark)}
+                    alt="logo"
+                    className="h-8 w-auto object-contain max-w-[80px] rounded"
+                  />
                 ) : (
                   <div className="h-8 w-16 rounded bg-gray-100 dark:bg-white/10 flex items-center justify-center text-[9px] text-gray-400">No logo</div>
                 )}
