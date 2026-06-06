@@ -143,6 +143,43 @@ export default async function handler(req, res) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
 
+  // ── GET ?action=contracts — contract numbers + carriers for one agent ────────
+  if (req.method === 'GET' && req.query.action === 'contracts') {
+    const sfgId = req.query.sfg_id?.trim().toUpperCase()
+    if (!sfgId) return res.status(400).json({ error: 'sfg_id required' })
+
+    try {
+      const [{ data: cnData, error: cnErr }, { data: carrierData, error: cErr }] = await Promise.all([
+        supabase
+          .from('contract_numbers')
+          .select('carrier, contract_number, effective_date, source')
+          .eq('sfg_id', sfgId)
+          .order('carrier')
+          .order('contract_number', { ascending: false }),
+        supabase
+          .from('carriers')
+          .select('name, alert_threshold_days')
+          .order('name'),
+      ])
+
+      if (cnErr)  return res.status(500).json({ error: cnErr.message })
+      if (cErr)   return res.status(500).json({ error: cErr.message })
+
+      // Keep only the alphanumerically highest contract number per carrier
+      const best = {}
+      for (const row of cnData ?? []) {
+        if (!best[row.carrier]) best[row.carrier] = row
+      }
+
+      return res.status(200).json({
+        contracts: best,           // { [carrierName]: { carrier, contract_number, effective_date, source } }
+        carriers:  carrierData ?? [],
+      })
+    } catch (err) {
+      return res.status(500).json({ error: err.message })
+    }
+  }
+
   // ── GET — personnel data ───────────────────────────────────────────────────
   if (req.method === 'GET') {
     const rootParam    = req.query.root?.trim()

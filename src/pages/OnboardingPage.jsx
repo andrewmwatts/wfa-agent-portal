@@ -404,25 +404,11 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
   async function loadContractData(sfgId) {
     setCnLoading(true)
     try {
-      const [{ data: cnData }, { data: carrierData }] = await Promise.all([
-        supabase.from('contract_numbers')
-          .select('carrier, contract_number, effective_date, source')
-          .eq('sfg_id', sfgId.toUpperCase())
-          .order('carrier')
-          .order('contract_number', { ascending: false }),
-        supabase.from('carriers')
-          .select('name, alert_threshold_days')
-          .order('name'),
-      ])
-
-      // Keep only the "most recent" (alphanumerically highest) per carrier
-      const best = {}
-      for (const row of cnData ?? []) {
-        if (!best[row.carrier]) best[row.carrier] = row
-      }
-
-      setContractNums(best)
-      setCarriers(carrierData ?? [])
+      const res = await fetch(`/api/personnel?action=contracts&sfg_id=${encodeURIComponent(sfgId)}`)
+      if (!res.ok) { setContractNums({}); setCarriers([]); return }
+      const { contracts, carriers: carrierList } = await res.json()
+      setContractNums(contracts ?? {})
+      setCarriers(carrierList ?? [])
     } catch {
       setContractNums({})
       setCarriers([])
