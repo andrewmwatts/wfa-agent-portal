@@ -143,6 +143,46 @@ export default async function handler(req, res) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
 
+  // ── GET ?action=contract_counts — core-carrier contract count per agent ──────
+  // Returns { counts: { [sfg_id]: number } } for a set of agents.
+  // Used by the Contracting page table to show "X of 11" progress.
+  if (req.method === 'GET' && req.query.action === 'contract_counts') {
+    const sfgIdsParam = req.query.sfg_ids ?? ''
+    const sfgIds = sfgIdsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+    if (!sfgIds.length) return res.status(200).json({ counts: {} })
+
+    try {
+      // Fetch core carrier names
+      const { data: carriers, error: cErr } = await supabase
+        .from('carriers')
+        .select('name')
+      if (cErr) throw cErr
+      const coreCarriers = (carriers ?? []).map(c => c.name)
+
+      // Fetch contract numbers for these agents restricted to core carriers
+      const { data: cns, error: cnErr } = await supabase
+        .from('contract_numbers')
+        .select('sfg_id, carrier')
+        .in('sfg_id', sfgIds)
+        .in('carrier', coreCarriers)
+      if (cnErr) throw cnErr
+
+      // Count distinct core carriers per agent
+      const counts = {}
+      for (const row of cns ?? []) {
+        const id = row.sfg_id
+        if (!counts[id]) counts[id] = new Set()
+        counts[id].add(row.carrier)
+      }
+      const result = {}
+      for (const [id, set] of Object.entries(counts)) result[id] = set.size
+
+      return res.status(200).json({ counts: result, total: coreCarriers.length })
+    } catch (err) {
+      return res.status(500).json({ error: err.message })
+    }
+  }
+
   // ── GET ?action=contracts — contract numbers + carriers for one agent ────────
   if (req.method === 'GET' && req.query.action === 'contracts') {
     const sfgId = req.query.sfg_id?.trim().toUpperCase()

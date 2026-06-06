@@ -29,7 +29,7 @@ const NAV_SECTIONS = [
     label: 'Owner',
     items: [
       { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
-      { path: '/onboarding',           label: 'Onboarding',           roles: LEADER_ROLES },
+      { path: '/onboarding',           label: 'Contracting',          roles: LEADER_ROLES },
       { path: '/accountability',        label: 'Accountability',       roles: LEADER_ROLES },
       { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
       { path: '/snapshot',              label: 'Snapshot',             roles: LEADER_ROLES },

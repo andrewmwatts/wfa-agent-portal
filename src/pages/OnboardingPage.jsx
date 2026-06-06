@@ -53,8 +53,10 @@ export default function OnboardingPage() {
   const { userProfile }                = useAuth()
   const { activeSubject, permissions } = useViewing()
 
-  const [masterPersonnel, setMasterPersonnel] = useState([])
-  const [hiddenIds,       setHiddenIds]       = useState(new Set())
+  const [masterPersonnel,  setMasterPersonnel]  = useState([])
+  const [contractCounts,   setContractCounts]   = useState({}) // sfg_id → count of core carrier numbers
+  const [totalCarriers,    setTotalCarriers]    = useState(11) // from API
+  const [hiddenIds,        setHiddenIds]        = useState(new Set())
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState(null)
 
@@ -109,6 +111,17 @@ export default function OnboardingPage() {
         return new Date(b.hire_date || 0) - new Date(a.hire_date || 0)
       })
       setMasterPersonnel(sorted)
+
+      // Fetch contract number counts for all agents in one shot
+      if (sorted.length > 0) {
+        const ids = sorted.map(p => p.sfg_id).join(',')
+        const cRes = await fetch(`/api/personnel?action=contract_counts&sfg_ids=${encodeURIComponent(ids)}`)
+        if (cRes.ok) {
+          const { counts, total } = await cRes.json()
+          setContractCounts(counts ?? {})
+          if (total) setTotalCarriers(total)
+        }
+      }
     } catch (e) {
       setError(e.message)
     } finally {
@@ -195,7 +208,7 @@ export default function OnboardingPage() {
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Onboarding</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Contracting</h3>
           <div className="flex items-center gap-3">
             {isDirector && (
               <ScopeDropdown
@@ -313,7 +326,12 @@ export default function OnboardingPage() {
                           : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
                       </td>
                       <td className="py-3 pr-4">
-                        <ContractingCell toProducerDate={r.contracting_to_producer} complete={r.contracting_complete} />
+                        <ContractingCell
+                          toProducerDate={r.contracting_to_producer}
+                          complete={r.contracting_complete}
+                          contractCount={contractCounts[r.sfg_id] ?? 0}
+                          totalCarriers={totalCarriers}
+                        />
                       </td>
                     </tr>
                   )
@@ -368,11 +386,23 @@ export default function OnboardingPage() {
 
 // ─── Contracting Cell ─────────────────────────────────────────────────────────
 
-function ContractingCell({ toProducerDate, complete }) {
-  if (complete)
+function ContractingCell({ toProducerDate, complete, contractCount = 0, totalCarriers = 11 }) {
+  // All contracts received → green Complete
+  if (complete && contractCount >= totalCarriers)
     return <span className="text-xs bg-green-500/20 text-green-600 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
+
+  // Contracting marked complete, numbers partially or not yet populated → orange
+  if (complete) {
+    if (contractCount > 0)
+      return <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">{contractCount} of {totalCarriers}</span>
+    return <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">Requested</span>
+  }
+
+  // Contracting sent but not complete
   if (toProducerDate)
     return <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Sent {fmtDate(toProducerDate)}</span>
+
+  // Not started
   return <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/40 font-medium px-2 py-0.5 rounded-full">Not Started</span>
 }
 
