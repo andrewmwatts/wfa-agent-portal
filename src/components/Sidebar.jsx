@@ -7,7 +7,7 @@ import { HEADER_TOP } from './AppLayout'
 
 const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
 const ADMIN_ROLES  = new Set(['super_admin'])
-const OWNER_ROLES  = new Set(['owner', 'super_admin'])
+const OWNER_ROLES  = new Set(['owner', 'director', 'super_admin'])
 
 const NAV_SECTIONS = [
   {
@@ -30,9 +30,9 @@ const NAV_SECTIONS = [
     items: [
       { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
       { path: '/contracting',           label: 'Contracting',          roles: LEADER_ROLES },
-      { path: '/accountability',        label: 'Accountability',       roles: LEADER_ROLES },
+      { path: '/accountability',        label: 'Accountability',       roles: OWNER_ROLES  },
       { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
-      { path: '/snapshot',              label: 'Snapshot',             roles: LEADER_ROLES },
+      { path: '/snapshot',              label: 'Snapshot',             roles: OWNER_ROLES  },
       { path: '/agents',               label: 'Agents',               roles: LEADER_ROLES },
     ],
   },

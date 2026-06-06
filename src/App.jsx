@@ -58,18 +58,18 @@ export default function App() {
             {/* Leader, Owner, Director, Admin */}
             <Route element={<ProtectedRoute allowedRoles={['leader', 'owner', 'director', 'super_admin']} />}>
               <Route element={<AppLayout />}>
-                <Route path="/contracting"           element={<OnboardingPage />} />
+                <Route path="/contracting"          element={<OnboardingPage />} />
                 <Route path="/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
-                <Route path="/accountability"        element={<AccountabilityPage />} />
                 <Route path="/coaching"             element={<CoachingPage />} />
-                <Route path="/snapshot"             element={<SnapshotPage />} />
+                <Route path="/agents"               element={<AgentsPage />} />
               </Route>
             </Route>
 
-            {/* Leader, Owner + Admin */}
-            <Route element={<ProtectedRoute allowedRoles={['leader', 'owner', 'director', 'super_admin']} />}>
+            {/* Owner, Director, Admin only */}
+            <Route element={<ProtectedRoute allowedRoles={['owner', 'director', 'super_admin']} />}>
               <Route element={<AppLayout />}>
-                <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/accountability" element={<AccountabilityPage />} />
+                <Route path="/snapshot"       element={<SnapshotPage />} />
               </Route>
             </Route>
 
