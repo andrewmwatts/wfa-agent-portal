@@ -8,20 +8,30 @@ import CalendarEventModal from '../components/CalendarEventModal'
 // ─── Status config ─────────────────────────────────────────────────────────────
 
 export const STATUSES = [
-  { key: 'new',       label: 'New',                   pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',         bar: 'bg-blue-500'   },
-  { key: 'attempted', label: 'Attempted Contact',     pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20', bar: 'bg-orange-500' },
-  { key: 'callback',  label: 'Call Back Scheduled',   pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',               bar: 'bg-sky-500'    },
-  { key: 'contacted', label: 'Contacted',             pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',   bar: 'bg-amber-500'  },
-  { key: 'appt',      label: 'Appointment Set',       pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20', bar: 'bg-violet-500' },
-  { key: 'sold',      label: 'Policy Sold',           pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',   bar: 'bg-green-500'  },
-  { key: 'notint',    label: 'Not Interested',        pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                bar: 'bg-gray-400'   },
-  { key: 'dnc',       label: 'Do Not Call',           pill: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20',                bar: 'bg-red-500'    },
-  { key: 'ghost',     label: 'Ghost / No Response',   pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                bar: 'bg-gray-400'   },
-  { key: 'textvm',    label: 'Text & VM',             pill: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20',          bar: 'bg-pink-500'   },
-  { key: 'bad',       label: 'Bad Lead / Credit',     pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',          bar: 'bg-rose-500'   },
+  { key: 'new',       label: 'New',                   pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',             bar: 'bg-blue-500'    },
+  { key: 'attempted', label: 'Attempted Contact',     pill: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20', bar: 'bg-orange-500'  },
+  { key: 'callback',  label: 'Call Back Scheduled',   pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',                   bar: 'bg-sky-500'     },
+  { key: 'contacted', label: 'Contacted',             pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',       bar: 'bg-amber-500'   },
+  { key: 'appt',      label: 'Appointment Set',       pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20', bar: 'bg-violet-500'  },
+  { key: 'noshow',    label: 'No-Show',               pill: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20',             bar: 'bg-pink-500'    },
+  { key: 'quotes',    label: 'Running Quotes',        pill: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20',             bar: 'bg-teal-500'    },
+  { key: 'thinking',  label: 'Thinking About It',     pill: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-300 dark:border-yellow-500/20', bar: 'bg-yellow-500'  },
+  { key: 'sold',      label: 'Policy Sold',           pill: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20',       bar: 'bg-green-500'   },
+  { key: 'notint',    label: 'Not Interested',        pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                   bar: 'bg-gray-400'    },
+  { key: 'dnc',       label: 'Do Not Call',           pill: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20',                   bar: 'bg-red-500'     },
+  { key: 'ghost',     label: 'Ghost / No Response',   pill: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',                   bar: 'bg-gray-400'    },
+  { key: 'bad',       label: 'Bad Lead',              pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',             bar: 'bg-rose-500'    },
 ]
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.key, s]))
 function statusCfg(key) { return STATUS_MAP[key] ?? STATUSES[0] }
+
+// Quick-filter groups for the status row
+const STATUS_GROUP_FILTERS = [
+  { key: 'pre_appt',  label: 'Pre-Appointment',  statuses: new Set(['new', 'attempted', 'callback', 'contacted', 'appt', 'noshow']) },
+  { key: 'appt_run',  label: 'Appointment Run',  statuses: new Set(['quotes', 'thinking', 'ghost']) },
+  { key: 'sold',      label: 'Policy Sold',       statuses: new Set(['sold']) },
+  { key: 'dead',      label: 'Dead Lead',         statuses: new Set(['notint', 'dnc', 'bad']) },
+]
 
 // ─── Campaign badge ────────────────────────────────────────────────────────────
 
@@ -381,7 +391,10 @@ export default function LeadsPage() {
         const tf = TYPE_FILTERS.find(t => t.key === typeFilter)
         if (tf && !tf.types.includes(l.lead_type)) return false
       }
-      if (statusFilter !== 'all' && l.status !== statusFilter) return false
+      if (statusFilter !== 'all') {
+        const grp = STATUS_GROUP_FILTERS.find(g => g.key === statusFilter)
+        if (grp && !grp.statuses.has(l.status)) return false
+      }
       return true
     })
     list.sort((a, b) => {
@@ -525,21 +538,19 @@ export default function LeadsPage() {
 
                 <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0" />
 
-                {/* Status dropdown */}
-                <select
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none ${
-                    statusFilter !== 'all'
-                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
-                  }`}
-                >
-                  <option value="all">All Statuses</option>
-                  {STATUSES.map(s => (
-                    <option key={s.key} value={s.key}>{s.label}</option>
+                {/* Status group filters */}
+                <div className="flex gap-1">
+                  {STATUS_GROUP_FILTERS.map(f => (
+                    <button key={f.key}
+                      onClick={() => setStatusFilter(v => v === f.key ? 'all' : f.key)}
+                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                        statusFilter === f.key
+                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                      }`}
+                    >{f.label}</button>
                   ))}
-                </select>
+                </div>
 
                 {/* Show All — only visible when any filter is active */}
                 {(categoryFilter !== 'all' || typeFilter !== 'all' || statusFilter !== 'all') && (
