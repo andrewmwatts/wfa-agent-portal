@@ -28,7 +28,7 @@ const NAV_SECTIONS = [
       { path: '/accountability',        label: 'Accountability',       roles: LEADER_ROLES },
       { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
       { path: '/snapshot',              label: 'Snapshot',             roles: LEADER_ROLES },
-      { path: '/agents',               label: 'Agents',               roles: OWNER_ROLES  },
+      { path: '/agents',               label: 'Agents',               roles: LEADER_ROLES },
     ],
   },
   {
