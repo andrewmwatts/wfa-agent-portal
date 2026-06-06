@@ -1421,21 +1421,23 @@ export function ScriptsTab({ scripts, onAdd, onDelete }) {
 
 // ─── Pipeline Tab ──────────────────────────────────────────────────────────────
 
-export function PipelineTab({ leads }) {
+const DEFAULT_KPI_FN = (counts, total) => [
+  { label: 'Total Leads',  value: total,                                                                       color: 'text-accent' },
+  { label: 'Contacted',    value: (counts.contacted || 0) + (counts.attempted || 0) + (counts.callback || 0), color: 'text-amber-600 dark:text-amber-400' },
+  { label: 'Appointments', value: counts.appt || 0,                                                            color: 'text-violet-600 dark:text-violet-400' },
+  { label: 'Policy Sold',  value: counts.sold || 0,                                                            color: 'text-green-600 dark:text-green-400' },
+]
+
+export function PipelineTab({ leads, statuses = STATUSES, kpiFn = DEFAULT_KPI_FN }) {
   const counts = useMemo(() => {
-    const c = Object.fromEntries(STATUSES.map(s => [s.key, 0]))
+    const c = Object.fromEntries(statuses.map(s => [s.key, 0]))
     for (const l of leads) { if (c[l.status] !== undefined) c[l.status]++ }
     return c
-  }, [leads])
+  }, [leads, statuses])
 
-  const total = leads.length
-
-  const STATS = [
-    { label: 'Total Leads',   value: total,                color: 'text-accent' },
-    { label: 'Policy Sold',   value: counts.sold,          color: 'text-green-600 dark:text-green-400' },
-    { label: 'Appointments',  value: counts.appt,          color: 'text-violet-600 dark:text-violet-400' },
-    { label: 'Contacted',     value: (counts.contacted || 0) + (counts.attempted || 0) + (counts.callback || 0), color: 'text-amber-600 dark:text-amber-400' },
-  ]
+  const total   = leads.length
+  const counted = Object.values(counts).reduce((a, b) => a + b, 0)
+  const STATS   = kpiFn(counts, total)
 
   return (
     <div className="px-4 sm:px-6 py-4 space-y-5">
@@ -1455,13 +1457,13 @@ export function PipelineTab({ leads }) {
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">By Status</p>
         </div>
         <div className="divide-y divide-gray-50 dark:divide-white/5">
-          {STATUSES.map(s => {
-            const count = counts[s.key]
-            const pct   = total ? Math.round((count / total) * 100) : 0
+          {statuses.map(s => {
+            const count = counts[s.key] ?? 0
+            const pct   = counted ? Math.round((count / counted) * 100) : 0
             return (
               <div key={s.key} className="flex items-center gap-3 px-4 py-2.5">
                 <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.bar}`} />
-                <span className="text-xs text-gray-600 dark:text-white/70 w-32 shrink-0">{s.label}</span>
+                <span className="text-xs text-gray-600 dark:text-white/70 w-36 shrink-0">{s.label}</span>
                 <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full transition-all duration-500 ${s.bar}`} style={{ width: `${pct}%` }} />
                 </div>

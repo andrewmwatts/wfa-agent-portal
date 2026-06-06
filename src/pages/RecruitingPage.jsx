@@ -536,7 +536,18 @@ export default function RecruitingPage() {
           )}
 
           {/* ── Pipeline tab ──────────────────────────────────────────────── */}
-          {tab === 'pipeline' && <PipelineTab leads={leads} />}
+          {tab === 'pipeline' && (
+            <PipelineTab
+              leads={leads}
+              statuses={REC_STATUSES}
+              kpiFn={(counts, total) => [
+                { label: 'Total Leads',  value: total,                                              color: 'text-accent' },
+                { label: 'Interviewed',  value: counts.interviewed || 0,                            color: 'text-amber-600 dark:text-amber-400' },
+                { label: 'Hired',        value: (counts.hired || 0) + (counts.fully_contracted || 0), color: 'text-violet-600 dark:text-violet-400' },
+                { label: 'Contracted',   value: counts.fully_contracted || 0,                       color: 'text-green-600 dark:text-green-400' },
+              ]}
+            />
+          )}
 
           {/* ── Unlinked Hires tab ────────────────────────────────────────── */}
           {tab === 'unlinked_hires' && (
