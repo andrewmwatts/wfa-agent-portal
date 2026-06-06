@@ -60,8 +60,12 @@ export default function CarrierMetricsPage() {
     fetch('/api/policies?type=carrier-metrics')
       .then(r => r.json())
       .then(data => {
-        if (Array.isArray(data)) setRows(data)
-        else setError(data?.error ?? 'Failed to load carrier metrics')
+        if (Array.isArray(data)) {
+          setRows(data)
+          setCollapsed(new Set(data.map(r => r.carrier)))
+        } else {
+          setError(data?.error ?? 'Failed to load carrier metrics')
+        }
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -141,7 +145,7 @@ export default function CarrierMetricsPage() {
         )}
 
         {!loading && !error && carrierGroups.length > 0 && (
-          <div className="bg-white dark:bg-primary border border-gray-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl overflow-hidden">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
