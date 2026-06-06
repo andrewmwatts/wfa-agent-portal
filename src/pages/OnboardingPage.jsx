@@ -391,16 +391,16 @@ function ContractingCell({ toProducerDate, complete, contractCount = 0, totalCar
   if (complete && contractCount >= totalCarriers)
     return <span className="text-xs bg-green-500/20 text-green-600 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
 
-  // Contracting marked complete, numbers partially or not yet populated → orange
+  // Contracting marked complete, numbers partially or not yet populated → amber
   if (complete) {
     if (contractCount > 0)
-      return <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">{contractCount} of {totalCarriers}</span>
-    return <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">Requested</span>
+      return <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">{contractCount} of {totalCarriers}</span>
+    return <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Requested</span>
   }
 
-  // Contracting sent but not complete
+  // Contracting sent but not complete → orange
   if (toProducerDate)
-    return <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Sent {fmtDate(toProducerDate)}</span>
+    return <span className="text-xs font-medium text-orange-600 dark:text-orange-400">Sent {fmtDate(toProducerDate)}</span>
 
   // Not started
   return <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/40 font-medium px-2 py-0.5 rounded-full">Not Started</span>
