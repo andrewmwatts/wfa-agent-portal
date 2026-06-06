@@ -373,19 +373,33 @@ export default async function handler(req, res) {
       if (leadsErr)   return res.status(500).json({ error: leadsErr.message })
       if (scriptsErr) return res.status(500).json({ error: scriptsErr.message })
 
-      // Merge contracting fields for hired leads
+      // Merge contracting fields + contract number counts for hired leads
       let leads = rawLeads ?? []
       const hiredIds = leads.map(l => l.hired_sfg_id).filter(Boolean)
       if (hiredIds.length > 0) {
-        const { data: personnel } = await sb
-          .from('personnel')
-          .select('sfg_id, preferred_name, surelc_profile_date, contracting_to_producer, contracting_complete, no_eando, profile_issues')
-          .in('sfg_id', hiredIds)
+        const [{ data: personnel }, { data: carriers }, { data: cns }] = await Promise.all([
+          sb.from('personnel')
+            .select('sfg_id, preferred_name, surelc_profile_date, contracting_to_producer, contracting_complete, no_eando, profile_issues')
+            .in('sfg_id', hiredIds),
+          sb.from('carriers').select('name'),
+          sb.from('contract_numbers').select('sfg_id, carrier').in('sfg_id', hiredIds),
+        ])
+
+        const coreSet = new Set((carriers ?? []).map(c => c.name))
+        const totalCarriers = coreSet.size || 11
+
+        // Count distinct core-carrier contracts per agent
+        const contractCounts = {}
+        for (const cn of cns ?? []) {
+          if (!coreSet.has(cn.carrier)) continue
+          contractCounts[cn.sfg_id] = (contractCounts[cn.sfg_id] ?? 0) + 1
+        }
+
         if (personnel?.length) {
           const byId = Object.fromEntries(personnel.map(p => [p.sfg_id, p]))
           leads = leads.map(l =>
             l.hired_sfg_id && byId[l.hired_sfg_id]
-              ? { ...l, contracting: byId[l.hired_sfg_id] }
+              ? { ...l, contracting: { ...byId[l.hired_sfg_id], contract_count: contractCounts[l.hired_sfg_id] ?? 0, total_carriers: totalCarriers } }
               : l
           )
         }

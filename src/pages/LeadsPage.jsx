@@ -799,46 +799,46 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
 // ─── Contracting Status Card ────────────────────────────────────────────────────
 
 function ContractingStatus({ contracting: c, isStub }) {
-  const fields = [
-    { label: 'SureLC Profile',       value: c.surelc_profile_date,      isDate: true  },
-    { label: 'E&O',                  value: c.no_eando ? 'On File' : 'Needed',         isDate: false },
-    { label: 'Contracting Sent',     value: c.contracting_to_producer,  isDate: true  },
-    { label: 'Contracting Complete', value: c.contracting_complete,     isDate: true  },
-  ]
-  const filled   = fields.filter(f => f.value && f.value !== 'Needed').length
-  const hasIssue = !!c.profile_issues
+  const hasIssue    = !!c.profile_issues
+  const isComplete  = !!c.contracting_complete
+  const hasContracts = c.contract_count > 0
+  const wasSent     = !!c.contracting_to_producer
+  const eandoOk     = !c.no_eando  // no_eando=true means E&O is missing
 
-  const headerCls = hasIssue
-    ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'
-    : filled === fields.length
-    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/20'
-    : filled > 0
-    ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-    : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/10'
+  const { status, statusCls } = hasIssue
+    ? { status: `⚠ ${c.profile_issues}`, statusCls: 'text-red-600 dark:text-red-400' }
+    : isComplete
+    ? { status: 'Contracting complete', statusCls: 'text-green-700 dark:text-green-400' }
+    : hasContracts
+    ? { status: `${c.contract_count} of ${c.total_carriers}`, statusCls: 'text-amber-700 dark:text-amber-400' }
+    : wasSent
+    ? { status: `Sent ${fmtDate(c.contracting_to_producer)}`, statusCls: 'text-orange-600 dark:text-orange-400' }
+    : { status: 'Not started', statusCls: 'text-gray-400 dark:text-white/30' }
+
+  const borderCls = hasIssue
+    ? 'border-red-200 dark:border-red-500/20'
+    : isComplete
+    ? 'border-green-200 dark:border-green-500/20'
+    : hasContracts || wasSent
+    ? 'border-amber-200 dark:border-amber-500/20'
+    : 'border-gray-200 dark:border-white/10'
 
   return (
-    <div className={`mt-2 rounded-lg border text-[10px] overflow-hidden ${headerCls}`}>
-      <div className="flex items-center justify-between px-2 py-1 font-semibold uppercase tracking-widest">
-        <span>Contracting</span>
-        <div className="flex items-center gap-1.5">
-          {isStub   && <span className="font-bold px-1.5 py-0.5 rounded bg-gray-200/60 dark:bg-white/10 text-gray-500 dark:text-white/40 normal-case tracking-normal">Auto-generated</span>}
-          {hasIssue && <span className="font-bold px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 normal-case tracking-normal">⚠ Issues</span>}
+    <div className={`mt-2 rounded-lg border text-[10px] overflow-hidden ${borderCls}`}>
+      <div className="flex items-center justify-between gap-2 px-2 py-1 bg-white/60 dark:bg-primary/20">
+        <span className="font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40 shrink-0">Contracting</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`shrink-0 ${eandoOk ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+            {eandoOk ? '✓ E&O' : '✕ E&O'}
+          </span>
+          <span className={`font-semibold truncate ${statusCls}`}>{status}</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-2 pb-1.5 pt-0.5 bg-white/60 dark:bg-primary/20">
-        {fields.map(f => (
-          <div key={f.label} className="flex items-center justify-between gap-1">
-            <span className="text-gray-400 dark:text-white/30 truncate">{f.label}</span>
-            <span className={`font-semibold truncate ${
-              !f.value || f.value === 'Needed'
-                ? 'text-gray-400 dark:text-white/25'
-                : 'text-gray-700 dark:text-white/70'
-            }`}>
-              {f.value || 'Pending'}
-            </span>
-          </div>
-        ))}
-      </div>
+      {isStub && (
+        <div className="px-2 py-0.5 text-gray-400 dark:text-white/25 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
+          Auto-generated record
+        </div>
+      )}
     </div>
   )
 }

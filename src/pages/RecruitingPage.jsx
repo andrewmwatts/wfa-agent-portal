@@ -321,7 +321,7 @@ export default function RecruitingPage() {
       return (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
     })
     return list
-  }, [leads, search, statusFilter, sourceFilter, hideTerminal, sortDesc])
+  }, [leads, search, statusFilter, sourceFilter, hideTerminal])
 
   const callbackLeads = useMemo(() => (
     leads.filter(l => l.callback_at).sort((a, b) => new Date(a.callback_at) - new Date(b.callback_at))
