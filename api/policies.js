@@ -545,10 +545,16 @@ export default async function handler(req, res) {
       : []
 
     try {
+      // Scope the name lookup to the requested agents instead of scanning the
+      // whole personnel table; fall back to all only when no ids are given.
+      const upperIds = requestedIds.map(id => id.toUpperCase())
+      const peopleQuery = upperIds.length
+        ? supabase.from('personnel').select('sfg_id, preferred_name, opt_name').in('sfg_id', upperIds)
+        : supabase.from('personnel').select('sfg_id, preferred_name, opt_name')
+
       const [rows, people] = await Promise.all([
         fetchPolicies(supabase, requestedIds.length ? requestedIds : null),
-        supabase.from('personnel').select('sfg_id, preferred_name, opt_name')
-          .then(r => { if (r.error) throw r.error; return r.data ?? [] }),
+        peopleQuery.then(r => { if (r.error) throw r.error; return r.data ?? [] }),
       ])
 
       const personLookup = {}
@@ -641,18 +647,31 @@ export default async function handler(req, res) {
     try {
       let inserted = 0, skipped = 0
       const errors = []
+
+      // Batched dedup: pull the dedup-key columns for every agent in this import
+      // in one query instead of an existence check per row (was N+1). Case-
+      // insensitive on applicant/carrier/policy_name to mirror the old ilike.
+      const dedupKey = (sfgId, applicant, submitDate, carrier, policyName) => [
+        (sfgId ?? '').toUpperCase(),
+        (applicant ?? '').trim().toLowerCase(),
+        submitDate ?? '',
+        (carrier ?? '').trim().toLowerCase(),
+        (policyName ?? '').trim().toLowerCase(),
+      ].join('||')
+
+      const importIds = [...new Set(rows.map(r => r.sfg_id).filter(Boolean).map(id => id.toLowerCase()))]
+      const seen = new Set()
+      if (importIds.length) {
+        const existingRows = await fetchPolicies(supabase, importIds)
+        for (const e of existingRows) {
+          seen.add(dedupKey(e.sfg_id, e.applicant, e.submit_date, e.carrier, e.policy_name))
+        }
+      }
+
       for (const row of rows) {
         if (!row.includeAnyway) {
-          const { data: existing } = await supabase
-            .from('policies')
-            .select('id')
-            .eq('sfg_id', row.sfg_id)
-            .ilike('applicant', row.applicant)
-            .eq('submit_date', row.submit_date)
-            .ilike('carrier', row.carrier)
-            .ilike('policy_name', row.policy_name)
-            .maybeSingle()
-          if (existing) { skipped++; continue }
+          const key = dedupKey(row.sfg_id, row.applicant, row.submit_date, row.carrier, row.policy_name)
+          if (seen.has(key)) { skipped++; continue }
         }
         const record = {
           sfg_id:          row.sfg_id?.toUpperCase() ?? row.sfg_id,
@@ -675,6 +694,8 @@ export default async function handler(req, res) {
           errors.push({ applicant: row.applicant, agent: row.agentName, error: error.message })
         } else {
           inserted++
+          // Track within-batch so later rows dedupe against just-inserted ones
+          seen.add(dedupKey(record.sfg_id, record.applicant, record.submit_date, record.carrier, record.policy_name))
         }
       }
       return res.status(200).json({ inserted, skipped, errors })
