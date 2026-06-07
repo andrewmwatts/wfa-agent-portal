@@ -15,6 +15,7 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [registerSuccess, setRegisterSuccess] = useState(false)
+  const [identityConflict, setIdentityConflict] = useState(false)
 
   const REGISTER_ERRORS = {
     sfg_not_found:          'SFG ID not found. Contact your administrator.',
@@ -45,8 +46,10 @@ export default function Login() {
         }
 
         // Step 2: create auth account + public.users row (full_name comes from sheet)
-        const { requiresConfirmation } = await signUp(email, password, sfgId, result.full_name)
-        if (requiresConfirmation) {
+        const result2 = await signUp(email, password, sfgId, result.full_name)
+        if (result2?.identityConflict) {
+          setIdentityConflict(true)
+        } else if (result2?.requiresConfirmation) {
           setRegisterSuccess(true)
         } else {
           navigate('/dashboard', { replace: true })
@@ -65,17 +68,52 @@ export default function Login() {
   if (registerSuccess) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-primary">
-        <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Check your email</h2>
-          <p className="text-gray-500 dark:text-white/60 text-sm">
-            We sent a confirmation link to <strong className="text-gray-900 dark:text-white">{email}</strong>.
-            Confirm your address then log in.
+        <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl p-8 max-w-sm w-full">
+          {/* Email icon */}
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+              <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0l-9.75 6.75L2.25 6.75" />
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 text-center">
+            Thanks for registering!
+          </h2>
+          <p className="text-gray-600 dark:text-white/70 text-sm leading-relaxed mb-2">
+            Please check your email at{' '}
+            <strong className="text-gray-900 dark:text-white">{email}</strong>{' '}
+            for a confirmation link. You&apos;ll need to click it before you can log in.
+          </p>
+          <p className="text-gray-500 dark:text-white/50 text-sm leading-relaxed">
+            If you don&apos;t see it within a few minutes, check your spam folder.
           </p>
           <button
             onClick={() => { setMode('login'); setRegisterSuccess(false) }}
-            className="mt-6 text-sm text-accent hover:text-accent-light transition-colors"
+            className="mt-6 w-full text-sm text-center text-accent hover:text-accent/80 transition-colors font-medium"
           >
             Back to login
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (identityConflict) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-primary">
+        <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+            Account already exists
+          </h2>
+          <p className="text-gray-600 dark:text-white/70 text-sm leading-relaxed mb-5">
+            An account with this email already exists. Please log in instead.
+          </p>
+          <button
+            onClick={() => { setMode('login'); setIdentityConflict(false); setPassword('') }}
+            className="w-full bg-accent hover:bg-accent/90 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors"
+          >
+            Go to login
           </button>
         </div>
       </div>

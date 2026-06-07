@@ -110,6 +110,15 @@ export function AuthProvider({ children }) {
     if (!data.user) {
       return data
     }
+
+    // Supabase returns a "fake success" with identities:[] when email
+    // confirmation is enabled and the address is already registered.
+    // Signal this so the UI can show an actionable message instead of
+    // silently proceeding and failing on the provision step.
+    if (data.user.identities?.length === 0) {
+      return { identityConflict: true }
+    }
+
     // 2. Create the public.users row via service-role endpoint
     //    (user_id is available immediately even before email confirmation)
     const res = await fetch('/api/users?action=provision', {
