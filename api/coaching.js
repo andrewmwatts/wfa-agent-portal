@@ -80,7 +80,7 @@ export default async function handler(req, res) {
         .from('agent_promotions')
         .select('promotion_type, level, qualified_date, month_1, month_2, month_3, is_slingshot, is_qualified')
         .eq('sfg_id', sfgId)
-        .order('qualified_date', { ascending: true, nullsFirst: false }),
+        .order('qualified_date', { ascending: true }),  // nulls sort last by default in PG ASC
 
       // All policies for this agent (client filters by period)
       supabase

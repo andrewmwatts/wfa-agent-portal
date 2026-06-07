@@ -258,8 +258,7 @@ function AgentSelector({ agents, selectedSfgId, onSelect }) {
     if (!q) return agents
     return agents.filter(a =>
       a.name?.toLowerCase().includes(q) ||
-      a.sfg_id?.toLowerCase().includes(q) ||
-      a.upline_name?.toLowerCase().includes(q)
+      a.sfg_id?.toLowerCase().includes(q)
     )
   }, [agents, query])
 
@@ -1242,7 +1241,7 @@ export default function CoachingPage() {
   useEffect(() => {
     if (!userProfile?.sfg_id || !token) return
     setAgentsLoading(true)
-    fetch(`/api/personnel?root=${encodeURIComponent(userProfile.sfg_id)}`, {
+    fetch(`/api/personnel?root=${encodeURIComponent(userProfile.sfg_id)}&mode=master`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
