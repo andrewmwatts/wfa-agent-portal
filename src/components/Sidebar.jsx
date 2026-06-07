@@ -3,56 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { HEADER_TOP } from './AppLayout'
-
-// ── Nav item definitions (mirrors NavMenu role filtering) ──────────────────────
-
-const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
-const ADMIN_ROLES  = new Set(['super_admin'])
-const OWNER_ROLES  = new Set(['owner', 'director', 'super_admin'])
-
-const NAV_SECTIONS = [
-  {
-    items: [
-      { path: '/dashboard', label: 'Dashboard' },
-    ],
-  },
-  {
-    label: 'Business',
-    items: [
-      { path: '/policies', label: 'Policies'              },
-      { path: '/lapse',    label: 'Lapse / Pending Lapse' },
-      { path: '/activity', label: 'Activity Tracking'     },
-      { path: '/leads',       label: 'Leads'       },
-      { path: '/recruiting',  label: 'Recruiting'  },
-    ],
-  },
-  {
-    label: 'Owner',
-    items: [
-      { path: '/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
-      { path: '/contracting',           label: 'Contracting',          roles: LEADER_ROLES },
-      { path: '/accountability',        label: 'Accountability',       roles: OWNER_ROLES  },
-      { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
-      { path: '/snapshot',              label: 'Snapshot',             roles: OWNER_ROLES  },
-      { path: '/agents',               label: 'Agents',               roles: LEADER_ROLES },
-    ],
-  },
-  {
-    label: 'Analytics',
-    items: [
-      { path: '/income',           label: 'Income / Expenses' },
-      { path: '/monthly-metrics',  label: 'Monthly Metrics'   },
-      { path: '/weekly-metrics',   label: 'Weekly Metrics'    },
-      { path: '/carrier-metrics',  label: 'Carrier Metrics'   },
-    ],
-  },
-  {
-    label: 'Admin',
-    items: [
-      { path: '/admin-tools', label: 'Admin Tools', roles: ADMIN_ROLES },
-    ],
-  },
-]
+import { NAV_SECTIONS } from '../config/navSections'
 
 // ── Shared nav + branding content ─────────────────────────────────────────────
 
