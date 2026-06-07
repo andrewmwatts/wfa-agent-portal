@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requireSuperAdmin } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -169,6 +170,8 @@ export default async function handler(req, res) {
 
   // POST — manual trigger from Admin Tools (preview or force-send)
   if (req.method === 'POST') {
+    const caller = await requireSuperAdmin(req, res)
+    if (!caller) return
     try {
       const { preview } = req.body ?? {}
       const alerts = await runAlertQuery()

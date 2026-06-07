@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -46,6 +47,9 @@ function parseOptionalNum(val) {
 }
 
 export default async function handler(req, res) {
+  const caller = await requireAuth(req, res)
+  if (!caller) return
+
   const { type } = req.query
 
   // ── Qualifications branch ─────────────────────────────────────────────────────

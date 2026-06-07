@@ -3,6 +3,10 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { google } from 'googleapis'
+import { getCaller } from './_auth.js'
+
+// Case-insensitive SFG ID equality
+const sameSfg = (a, b) => !!a && !!b && String(a).toUpperCase() === String(b).toUpperCase()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -89,7 +93,8 @@ export default async function handler(req, res) {
   )
 
   // ── PATCH — user-settings (hide/unhide agent) ─────────────────────────────
-  if (req.method === 'PATCH') {
+  // Scoped to non-delegate PATCH so the `?action=delegate` branch stays reachable.
+  if (req.method === 'PATCH' && action !== 'delegate') {
     let user_id, settingAction, sfg_id
     try {
       const body  = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
@@ -102,6 +107,13 @@ export default async function handler(req, res) {
 
     if (!user_id || !sfg_id || !['hide', 'unhide'].includes(settingAction)) {
       return res.status(400).json({ error: 'user_id, action (hide|unhide), and sfg_id are required' })
+    }
+
+    // Only the owner of the settings row (or a super_admin) may modify it.
+    const caller = await getCaller(req)
+    if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+    if (caller.role !== 'super_admin' && caller.id !== user_id) {
+      return res.status(403).json({ error: 'Forbidden' })
     }
 
     try {
@@ -130,6 +142,9 @@ export default async function handler(req, res) {
 
   // ── GET ?action=lookup-delegate ───────────────────────────────────────────
   if (req.method === 'GET' && action === 'lookup-delegate') {
+    const caller = await getCaller(req)
+    if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+
     const sfg_id = req.query.sfg_id?.trim()
     if (!sfg_id) return res.status(400).json({ error: 'sfg_id required' })
 
@@ -353,6 +368,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'agent_sfg_id, assistant_sfg_id, and sections are required' })
     }
 
+    // Only the delegating agent (or a super_admin) may create a delegation on
+    // their own account.
+    {
+      const caller = await getCaller(req)
+      if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+      if (caller.role !== 'super_admin' && !sameSfg(caller.sfg_id, agent_sfg_id)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+
     try {
       await supabase
         .from('agent_assistants')
@@ -398,6 +423,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'id and sections are required' })
     }
 
+    // Authorize against the delegation's owning agent.
+    {
+      const caller = await getCaller(req)
+      if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+      const { data: asg } = await supabase
+        .from('agent_assistants').select('agent_sfg_id').eq('id', id).maybeSingle()
+      if (!asg) return res.status(404).json({ error: 'Delegation not found' })
+      if (caller.role !== 'super_admin' && !sameSfg(caller.sfg_id, asg.agent_sfg_id)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+
     try {
       await supabase.from('assistant_permissions').delete().eq('agent_assistant_id', id)
       const permRows = sections
@@ -427,6 +464,18 @@ export default async function handler(req, res) {
     }
 
     if (!id) return res.status(400).json({ error: 'id is required' })
+
+    // Authorize against the delegation's owning agent.
+    {
+      const caller = await getCaller(req)
+      if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+      const { data: asg } = await supabase
+        .from('agent_assistants').select('agent_sfg_id').eq('id', id).maybeSingle()
+      if (!asg) return res.status(404).json({ error: 'Delegation not found' })
+      if (caller.role !== 'super_admin' && !sameSfg(caller.sfg_id, asg.agent_sfg_id)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
 
     try {
       const { error } = await supabase
