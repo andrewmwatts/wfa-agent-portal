@@ -124,6 +124,11 @@ export function AuthProvider({ children }) {
       return { identityConflict: true }
     }
 
+    // TEMP DEBUG — remove after confirming fix
+    console.log('[signUp] session:', data.session)
+    console.log('[signUp] email_confirmed_at:', data.user.email_confirmed_at)
+    console.log('[signUp] confirmed_at:', data.user.confirmed_at)
+
     // 2. Create the public.users row via service-role endpoint
     //    (user_id is available immediately even before email confirmation)
     const res = await fetch('/api/users?action=provision', {
