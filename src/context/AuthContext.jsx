@@ -47,11 +47,33 @@ export function AuthProvider({ children }) {
           // before resolving signUp/signIn, so any async work inside would
           // deadlock those calls if the DB query is slow.
           fetchUserProfile(session.user.id).then(profile => {
-            if (!profile && session.user.user_metadata?.is_delegate) {
-              setPendingInvite(true)
-            } else {
+            if (profile) {
               setUserProfile(profile)
               setPendingInvite(false)
+            } else {
+              const meta = session.user.user_metadata ?? {}
+              if (meta.sfg_id) {
+                // No public.users row yet — user just confirmed via email link.
+                // Provision now using the metadata stored at signup time, then
+                // load the profile so the app can continue normally.
+                fetch('/api/users?action=provision', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    user_id:   session.user.id,
+                    email:     session.user.email,
+                    sfg_id:    meta.sfg_id,
+                    full_name: meta.full_name ?? '',
+                  }),
+                })
+                  .then(res => res.ok ? fetchUserProfile(session.user.id) : Promise.resolve(null))
+                  .then(p => { setUserProfile(p); setPendingInvite(false) })
+              } else if (meta.is_delegate) {
+                setPendingInvite(true)
+              } else {
+                setUserProfile(null)
+                setPendingInvite(false)
+              }
             }
           })
         } else {
@@ -113,10 +135,11 @@ export function AuthProvider({ children }) {
     if (error) throw error
 
     if (!data.user) {
-      // Supabase silently returns { user: null, session: null } (no error) when
-      // email confirmations are enabled and the address is already registered.
-      // This is the alternate form of the identities:[] pattern — treat the same.
-      return { identityConflict: true }
+      // Supabase returns { user: null, session: null } (no error) when email
+      // confirmations are enabled — the auth account is created but the user.id
+      // is not returned until they confirm. Provision runs in onAuthStateChange
+      // when they click the confirmation link. Show the "check your email" screen.
+      return { requiresConfirmation: true }
     }
 
     // Supabase returns a "fake success" with identities:[] when email
