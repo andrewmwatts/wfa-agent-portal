@@ -40,9 +40,10 @@ const NAV_SECTIONS = [
   {
     label: 'Analytics',
     items: [
-      { path: '/monthly-metrics',  label: 'Monthly Metrics'  },
-      { path: '/weekly-metrics',   label: 'Weekly Metrics'   },
-      { path: '/carrier-metrics',  label: 'Carrier Metrics'  },
+      { path: '/income',           label: 'Income / Expenses' },
+      { path: '/monthly-metrics',  label: 'Monthly Metrics'   },
+      { path: '/weekly-metrics',   label: 'Weekly Metrics'    },
+      { path: '/carrier-metrics',  label: 'Carrier Metrics'   },
     ],
   },
   {
