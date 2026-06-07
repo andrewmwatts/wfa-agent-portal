@@ -26,6 +26,7 @@ import CarrierMetricsPage from './pages/CarrierMetricsPage'
 import Admin from './pages/Admin'
 import AdminToolsPage from './pages/AdminToolsPage'
 import SnapshotPage from './pages/SnapshotPage'
+import IncomePage from './pages/IncomePage'
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
                 <Route path="/monthly-metrics"  element={<MonthlyMetricsPage />} />
                 <Route path="/weekly-metrics"   element={<WeeklyMetricsPage />} />
                 <Route path="/carrier-metrics"  element={<CarrierMetricsPage />} />
+                <Route path="/income"          element={<IncomePage />} />
                 <Route path="/activity"        element={<ActivityPage />} />
                 <Route path="/leads"           element={<LeadsPage />} />
                 <Route path="/recruiting"      element={<RecruitingPage />} />

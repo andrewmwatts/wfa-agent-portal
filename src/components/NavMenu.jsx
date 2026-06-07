@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 
 const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
 const OWNER_ROLES  = new Set(['owner', 'director', 'super_admin'])
+const ADMIN_ROLES  = new Set(['super_admin'])
 
 const NAV_SECTIONS = [
   {
@@ -34,9 +35,10 @@ const NAV_SECTIONS = [
   {
     label: 'Analytics',
     items: [
-      { path: '/monthly-metrics',  label: 'Monthly Metrics'  },
-      { path: '/weekly-metrics',   label: 'Weekly Metrics'   },
-      { path: '/carrier-metrics',  label: 'Carrier Metrics'  },
+      { path: '/income',           label: 'Income / Expenses' },
+      { path: '/monthly-metrics',  label: 'Monthly Metrics'   },
+      { path: '/weekly-metrics',   label: 'Weekly Metrics'    },
+      { path: '/carrier-metrics',  label: 'Carrier Metrics'   },
     ],
   },
   {
