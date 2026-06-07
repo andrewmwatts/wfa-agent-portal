@@ -38,6 +38,11 @@ export function AuthProvider({ children }) {
       (_event, session) => {
         setSession(session)
         if (session?.user) {
+          // Don't load a profile for unconfirmed sign-ups — the user still needs
+          // to click the confirmation email. Once they confirm, Supabase fires
+          // another SIGNED_IN event with email_confirmed_at set, and we proceed.
+          if (!session.user.email_confirmed_at) return
+
           // Fire-and-forget — do NOT await here. Supabase awaits this callback
           // before resolving signUp/signIn, so any async work inside would
           // deadlock those calls if the DB query is slow.
@@ -141,8 +146,11 @@ export function AuthProvider({ children }) {
     }
 
     // Return a flag so the caller knows whether to redirect immediately
-    // (session present = email confirmation is off) or show "check your email"
-    return { requiresConfirmation: !data.session }
+    // (email already confirmed = confirmation is disabled on this project)
+    // or show "check your email". Using email_confirmed_at is more reliable
+    // than checking data.session — Supabase can return a session even when
+    // email confirmation is required depending on project settings.
+    return { requiresConfirmation: !data.user?.email_confirmed_at }
   }
 
   async function updatePassword(newPassword) {
