@@ -16,5 +16,5 @@ export const OWNER_PLUS_ROLES = [ROLES.OWNER, ROLES.DIRECTOR, ROLES.SUPER_ADMIN]
 // assistant_permissions.section).
 export const DELEGATION_SECTIONS = [
   'personnel', 'onboarding', 'apps_and_policies', 'metrics',
-  'leads', 'recruiting', 'accountability', 'snapshot', 'activity',
+  'leads', 'recruiting', 'accountability', 'snapshot', 'activity', 'income',
 ]

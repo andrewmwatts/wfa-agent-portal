@@ -5,8 +5,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
 import { useAuth } from '../context/AuthContext'
+import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
-import { fmtCurrency, parseDateLocal } from '../utils/format'
+import { parseDateLocal } from '../utils/format'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1214,7 +1215,8 @@ function BulkImportWizard({ onImported }) {
 const PAGE_SIZE = 50
 const ALL_CATEGORIES = [...new Set([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES])]
 
-function TransactionTable({ transactions, onEdit, onDelete, period }) {
+function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) {
+  const showActions = !!(onEdit || onDelete)
   const [filterType, setFilterType] = useState('all')
   const [filterCats, setFilterCats] = useState([])
   const [filterSearch, setFilterSearch] = useState('')
@@ -1352,7 +1354,7 @@ function TransactionTable({ transactions, onEdit, onDelete, period }) {
                 { label: 'Source / Payee', field: 'source', sortable: false },
                 { label: 'Amount', field: 'amount', sortable: true, right: true },
                 { label: 'Tax Ded.', field: null, sortable: false, right: true },
-                { label: '', field: null, sortable: false },
+                ...(showActions ? [{ label: '', field: null, sortable: false }] : []),
               ].map(col => (
                 <th key={col.label}
                   className={`px-4 py-3 text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide whitespace-nowrap ${col.right ? 'text-right' : 'text-left'} ${col.sortable ? 'cursor-pointer hover:text-gray-700 dark:hover:text-white/70 select-none' : ''}`}
@@ -1391,21 +1393,27 @@ function TransactionTable({ transactions, onEdit, onDelete, period }) {
                     </svg>
                   )}
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => onEdit(tx)} className="text-gray-400 hover:text-accent dark:hover:text-accent transition-colors p-1">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                      </svg>
-                    </button>
-                    <button onClick={() => handleDelete(tx.id)} disabled={deletingId === tx.id}
-                      className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 disabled:opacity-40">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                      </svg>
-                    </button>
-                  </div>
-                </td>
+                {showActions && (
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {onEdit && (
+                        <button onClick={() => onEdit(tx)} className="text-gray-400 hover:text-accent dark:hover:text-accent transition-colors p-1">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                          </svg>
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button onClick={() => handleDelete(tx.id)} disabled={deletingId === tx.id}
+                          className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 disabled:opacity-40">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1433,6 +1441,7 @@ function TransactionTable({ transactions, onEdit, onDelete, period }) {
 
 export default function IncomePage() {
   const { theme } = useTheme()
+  const { permissions } = useViewing()
 
   const [allTx,   setAllTx]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -1461,6 +1470,17 @@ export default function IncomePage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Permission guard — after all hooks (rules-of-hooks)
+  if (!permissions.income?.read) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-gray-400 dark:text-white/30 text-sm">
+        You don&apos;t have access to this section.
+      </div>
+    )
+  }
+
+  const canWrite = !!permissions.income?.write
 
   // Period-filtered transactions
   const periodTx = useMemo(() =>
@@ -1576,8 +1596,8 @@ export default function IncomePage() {
           <RunningBalanceChart periodTx={periodTx} theme={theme} />
           {showYTD && <YTDTable periodTx={periodTx} />}
 
-          {/* Bulk import */}
-          <CardShell>
+          {/* Bulk import — write only */}
+          {canWrite && <CardShell>
             <button
               onClick={() => setImportOpen(o => !o)}
               className="w-full flex items-center justify-between px-5 py-4 text-left"
@@ -1599,19 +1619,21 @@ export default function IncomePage() {
                 <BulkImportWizard onImported={() => { load(); }} />
               </div>
             )}
-          </CardShell>
+          </CardShell>}
 
           {/* Transaction table */}
           <CardShell className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-white/80">Transactions</h2>
-              <button onClick={() => { setEditTx(null); setShowAdd(true) }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
-                </svg>
-                Add Transaction
-              </button>
+              {canWrite && (
+                <button onClick={() => { setEditTx(null); setShowAdd(true) }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
+                  </svg>
+                  Add Transaction
+                </button>
+              )}
             </div>
 
             {deleteErr && (
@@ -1620,8 +1642,8 @@ export default function IncomePage() {
 
             <TransactionTable
               transactions={periodTx}
-              onEdit={tx => { setEditTx(tx); setShowAdd(true) }}
-              onDelete={handleDelete}
+              onEdit={canWrite ? tx => { setEditTx(tx); setShowAdd(true) } : null}
+              onDelete={canWrite ? handleDelete : null}
               period={period}
             />
           </CardShell>

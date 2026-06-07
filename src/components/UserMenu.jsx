@@ -11,12 +11,13 @@ const SECTIONS = [
   { key: 'leads',             label: 'Leads'                },
   { key: 'recruiting',        label: 'Recruiting'           },
   { key: 'activity',          label: 'Activity'             },
+  { key: 'income',            label: 'Income / Expenses'    },
   { key: 'accountability',    label: 'Accountability'       },
   { key: 'snapshot',          label: 'Snapshot'             },
 ]
 
 // Sections where write access can always be delegated (no admin grant needed)
-const ALWAYS_WRITABLE = new Set(['leads', 'recruiting'])
+const ALWAYS_WRITABLE = new Set(['leads', 'recruiting', 'income'])
 
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 
