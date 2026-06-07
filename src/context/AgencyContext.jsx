@@ -106,7 +106,6 @@ export function AgencyProvider({ children }) {
         if (error) {
           console.error('[AgencyContext] fetch error:', error)
         }
-        console.log('[AgencyContext] agency_owner lookup:', userProfile.agency_owner, '→ data:', data)
         setAgency(data ?? null)
         applyBranding(data ? {
           primary:   data.primary_color,

@@ -6,38 +6,13 @@ import { useViewing } from '../context/ViewingContext'
 import AddAgentModal from '../components/AddAgentModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
+import { toInputDate, fmtDate } from '../utils/format'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isTruthy(val) {
   if (!val) return false
   return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
-}
-
-// Parse YYYY-MM-DD as local midnight — avoids UTC-offset date shifting
-function parseDateLocal(str) {
-  if (!str) return null
-  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
-}
-
-function toInputDate(str) {
-  if (!str) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return String(str)
-  const d = parseDateLocal(str)
-  if (!d) return str
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dy = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dy}`
-}
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = parseDateLocal(d)
-  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 
@@ -374,7 +349,7 @@ export default function OnboardingPage() {
             setShowAdd(false)
             setAddSuccess({ uplineWarning })
             setTimeout(() => setAddSuccess(null), 5000)
-            if (activeSubject?.sfg_id) load(activeSubject.sfg_id, mode)
+            if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
           }}
         />
       )}

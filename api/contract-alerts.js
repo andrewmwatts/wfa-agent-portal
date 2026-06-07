@@ -160,7 +160,6 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Alert query succeeded but email failed', emailErr })
       }
 
-      console.log(`[contract-alerts] Sent alert for ${alerts.length} agents`)
       return res.status(200).json({ sent: true, count: alerts.length })
     } catch (err) {
       console.error('[contract-alerts]', err)

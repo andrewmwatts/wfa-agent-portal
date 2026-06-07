@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
+import { normalizeCarrier } from '../shared/carriers.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -241,17 +242,8 @@ export default async function handler(req, res) {
         cwMap[key] = row.subtype?.trim() || null
       }
 
-      // Same aliases as PoliciesPage — keeps carrier names consistent across the app
-      const CARRIER_ALIASES = {
-        'american amicable group': 'American Amicable',
-        'occidental':              'American Amicable',
-        'lga':                     'Banner',
-        'corebridge':              'American General',
-        'transamerica group':      'TransAmerica',
-        'foresters dfl':           'Foresters',
-      }
-      const normCarrier = raw =>
-        raw ? (CARRIER_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()) : raw
+      // Carrier normalization shared with the client (shared/carriers.js)
+      const normCarrier = normalizeCarrier
 
       const PLACEMENT = new Set(['issued', 'declined', 'withdrawn', 'not taken'])
 

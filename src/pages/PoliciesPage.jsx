@@ -6,48 +6,9 @@ import AddPolicyModal from '../components/AddPolicyModal'
 import BulkImportModal from '../components/BulkImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
-
-// Parse a YYYY-MM-DD string as LOCAL midnight (avoids UTC-offset date shifting)
-function parseDateLocal(str) {
-  if (!str) return null
-  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
-}
-
-function toInputDate(str) {
-  if (!str) return ''
-  // If already YYYY-MM-DD, return as-is — no parsing needed
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(str))) return String(str)
-  const d = parseDateLocal(str)
-  if (!d || isNaN(d)) return str
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dy = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dy}`
-}
-
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const ACTIVE_STATUSES = new Set(['', 'pending', 'incomplete'])
-const FINAL_STATUSES  = new Set(['issued', 'declined', 'not taken', 'withdrawn', 'cancelled', 'lapsed'])
-
-// Carriers that share an identity — keyed by any variant, value = canonical display name
-const CARRIER_ALIASES = {
-  'american amicable group': 'American Amicable',
-  'occidental':              'American Amicable',
-  'lga':                     'Banner',
-  'corebridge':              'American General',
-  'transamerica group':      'TransAmerica',
-  'foresters dfl':           'Foresters',
-}
-
-function normalizeCarrier(raw) {
-  if (!raw) return raw
-  return CARRIER_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
-}
+import { parseDateLocal, toInputDate, fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
+import { normalizeCarrier } from '../../shared/carriers'
+import { ACTIVE_STATUSES, FINAL_STATUSES, statusWeight, getPolicyStatusClass } from '../utils/status'
 
 // ─── Chargeback-exempt auto-compute ──────────────────────────────────────────
 // Carriers that have defined chargeback windows for Cancelled/Lapsed policies.
@@ -93,34 +54,11 @@ function computeChargebackExempt(conservation_status, conservation_date, issue_d
   return true  // all other cases → exempt
 }
 
-const STATUS_ORDER = ['incomplete', 'pending', 'issued', 'lapse pending',
-                      'first premium not paid', 'declined', 'not taken',
-                      'withdrawn', 'cancelled', 'lapsed']
-
-function statusWeight(s) {
-  const idx = STATUS_ORDER.indexOf(s?.toLowerCase())
-  return idx === -1 ? 99 : idx
-}
-
 function parseDate(str) {
   return parseDateLocal(str)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = parseDateLocal(d)
-  return (!dt || isNaN(dt)) ? String(d) : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function fmtAmt(n) {
-  if (n === null || n === undefined || n === '') return '—'
-  const num = Number(n)
-  if (isNaN(num)) return '—'
-  if (num === 0) return '$0'
-  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-}
 
 // Compare two date strings; nulls sort to the end
 function cmpDate(a, b, dir = 'desc') {
@@ -136,18 +74,7 @@ function cmpDate(a, b, dir = 'desc') {
 
 function StatusBadge({ status }) {
   if (!status) return <span className="text-gray-400 dark:text-white/30 text-xs">—</span>
-  const s = status.toLowerCase()
-  const cls =
-    s === 'incomplete'             ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300' :
-    s === 'issued'                 ? 'bg-green-500/20 text-green-600 dark:text-green-300' :
-    s === 'lapse pending'          ? 'bg-red-500/20 text-red-500 dark:text-red-300' :
-    s === 'first premium not paid' ? 'bg-red-500/20 text-red-500 dark:text-red-300' :
-    s === 'declined'               ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
-    s === 'withdrawn'              ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
-    s === 'not taken'              ? 'bg-red-500/10 text-red-400 dark:text-red-400/80' :
-    FINAL_STATUSES.has(s)         ? 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-white/30' :
-                                    'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/60'
-  return <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${cls}`}>{status}</span>
+  return <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${getPolicyStatusClass(status)}`}>{status}</span>
 }
 
 // ─── Quick-filter definitions ──────────────────────────────────────────────────
@@ -281,9 +208,9 @@ export default function PoliciesPage() {
     setPolicies(data ?? [])
   }
 
-  // Reload used after adding/importing policies
-  function load(sfgId, viewMode) {
-    return handleModeChange(viewMode)
+  // Reload used after adding/importing policies — full refresh of the master set
+  function load(sfgId) {
+    return initLoad(sfgId)
   }
 
   // ── Date boundaries (stable per render) ───────────────────────────────────
@@ -713,7 +640,7 @@ export default function PoliciesPage() {
           onClose={() => setShowAddPolicy(false)}
           onPolicyAdded={() => {
             setShowAddPolicy(false)
-            if (activeSubject?.sfg_id) load(activeSubject.sfg_id, mode)
+            if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
           }}
         />
       )}
@@ -725,7 +652,7 @@ export default function PoliciesPage() {
           existingPolicies={policies}
           onClose={() => {
             setShowBulkImport(false)
-            if (activeSubject?.sfg_id) load(activeSubject.sfg_id, mode)
+            if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
           }}
         />
       )}
