@@ -8,6 +8,24 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
+// Cache the personnel upline tree (childrenOf map) for 60s so back-to-back
+// root= lookups don't each re-scan the full personnel table.
+const treeCache = { childrenOf: null, exp: 0 }
+const TREE_TTL = 60 * 1000
+async function getChildrenOf(supabase) {
+  if (treeCache.childrenOf && treeCache.exp > Date.now()) return treeCache.childrenOf
+  const { data } = await supabase.from('personnel').select('sfg_id, upline_sfg_id')
+  const childrenOf = {}
+  for (const p of data ?? []) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+  treeCache.childrenOf = childrenOf
+  treeCache.exp = Date.now() + TREE_TTL
+  return childrenOf
+}
+
 export default async function handler(req, res) {
   const caller = await requireAuth(req, res)
   if (!caller) return
@@ -103,15 +121,7 @@ export default async function handler(req, res) {
     // root= param: do a lightweight personnel tree lookup so the caller can
     // fire this endpoint in parallel with /api/personnel instead of sequentially.
     if (!requestedIds.length && rootParam?.trim()) {
-      const { data: treeRows } = await supabase
-        .from('personnel')
-        .select('sfg_id, upline_sfg_id')
-      const childrenOf = {}
-      for (const p of treeRows ?? []) {
-        const up = p.upline_sfg_id?.trim().toLowerCase()
-        if (!up) continue
-        ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
-      }
+      const childrenOf = await getChildrenOf(supabase)
       const teamIds = new Set()
       function traverse(id) {
         teamIds.add(id)

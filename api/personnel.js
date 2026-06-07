@@ -477,8 +477,6 @@ export default async function handler(req, res) {
 
       // Update agent_promotions — fetch existing rows first to preserve non-month fields
       if (hasMilChanges) {
-        const levels       = [...new Set(Object.values(milChanges).map(c => c.level))]
-        const types        = [...new Set(Object.values(milChanges).map(c => c.type))]
         const { data: existingRows } = await supabase
           .from('agent_promotions')
           .select('*')
