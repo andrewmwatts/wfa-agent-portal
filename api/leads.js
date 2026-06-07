@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
+import { getCaller, getAllowedSfgIds, scopeAllowed } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -54,6 +55,19 @@ async function resolveCallerSfgId(req, fallback) {
   const sfgId = data?.sfg_id?.toUpperCase() ?? null
   if (sfgId) tokenCache.set(token, { sfgId, exp: Date.now() + TOKEN_TTL })
   return sfgId
+}
+
+// Verify the caller may access the given subject's leads (self/downline/delegated).
+async function authorizeLeadSubject(req, res, sfgId) {
+  if (process.env.VITE_BYPASS_AUTH === 'true') return true
+  const caller = await getCaller(req)
+  if (!caller) { res.status(401).json({ error: 'Unauthorized' }); return false }
+  const allowed = await getAllowedSfgIds(caller, sb)
+  if (!scopeAllowed(allowed, [sfgId])) {
+    res.status(403).json({ error: 'Forbidden: subject outside your scope' })
+    return false
+  }
+  return true
 }
 
 export default async function handler(req, res) {
@@ -195,6 +209,7 @@ export default async function handler(req, res) {
 
     const uplineSfgId = (req.query.upline_sfg_id ?? '').trim().toUpperCase()
     if (!uplineSfgId) return res.status(400).json({ error: 'upline_sfg_id required' })
+    if (!(await authorizeLeadSubject(req, res, uplineSfgId))) return
 
     const { data, error } = await sb
       .from('leads')
@@ -217,6 +232,7 @@ export default async function handler(req, res) {
     if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
 
     const ownerSfgId = (req.query.sfg_id ?? '').trim().toUpperCase() || callerSfgId
+    if (!(await authorizeLeadSubject(req, res, ownerSfgId))) return
 
     // Fetch direct-report personnel
     const { data: personnel, error: pErr } = await sb
@@ -354,6 +370,7 @@ export default async function handler(req, res) {
       ? req.query.sfg_id.trim().toUpperCase()
       : await resolveCallerSfgId(req, null)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+    if (!(await authorizeLeadSubject(req, res, sfgId))) return
 
     const { category, include } = req.query
 

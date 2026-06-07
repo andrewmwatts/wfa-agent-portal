@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth } from './_auth.js'
+import { requireAuth, authorizeScope } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -88,6 +88,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { sfg_id, month } = req.query
       if (!sfg_id || !month) return res.status(400).json({ error: 'sfg_id and month required' })
+      if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
       const { data, error } = await supabase
         .from('activity_goals')
@@ -104,6 +105,7 @@ export default async function handler(req, res) {
       const { sfg_id, year_month, weekly_dials, weekly_appts, monthly_apv_submitted, monthly_apv_issued } = req.body ?? {}
 
       if (!sfg_id || !year_month) return res.status(400).json({ error: 'sfg_id and year_month required' })
+      if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
       const { data, error } = await supabase
         .from('activity_goals')
@@ -133,6 +135,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { sfg_id, start, end } = req.query
     if (!sfg_id) return res.status(400).json({ error: 'sfg_id required' })
+    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
     let query = supabase
       .from('activity_logs')
@@ -158,6 +161,7 @@ export default async function handler(req, res) {
     if (!sfg_id || !log_date) {
       return res.status(400).json({ error: 'sfg_id and log_date are required' })
     }
+    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
     const { data, error } = await supabase
       .from('activity_logs')

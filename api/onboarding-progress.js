@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth } from './_auth.js'
+import { requireAuth, authorizeScope } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -48,6 +48,7 @@ export default async function handler(req, res) {
 
     // ── Detail mode: full lesson list for a single agent ──────────────────
     if (sfg_id && detail === 'true') {
+      if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.toUpperCase()]))) return
       const { data: mapRow } = await supabase
         .from('kajabi_email_map')
         .select('kajabi_email')
@@ -92,6 +93,12 @@ export default async function handler(req, res) {
       .split(',')
       .map(s => s.trim().toUpperCase())
       .filter(Boolean)
+
+    // Authorize requested scope (explicit ids, or the root) before expansion.
+    {
+      const scopeIds = requestedIds.length ? requestedIds : (rootParam?.trim() ? [rootParam.trim()] : [])
+      if (scopeIds.length && !(await authorizeScope(req, res, caller, supabase, scopeIds))) return
+    }
 
     // root= param: do a lightweight personnel tree lookup so the caller can
     // fire this endpoint in parallel with /api/personnel instead of sequentially.

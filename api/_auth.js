@@ -69,3 +69,68 @@ export async function requireSuperAdmin(req, res) {
   if (caller.role !== 'super_admin') { res.status(403).json({ error: 'Forbidden' }); return null }
   return caller
 }
+
+// ── Subject (sfg_id) authorization ──────────────────────────────────────────
+// The set of sfg_ids a caller may read: themselves, everyone in their downline
+// subtree, and everyone in the subtree of any agent actively delegated to them.
+// Returns null to mean "all subjects" (super_admin / bypass).
+
+const allowedCache = new Map() // sfg_id(UPPER) → { ids:Set|null, exp }
+const ALLOWED_TTL = 5 * 60 * 1000
+
+export async function getAllowedSfgIds(caller, supabase) {
+  if (bypassAuth() || caller?.role === 'super_admin') return null
+  const key = (caller?.sfg_id || '').toUpperCase()
+  if (!key) return new Set()
+
+  const hit = allowedCache.get(key)
+  if (hit && hit.exp > Date.now()) return hit.ids
+
+  // Roots the caller may act as: self + agents actively delegated to them.
+  const roots = new Set([key])
+  const { data: dele } = await supabase
+    .from('agent_assistants')
+    .select('agent_sfg_id')
+    .eq('assistant_sfg_id', key)
+    .eq('is_active', true)
+  for (const d of dele ?? []) if (d.agent_sfg_id) roots.add(d.agent_sfg_id.toUpperCase())
+
+  // Build the personnel tree once and collect each root's subtree.
+  const { data: tree } = await supabase.from('personnel').select('sfg_id, upline_sfg_id')
+  const childrenOf = {}
+  for (const p of tree ?? []) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+  const ids = new Set()
+  const visit = (lower) => {
+    const upper = lower.toUpperCase()
+    if (ids.has(upper)) return
+    ids.add(upper)
+    for (const child of childrenOf[lower] ?? []) visit(child)
+  }
+  for (const r of roots) visit(r.toLowerCase())
+
+  allowedCache.set(key, { ids, exp: Date.now() + ALLOWED_TTL })
+  return ids
+}
+
+// True if every requested id is within the caller's allowed set (null = all).
+export function scopeAllowed(allowed, ids) {
+  if (allowed === null) return true
+  return ids.every(id => id && allowed.has(String(id).toUpperCase()))
+}
+
+// Authorize a route's requested subject ids. Returns true, or sends 403 and
+// returns false. An empty list is treated as caller-scoped (route's own concern).
+export async function authorizeScope(req, res, caller, supabase, ids) {
+  const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean)
+  if (!list.length) return true
+  const allowed = await getAllowedSfgIds(caller, supabase)
+  if (!scopeAllowed(allowed, list)) {
+    res.status(403).json({ error: 'Forbidden: subject outside your scope' })
+    return false
+  }
+  return true
+}

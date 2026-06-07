@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { normalizeCarrier } from '../shared/carriers.js'
-import { requireAuth } from './_auth.js'
+import { requireAuth, authorizeScope, getAllowedSfgIds } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -339,6 +339,18 @@ export default async function handler(req, res) {
       : []
 
     try {
+      // Authorize the requested scope before expanding any tree. With no scope at
+      // all, only super_admin may pull the full unscoped set.
+      const scopeIds = requestedIds.length
+        ? requestedIds
+        : (req.query.root?.trim() ? [req.query.root.trim()] : [])
+      if (scopeIds.length) {
+        if (!(await authorizeScope(req, res, caller, supabase, scopeIds))) return
+      } else {
+        const allowed = await getAllowedSfgIds(caller, supabase)
+        if (allowed !== null) return res.status(403).json({ error: 'Forbidden' })
+      }
+
       // root= lets callers skip a separate personnel round-trip — we resolve the
       // tree internally so the Dashboard can fire this in parallel with /api/personnel.
       if (!requestedIds.length && req.query.root?.trim()) {
@@ -549,6 +561,14 @@ export default async function handler(req, res) {
       : []
 
     try {
+      // Authorize requested ids; with no ids (full list) only super_admin is allowed.
+      if (requestedIds.length) {
+        if (!(await authorizeScope(req, res, caller, supabase, requestedIds))) return
+      } else {
+        const allowed = await getAllowedSfgIds(caller, supabase)
+        if (allowed !== null) return res.status(403).json({ error: 'Forbidden' })
+      }
+
       // Scope the name lookup to the requested agents instead of scanning the
       // whole personnel table; fall back to all only when no ids are given.
       const upperIds = requestedIds.map(id => id.toUpperCase())

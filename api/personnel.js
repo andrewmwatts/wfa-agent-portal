@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth } from './_auth.js'
+import { requireAuth, authorizeScope, getAllowedSfgIds } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -154,6 +154,7 @@ export default async function handler(req, res) {
     const sfgIdsParam = req.query.sfg_ids ?? ''
     const sfgIds = sfgIdsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     if (!sfgIds.length) return res.status(200).json({ counts: {} })
+    if (!(await authorizeScope(req, res, caller, supabase, sfgIds))) return
 
     try {
       // Fetch core carrier names
@@ -232,6 +233,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && req.query.action === 'contracts') {
     const sfgId = req.query.sfg_id?.trim().toUpperCase()
     if (!sfgId) return res.status(400).json({ error: 'sfg_id required' })
+    if (!(await authorizeScope(req, res, caller, supabase, [sfgId]))) return
 
     try {
       const [{ data: cnData, error: cnErr }, { data: carrierData, error: cErr }] = await Promise.all([
@@ -273,6 +275,18 @@ export default async function handler(req, res) {
     const requestedIds = sfgIdsParam
       ? sfgIdsParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
       : []
+
+    // Authorize the requested scope. root=X → X must be in scope (its subtree is
+    // a subset). Explicit ids → each must be in scope. Neither → super_admin only.
+    {
+      const scopeIds = rootParam ? [rootParam] : requestedIds
+      if (scopeIds.length) {
+        if (!(await authorizeScope(req, res, caller, supabase, scopeIds))) return
+      } else {
+        const allowed = await getAllowedSfgIds(caller, supabase)
+        if (allowed !== null) return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
 
     try {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
