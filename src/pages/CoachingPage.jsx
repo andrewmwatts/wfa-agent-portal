@@ -414,15 +414,16 @@ function ProductionSummary({ policies, period, isDark }) {
     return { month: b.label, 'Avg APV': bucket.length ? Math.round(total / bucket.length) : 0 }
   })
 
-  // Product mix donut (period-filtered, issued only, by subtype)
+  // Product mix donut (period-filtered, issued only, by subtype from crosswalk)
   const periodIssued = policies.filter(p =>
-    p.status === 'Issued' && p.subtype && inPeriod(p.submit_date, period)
+    p.status === 'Issued' && inPeriod(p.submit_date, period)
   )
   const subtypeTotals = {}
   for (const p of periodIssued) {
+    if (!p.subtype) continue
     subtypeTotals[p.subtype] = (subtypeTotals[p.subtype] ?? 0) + (p.issued_apv ?? 0)
   }
-  const unclassified = policies.filter(p => p.status === 'Issued' && !p.subtype && inPeriod(p.submit_date, period)).length
+  const unclassified = periodIssued.filter(p => !p.subtype).length
   const donutTotal   = Object.values(subtypeTotals).reduce((s, v) => s + v, 0)
   const donutEntries = groupWithOther(
     Object.entries(subtypeTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value),
@@ -865,9 +866,9 @@ function PromotionHistory({ promotions }) {
     }
     // Override: if last promotion > 6 months ago and no partial work in progress
     if (commission.length > 0) {
-      const lastPromo    = new Date(commission[commission.length - 1].qualified_date)
-      const monthsSince  = (Date.now() - lastPromo.getTime()) / (1000 * 60 * 60 * 24 * 30)
-      const partialPromo = promotions.find(p => p.promotion_type === 'commission' && p.month_1 && !p.month_2 && !p.qualified_date)
+      const lastPromoDate = new Date(commission[commission.length - 1].qualified_date)
+      const monthsSince   = (Date.now() - lastPromoDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
+      const partialPromo  = promotions.find(p => p.promotion_type === 'commission' && p.month_1 && !p.month_2 && !p.qualified_date)
       if (monthsSince > 6 && !partialPromo) trajectory = 'Stalled'
     }
   }
@@ -1272,7 +1273,7 @@ export default function CoachingPage() {
     fetch(`/api/coaching?sfg_id=${encodeURIComponent(selectedSfgId)}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
+      .then(async r => { if (!r.ok) { const t = await r.text(); throw new Error(t || r.status) } return r.json() })
       .then(d => setData(d))
       .catch(err => setError(err.message ?? 'Failed to load agent data'))
       .finally(() => setLoading(false))

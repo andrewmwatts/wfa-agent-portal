@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       uplineRes,
       promotionsRes,
       policiesRes,
+      crosswalkRes,
       leadsRes,
       activityRes,
       contractsRes,
@@ -78,16 +79,21 @@ export default async function handler(req, res) {
       // Full promotion history
       supabase
         .from('agent_promotions')
-        .select('promotion_type, level, qualified_date, month_1, month_2, month_3, is_slingshot, is_qualified')
+        .select('promotion_type, level, qualified_date, month_1, month_2, month_3, slingshot_month, is_slingshot, is_qualified')
         .eq('sfg_id', sfgId)
-        .order('qualified_date', { ascending: true }),  // nulls sort last by default in PG ASC
+        .order('qualified_date', { ascending: true }),
 
-      // All policies for this agent (client filters by period)
+      // All policies for this agent — no subtype column; enriched below via crosswalk
       supabase
         .from('policies')
-        .select('id, applicant, carrier, policy_name, subtype, status, submit_date, issue_date, last_update, submitted_apv, issued_apv, application_notes')
+        .select('id, applicant, carrier, policy_name, status, submit_date, issue_date, last_update, submitted_apv, issued_apv, application_notes')
         .eq('sfg_id', sfgId)
         .order('submit_date', { ascending: false }),
+
+      // Policy crosswalk: carrier + policy_name → subtype
+      supabase
+        .from('policy_crosswalk')
+        .select('carrier, policy_name, subtype'),
 
       // All leads for this agent
       supabase
@@ -128,12 +134,25 @@ export default async function handler(req, res) {
 
     // Surface any DB errors
     for (const [label, result] of [
-      ['promotions', promotionsRes], ['policies', policiesRes], ['leads', leadsRes],
-      ['activity',   activityRes],   ['contracts', contractsRes], ['carriers', carriersRes],
-      ['downline',   downlineRes],
+      ['promotions', promotionsRes], ['policies', policiesRes], ['crosswalk', crosswalkRes],
+      ['leads', leadsRes], ['activity', activityRes], ['contracts', contractsRes],
+      ['carriers', carriersRes], ['downline', downlineRes],
     ]) {
       if (result.error) throw new Error(`[${label}] ${result.error.message}`)
     }
+
+    // Build crosswalk lookup: "carrier‖policy_name" → subtype
+    const cwMap = {}
+    for (const row of crosswalkRes.data ?? []) {
+      const key = `${(row.carrier ?? '').trim().toLowerCase()}‖${(row.policy_name ?? '').trim().toLowerCase()}`
+      cwMap[key] = row.subtype?.trim() || null
+    }
+
+    // Enrich policies with subtype
+    const policies = (policiesRes.data ?? []).map(p => ({
+      ...p,
+      subtype: cwMap[`${(p.carrier ?? '').trim().toLowerCase()}‖${(p.policy_name ?? '').trim().toLowerCase()}`] ?? null,
+    }))
 
     // ── Build agent object ──────────────────────────────────────────────────
     const uplineRow  = uplineRes.data
@@ -199,7 +218,7 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store')
     return res.status(200).json({
       agent,
-      policies:         policiesRes.data   ?? [],
+      policies,
       leads:            leadsRes.data      ?? [],
       activity:         activityRes.data   ?? [],
       promotions:       promotionsRes.data ?? [],
