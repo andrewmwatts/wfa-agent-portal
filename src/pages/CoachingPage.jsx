@@ -410,7 +410,8 @@ function AgentHeader({ agent, promotions }) {
 
 // ─── Section 2: Production Summary ────────────────────────────────────────────
 
-function ProductionSummary({ policies, period }) {
+function ProductionSummary({ policies, period, isDark }) {
+  const cc          = chartColors(isDark)
   const periodLabel = PERIOD_PRESETS.find(p => p.key === period.preset)?.label ?? 'Period'
 
   // All stats driven by the period selector
@@ -421,8 +422,17 @@ function ProductionSummary({ policies, period }) {
   const cntIssd     = periodPols.filter(p => p.status === 'Issued').length
   const avgAPV      = cntSubm > 0 ? Math.round(submAPV / cntSubm) : null
 
+  // Carrier breakdown (issued APV by carrier, period-filtered)
+  const carrierTotals = {}
+  for (const p of periodPols.filter(p => p.status === 'Issued' && p.carrier)) {
+    carrierTotals[p.carrier] = (carrierTotals[p.carrier] ?? 0) + (p.issued_apv ?? 0)
+  }
+  const carrierData = Object.entries(carrierTotals)
+    .map(([carrier, apv]) => ({ carrier, apv }))
+    .sort((a, b) => b.apv - a.apv)
+
   // Product mix donut (period-filtered, issued only, by subtype from crosswalk)
-  const periodIssued = periodPols.filter(p => p.status === 'Issued')
+  const periodIssued  = periodPols.filter(p => p.status === 'Issued')
   const subtypeTotals = {}
   for (const p of periodIssued) {
     if (!p.subtype) continue
@@ -446,8 +456,28 @@ function ProductionSummary({ policies, period }) {
         <MetricCard label="Avg APV per Policy" primary={avgAPV != null ? fmtAPV(avgAPV) : '—'} sub1={periodLabel} />
       </div>
 
-      {/* Product mix donut */}
+      {/* Carrier breakdown + product mix side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        {/* Carrier breakdown */}
+        <SectionCard title={`Issued APV by Carrier — ${periodLabel}`}>
+          {carrierData.length === 0 ? (
+            <EmptySection message="No issued policies in the selected period" />
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(160, carrierData.length * 36)}>
+              <BarChart data={carrierData} layout="vertical" margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtAPVShort} tick={{ fontSize: 10, fill: cc.text }} />
+                <YAxis type="category" dataKey="carrier" tick={{ fontSize: 11, fill: cc.text }} width={100} />
+                <Tooltip formatter={v => fmtAPV(v)} contentStyle={{ fontSize: 12 }} />
+                <Bar dataKey="apv" name="Issued APV" fill={ISSUED_COLOR} radius={[0, 3, 3, 0]} maxBarSize={18}
+                  label={{ position: 'right', formatter: fmtAPVShort, fontSize: 10, fill: cc.text }} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </SectionCard>
+
+        {/* Product mix donut */}
         <SectionCard title={`Product Mix — ${periodLabel}`}>
           {donutEntries.length === 0 ? (
             <EmptySection message={`No issued policies with subtype data${unclassified ? ` (${unclassified} unclassified)` : ''}`} />
@@ -921,71 +951,101 @@ function PromotionHistory({ promotions }) {
 // ─── Section 7: Contracting Status ────────────────────────────────────────────
 
 function ContractingStatus({ agent, contracts, carriers }) {
+  const [tableOpen, setTableOpen] = useState(false)
+
   const received   = carriers.filter(c => contracts[c.name]?.contract_number)
   const totalCount = carriers.length
+  const today      = new Date()
 
-  const today = new Date()
   const contractReqDate = agent.contracting_to_producer
     ? fmtDate(agent.contracting_to_producer)
     : 'Not requested'
 
+  // E&O indicator: no_eando=true means they have no E&O on file
+  const hasEandO   = !agent.no_eando
+  const eandoLabel = hasEandO ? 'E&O on File' : 'No E&O on File'
+  const eandoStyle = hasEandO
+    ? 'text-green-600 dark:text-green-400'
+    : 'text-red-600 dark:text-red-400'
+  const eandoBg    = hasEandO
+    ? 'bg-green-50 dark:bg-green-500/10'
+    : 'bg-red-50 dark:bg-red-500/10'
+
   function carrierStatus(carrier) {
     const cn = contracts[carrier.name]
     if (cn?.contract_number) return { label: 'Received ✓', color: 'text-green-600 dark:text-green-400' }
-
     const reqDate = agent.contracting_to_producer ? new Date(agent.contracting_to_producer) : null
     if (!reqDate) return { label: 'Not requested', color: 'text-gray-400 dark:text-white/30' }
-
     const daysElapsed = Math.floor((today - reqDate) / 86400000)
     const threshold   = carrier.alert_threshold_days ?? 30
-    if (daysElapsed >= threshold) {
-      return { label: `Overdue ${daysElapsed} days`, color: 'text-red-600 dark:text-red-400' }
-    }
-    return { label: `Pending ${daysElapsed} days`,   color: 'text-yellow-600 dark:text-yellow-400' }
+    if (daysElapsed >= threshold) return { label: `Overdue ${daysElapsed}d`, color: 'text-red-600 dark:text-red-400' }
+    return { label: `Pending ${daysElapsed}d`, color: 'text-yellow-600 dark:text-yellow-400' }
   }
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Contracting requested */}
         <MetricCard label="Contracting Requested" primary={contractReqDate} />
-        <div>
-          <CardShell className="p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">Contract Numbers</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{received.length} <span className="text-base font-normal text-gray-400 dark:text-white/40">of {totalCount}</span></p>
-            <div className="mt-2 h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-accent transition-all"
-                style={{ width: totalCount ? `${(received.length / totalCount) * 100}%` : '0%' }}
-              />
-            </div>
-          </CardShell>
-        </div>
+
+        {/* E&O indicator */}
+        <CardShell className={`p-4 ${eandoBg}`}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">E&O Status</p>
+          <p className={`text-lg font-bold ${eandoStyle}`}>{eandoLabel}</p>
+        </CardShell>
+
+        {/* Contract numbers — caret toggles the table */}
+        <CardShell className="p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">Contract Numbers</p>
+          <div className="flex items-center justify-between">
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {received.length} <span className="text-base font-normal text-gray-400 dark:text-white/40">of {totalCount}</span>
+            </p>
+            <button
+              onClick={() => setTableOpen(o => !o)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-gray-400 dark:text-white/40"
+              aria-label={tableOpen ? 'Collapse contract details' : 'Expand contract details'}
+            >
+              <svg className={`w-4 h-4 transition-transform ${tableOpen ? 'rotate-180' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+            <div className="h-full rounded-full bg-accent transition-all"
+              style={{ width: totalCount ? `${(received.length / totalCount) * 100}%` : '0%' }} />
+          </div>
+        </CardShell>
       </div>
 
-      <CardShell className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 dark:border-white/8">
-              <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Carrier</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Contract #</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-            {carriers.map(c => {
-              const cn  = contracts[c.name]
-              const st  = carrierStatus(c)
-              return (
-                <tr key={c.name} className="hover:bg-gray-50 dark:hover:bg-white/3">
-                  <td className="px-4 py-2.5 font-medium text-gray-700 dark:text-white/80">{c.name}</td>
-                  <td className="px-4 py-2.5 text-gray-500 dark:text-white/50 font-mono text-xs">{cn?.contract_number ?? '—'}</td>
-                  <td className={`px-4 py-2.5 text-xs font-medium ${st.color}`}>{st.label}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </CardShell>
+      {/* Collapsible carrier table */}
+      {tableOpen && (
+        <CardShell className="overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-white/8">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Carrier</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Contract #</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 dark:divide-white/5">
+              {carriers.map(c => {
+                const cn = contracts[c.name]
+                const st = carrierStatus(c)
+                return (
+                  <tr key={c.name} className="hover:bg-gray-50 dark:hover:bg-white/3">
+                    <td className="px-4 py-2.5 font-medium text-gray-700 dark:text-white/80">{c.name}</td>
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-white/50 font-mono text-xs">{cn?.contract_number ?? '—'}</td>
+                    <td className={`px-4 py-2.5 text-xs font-medium ${st.color}`}>{st.label}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </CardShell>
+      )}
     </div>
   )
 }
@@ -1222,10 +1282,26 @@ export default function CoachingPage() {
   ]
 
   return (
-    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <>
+    {/* ── Sticky period bar (fixed below app header, desktop accounts for sidebar) */}
+    {selectedSfgId && data && (
+      <div className="fixed top-14 left-0 lg:left-56 right-0 z-20
+                      bg-white/90 dark:bg-primary/90 backdrop-blur-sm
+                      border-b border-gray-200 dark:border-white/10
+                      px-4 sm:px-6 py-2 flex items-center gap-3">
+        <span className="text-xs text-gray-400 dark:text-white/40 truncate hidden sm:block max-w-[160px]">
+          {data.agent.name}
+        </span>
+        <span className="text-gray-200 dark:text-white/10 hidden sm:block select-none">|</span>
+        <PeriodSelector period={period} onChange={setPeriod} />
+      </div>
+    )}
+
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5"
+          style={{ paddingTop: selectedSfgId && data ? '3.5rem' : undefined }}>
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
           <h1 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Coaching</h1>
           {agentsLoading ? (
@@ -1238,11 +1314,6 @@ export default function CoachingPage() {
             />
           )}
         </div>
-        {selectedSfgId && data && (
-          <div className="flex-shrink-0 sm:pt-9">
-            <PeriodSelector period={period} onChange={setPeriod} />
-          </div>
-        )}
       </div>
 
       {/* ── No agent selected ───────────────────────────────────────────────── */}
@@ -1280,7 +1351,7 @@ export default function CoachingPage() {
 
           {/* 2. Production Summary */}
           <SectionCard title="Production Summary">
-            <ProductionSummary policies={data.policies} period={period} />
+            <ProductionSummary policies={data.policies} period={period} isDark={isDark} />
           </SectionCard>
 
           {/* 3. Policy Metrics */}
@@ -1320,5 +1391,6 @@ export default function CoachingPage() {
         </div>
       )}
     </main>
+    </>
   )
 }

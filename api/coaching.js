@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     // ── Step 1: Agent row (needed to resolve upline_sfg_id) ─────────────────
     const { data: agentRow, error: agentErr } = await supabase
       .from('personnel')
-      .select('sfg_id, preferred_name, opt_name, hire_date, status, upline_sfg_id, contracting_to_producer')
+      .select('sfg_id, preferred_name, opt_name, hire_date, status, upline_sfg_id, contracting_to_producer, no_eando')
       .eq('sfg_id', sfgId)
       .maybeSingle()
 
@@ -175,6 +175,7 @@ export default async function handler(req, res) {
       upline_name:             uplineName,
       commission_level:        commissionLevel,
       contracting_to_producer: agentRow.contracting_to_producer ?? null,
+      no_eando:                agentRow.no_eando ?? false,
     }
 
     // ── Deduplicate contracts (highest number per carrier) ──────────────────
