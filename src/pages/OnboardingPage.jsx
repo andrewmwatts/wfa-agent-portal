@@ -397,7 +397,7 @@ export default function OnboardingPage() {
 // Carriers that are exempt from the 14-day red rule when no_eando is TRUE.
 // "Banner Life (BeyondTerm)" may be stored under either name in the DB.
 const CONTRACTING_TRANSAMERICA = 'Transamerica'
-const CONTRACTING_EXEMPT = new Set(['Banner Life (BeyondTerm)', 'SBLi', 'American General'])
+const CONTRACTING_EXEMPT = new Set(['Banner Life (BeyondTerm)', 'SBLI', 'American General'])
 
 function contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando) {
   if (!coreCarriers.length) return false
