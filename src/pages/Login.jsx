@@ -47,8 +47,6 @@ export default function Login() {
 
         // Step 2: create auth account + public.users row (full_name comes from sheet)
         const result2 = await signUp(email, password, sfgId, result.full_name)
-        // TEMP DEBUG — remove after confirming fix
-        console.log('[Login] signUp result2:', result2)
         if (result2?.identityConflict) {
           setIdentityConflict(true)
         } else if (result2?.requiresConfirmation) {

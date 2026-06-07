@@ -113,7 +113,10 @@ export function AuthProvider({ children }) {
     if (error) throw error
 
     if (!data.user) {
-      return data
+      // Supabase silently returns { user: null, session: null } (no error) when
+      // email confirmations are enabled and the address is already registered.
+      // This is the alternate form of the identities:[] pattern — treat the same.
+      return { identityConflict: true }
     }
 
     // Supabase returns a "fake success" with identities:[] when email
@@ -124,10 +127,6 @@ export function AuthProvider({ children }) {
       return { identityConflict: true }
     }
 
-    // TEMP DEBUG — remove after confirming fix
-    console.log('[signUp] session:', data.session)
-    console.log('[signUp] email_confirmed_at:', data.user.email_confirmed_at)
-    console.log('[signUp] confirmed_at:', data.user.confirmed_at)
 
     // 2. Create the public.users row via service-role endpoint
     //    (user_id is available immediately even before email confirmation)
