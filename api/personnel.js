@@ -377,11 +377,11 @@ export default async function handler(req, res) {
         results = all
       }
 
-      // Cache-Control: Vercel's CDN caches the response for 30 s at the edge so
-      // subsequent loads skip the function entirely (cold start = 0 on cache hits).
-      // stale-while-revalidate gives a further 5-minute window of stale serving
-      // while the CDN refreshes in the background.
-      res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=300')
+      // Cache-Control: PRIVATE only. This response is scoped to the caller's
+      // authorized subjects, so it must never be cached at the shared edge (that
+      // would let one user's data be served to another). Browser-only caching for
+      // 30 s still de-dupes rapid in-session reloads.
+      res.setHeader('Cache-Control', 'private, max-age=30')
 
       // ?include=policies — fetch policies for the result set and return both
       // together so callers need only one round-trip instead of two.

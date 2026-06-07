@@ -543,9 +543,9 @@ export default async function handler(req, res) {
         newWritersItems:   [...newWritersItems.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
       }
 
-      // 30-second edge cache — dashboard metrics tolerate brief staleness and
-      // this eliminates cold starts for back-to-back or near-simultaneous loads.
-      res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=300')
+      // PRIVATE only: this payload is scoped to the caller's authorized agents,
+      // so it must not be cached at the shared edge. Browser-only short cache.
+      res.setHeader('Cache-Control', 'private, max-age=30')
       return res.status(200).json({ pending, incomplete, lapse, metrics, detail })
     } catch (err) {
       console.error('[policies/apps]', err)
