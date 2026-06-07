@@ -341,20 +341,29 @@ function AgentSelector({ agents, selectedSfgId, onSelect }) {
   )
 }
 
-// ─── Section 1: Agent Header ───────────────────────────────────────────────────
+// ─── Section 1: Agent Header (with inline promotion history) ──────────────────
 
-function AgentHeader({ agent }) {
+function AgentHeader({ agent, promotions }) {
   const ten   = tenure(agent.hire_date)
   const isAct = (agent.status ?? '').toLowerCase() !== 'inactive'
+
+  // Commission promotions sorted ascending by qualified_date
+  const commPromos = (promotions ?? [])
+    .filter(p => p.promotion_type === 'commission' && p.qualified_date)
+    .sort((a, b) => a.qualified_date.localeCompare(b.qualified_date))
+
   return (
     <CardShell className="p-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-3">
+        {/* Left: identity */}
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">{agent.name}</h1>
           <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">SFG ID: {agent.sfg_id}</p>
           {agent.hire_date && <p className="text-sm text-gray-500 dark:text-white/50">Hired: {fmtDate(agent.hire_date)}</p>}
           {ten && <p className="text-xs text-gray-400 dark:text-white/35 mt-1 italic">{ten}</p>}
         </div>
+
+        {/* Right: level / upline / status */}
         <div className="sm:text-right">
           {agent.commission_level && (
             <p className="text-sm text-gray-700 dark:text-white/70 font-medium">
@@ -374,50 +383,46 @@ function AgentHeader({ agent }) {
           </span>
         </div>
       </div>
+
+      {/* Compact promotion timeline */}
+      {commPromos.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-2">
+            Promotion History
+          </p>
+          <div className="flex flex-wrap gap-x-1 gap-y-1 items-center">
+            {commPromos.map((p, i) => (
+              <div key={i} className="flex items-center gap-1">
+                {i > 0 && <span className="text-gray-300 dark:text-white/15 text-xs select-none">→</span>}
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/8 dark:bg-accent/12 text-xs">
+                  <span className="font-semibold text-accent">Lvl {p.level}</span>
+                  <span className="text-gray-400 dark:text-white/35">{fmtDate(p.qualified_date)}</span>
+                  {p.is_slingshot && <span className="text-yellow-500">⚡</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </CardShell>
   )
 }
 
 // ─── Section 2: Production Summary ────────────────────────────────────────────
 
-function ProductionSummary({ policies, period, isDark }) {
-  const cc = chartColors(isDark)
+function ProductionSummary({ policies, period }) {
+  const periodLabel = PERIOD_PRESETS.find(p => p.key === period.preset)?.label ?? 'Period'
 
-  // Fixed-window card stats
-  const wk  = weekRange()
-  const mo  = monthRange()
-  const ytd = ytdRange()
-
-  const submWk  = policies.filter(p => p.submit_date >= wk.start  && p.submit_date <= wk.end).reduce((s,p)  => s + (p.submitted_apv ?? 0), 0)
-  const submMo  = policies.filter(p => p.submit_date >= mo.start  && p.submit_date <= mo.end).reduce((s,p)  => s + (p.submitted_apv ?? 0), 0)
-  const issdMo  = policies.filter(p => p.submit_date >= mo.start  && p.submit_date <= mo.end).reduce((s,p)  => s + (p.issued_apv    ?? 0), 0)
-  const issdYtd = policies.filter(p => p.submit_date >= ytd.start && p.submit_date <= ytd.end).reduce((s,p) => s + (p.issued_apv    ?? 0), 0)
-  const cntSubmMo  = policies.filter(p => p.submit_date >= mo.start  && p.submit_date <= mo.end).length
-  const cntSubmYtd = policies.filter(p => p.submit_date >= ytd.start && p.submit_date <= ytd.end).length
-  const cntIssdMo  = policies.filter(p => p.issue_date  >= mo.start  && p.issue_date  <= mo.end && p.status === 'Issued').length
-  const cntIssdYtd = policies.filter(p => p.issue_date  >= ytd.start && p.issue_date  <= ytd.end && p.status === 'Issued').length
-
-  // 12-month rolling bar chart
-  const monthBuckets = build12MonthBuckets()
-  const barData = monthBuckets.map(b => ({
-    month: b.label,
-    Submitted: policies.filter(p => p.submit_date >= b.start && p.submit_date <= b.end)
-                       .reduce((s, p) => s + (p.submitted_apv ?? 0), 0),
-    Issued:    policies.filter(p => p.submit_date >= b.start && p.submit_date <= b.end)
-                       .reduce((s, p) => s + (p.issued_apv    ?? 0), 0),
-  }))
-
-  // Avg APV per policy line chart (12-month rolling)
-  const lineData = monthBuckets.map(b => {
-    const bucket = policies.filter(p => p.submit_date >= b.start && p.submit_date <= b.end)
-    const total  = bucket.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
-    return { month: b.label, 'Avg APV': bucket.length ? Math.round(total / bucket.length) : 0 }
-  })
+  // All stats driven by the period selector
+  const periodPols  = policies.filter(p => inPeriod(p.submit_date, period))
+  const submAPV     = periodPols.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
+  const issdAPV     = periodPols.reduce((s, p) => s + (p.issued_apv    ?? 0), 0)
+  const cntSubm     = periodPols.length
+  const cntIssd     = periodPols.filter(p => p.status === 'Issued').length
+  const avgAPV      = cntSubm > 0 ? Math.round(submAPV / cntSubm) : null
 
   // Product mix donut (period-filtered, issued only, by subtype from crosswalk)
-  const periodIssued = policies.filter(p =>
-    p.status === 'Issued' && inPeriod(p.submit_date, period)
-  )
+  const periodIssued = periodPols.filter(p => p.status === 'Issued')
   const subtypeTotals = {}
   for (const p of periodIssued) {
     if (!p.subtype) continue
@@ -426,96 +431,48 @@ function ProductionSummary({ policies, period, isDark }) {
   const unclassified = periodIssued.filter(p => !p.subtype).length
   const donutTotal   = Object.values(subtypeTotals).reduce((s, v) => s + v, 0)
   const donutEntries = groupWithOther(
-    Object.entries(subtypeTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value),
+    Object.entries(subtypeTotals).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
     donutTotal
   )
 
   return (
     <div className="space-y-5">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          label="Submitted APV"
-          primary={fmtAPV(submWk)}
-          sub1={`${fmtAPV(submMo)} month`}
-          sub2="(week / month)"
-        />
-        <MetricCard
-          label="Issued APV"
-          primary={fmtAPV(issdMo)}
-          sub1={`${fmtAPV(issdYtd)} YTD`}
-          sub2="(month / YTD)"
-        />
-        <MetricCard
-          label="Policies Submitted"
-          primary={cntSubmMo}
-          sub1={`${cntSubmYtd} YTD`}
-          sub2="(month / YTD)"
-        />
-        <MetricCard
-          label="Policies Issued"
-          primary={cntIssdMo}
-          sub1={`${cntIssdYtd} YTD`}
-          sub2="(month / YTD)"
-        />
+      {/* Period-driven metric cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <MetricCard label="Submitted APV"      primary={fmtAPV(submAPV)} sub1={periodLabel} />
+        <MetricCard label="Issued APV"         primary={fmtAPV(issdAPV)} sub1={periodLabel} />
+        <MetricCard label="Apps Submitted"     primary={cntSubm}         sub1={periodLabel} />
+        <MetricCard label="Policies Issued"    primary={cntIssd}         sub1={periodLabel} />
+        <MetricCard label="Avg APV per Policy" primary={avgAPV != null ? fmtAPV(avgAPV) : '—'} sub1={periodLabel} />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Submitted vs Issued bar chart */}
-        <SectionCard title="Submitted vs Issued APV — 12 Months">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: cc.text }} />
-              <YAxis tickFormatter={fmtAPVShort} tick={{ fontSize: 10, fill: cc.text }} width={40} />
-              <Tooltip formatter={v => fmtAPV(v)} contentStyle={{ fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Submitted" fill={SUBMITTED_COLOR} radius={[3,3,0,0]} maxBarSize={20} />
-              <Bar dataKey="Issued"    fill={ISSUED_COLOR}    radius={[3,3,0,0]} maxBarSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
-        </SectionCard>
-
-        {/* Avg APV per policy line chart */}
-        <SectionCard title="Avg APV per Policy — 12 Months">
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={lineData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: cc.text }} />
-              <YAxis tickFormatter={fmtAPVShort} tick={{ fontSize: 10, fill: cc.text }} width={40} />
-              <Tooltip formatter={v => fmtAPV(v)} contentStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="Avg APV" stroke={SUBMITTED_COLOR} strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </SectionCard>
-
-        {/* Product mix donut */}
-        <SectionCard title="Product Mix (Issued APV)">
+      {/* Product mix donut */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <SectionCard title={`Product Mix — ${periodLabel}`}>
           {donutEntries.length === 0 ? (
             <EmptySection message={`No issued policies with subtype data${unclassified ? ` (${unclassified} unclassified)` : ''}`} />
           ) : (
-            <div className="flex flex-col items-center">
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={donutEntries} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70}>
+            <div className="flex items-start gap-6">
+              <div className="flex-shrink-0">
+                <PieChart width={160} height={160}>
+                  <Pie data={donutEntries} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={72}>
                     {donutEntries.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={v => fmtAPV(v)} contentStyle={{ fontSize: 12 }} />
                 </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-2 space-y-1 w-full">
+              </div>
+              <div className="flex-1 space-y-1.5 py-1 min-w-0">
                 {donutEntries.map((e, i) => (
-                  <div key={e.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
+                  <div key={e.name} className="flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                      <span className="text-gray-600 dark:text-white/60 truncate max-w-[120px]">{e.name}</span>
+                      <span className="text-gray-600 dark:text-white/60 truncate">{e.name}</span>
                     </div>
-                    <span className="text-gray-700 dark:text-white/70 font-medium ml-2">{fmtAPV(e.value)}</span>
+                    <span className="text-gray-700 dark:text-white/70 font-medium flex-shrink-0">{fmtAPV(e.value)}</span>
                   </div>
                 ))}
                 {unclassified > 0 && (
-                  <p className="text-xs text-gray-400 dark:text-white/30 pt-1">{unclassified} policy{unclassified !== 1 ? 'ies' : 'y'} without subtype excluded</p>
+                  <p className="text-xs text-gray-400 dark:text-white/30 pt-1">{unclassified} unclassified</p>
                 )}
               </div>
             </div>
@@ -1115,6 +1072,8 @@ function PendingPolicies({ policies }) {
 // ─── Section 9: Recruiting & Downline ─────────────────────────────────────────
 
 function RecruitingDownline({ downline, downlinePolicies, period }) {
+  const periodLabel = PERIOD_PRESETS.find(p => p.key === period.preset)?.label ?? 'Period'
+
   if (!downline.length) {
     return (
       <div className="px-4 py-8 text-center text-sm text-gray-400 dark:text-white/30 bg-gray-50 dark:bg-white/3 rounded-xl border border-dashed border-gray-200 dark:border-white/10">
@@ -1123,88 +1082,54 @@ function RecruitingDownline({ downline, downlinePolicies, period }) {
     )
   }
 
-  const mo  = monthRange()
-  const ytd = ytdRange()
   const now90 = new Date(); now90.setDate(now90.getDate() - 90)
   const cutoff90 = toYMD(now90)
 
-  // Downline stats
-  const totalHired  = downline.length
-  const last90Count = downline.filter(a => a.hire_date >= cutoff90).length
-
-  // Per-agent production
+  // Per-agent rollups
   const agentProd = {}
   for (const pol of downlinePolicies) {
-    if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { periodApv: 0, ytdApv: 0, active: false }
-    const apv = pol.issued_apv ?? 0
-    if (inPeriod(pol.submit_date, period)) agentProd[pol.sfg_id].periodApv += apv
-    if (pol.submit_date >= ytd.start)       agentProd[pol.sfg_id].ytdApv   += apv
+    if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { submAPV: 0, issdAPV: 0, cntSubm: 0, cntIssd: 0, active: false }
+    if (inPeriod(pol.submit_date, period)) {
+      agentProd[pol.sfg_id].submAPV  += pol.submitted_apv ?? 0
+      agentProd[pol.sfg_id].issdAPV  += pol.issued_apv    ?? 0
+      agentProd[pol.sfg_id].cntSubm  += 1
+      if (pol.status === 'Issued') agentProd[pol.sfg_id].cntIssd += 1
+    }
     if (pol.status === 'Issued' && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true
   }
 
+  // Team totals
+  const totalHired   = downline.length
+  const last90Count  = downline.filter(a => a.hire_date >= cutoff90).length
   const activeWriters = downline.filter(a => agentProd[a.sfg_id]?.active).length
-  const dlPeriodApv   = Object.values(agentProd).reduce((s, v) => s + v.periodApv, 0)
-  const dlYtdApv      = Object.values(agentProd).reduce((s, v) => s + v.ytdApv, 0)
-
-  const sorted = [...downline].sort((a, b) =>
-    (agentProd[b.sfg_id]?.periodApv ?? 0) - (agentProd[a.sfg_id]?.periodApv ?? 0)
-  )
+  const teamSubmAPV  = Object.values(agentProd).reduce((s, v) => s + v.submAPV, 0)
+  const teamIssdAPV  = Object.values(agentProd).reduce((s, v) => s + v.issdAPV, 0)
+  const teamCntSubm  = Object.values(agentProd).reduce((s, v) => s + v.cntSubm, 0)
+  const teamCntIssd  = Object.values(agentProd).reduce((s, v) => s + v.cntIssd, 0)
+  const teamAvgAPV   = teamCntSubm > 0 ? Math.round(teamSubmAPV / teamCntSubm) : null
 
   return (
     <div className="space-y-5">
+      {/* Roster overview */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard
-          label="Agents Hired"
-          primary={totalHired}
-          sub1={`${last90Count} in last 90 days`}
-        />
-        <MetricCard
-          label="Active Downline"
-          primary={activeWriters}
-          sub1="active writers (issued in 90 days)"
-        />
-        <MetricCard
-          label="Downline APV"
-          primary={fmtAPV(dlPeriodApv)}
-          sub1={`${fmtAPV(dlYtdApv)} YTD`}
-        />
+        <MetricCard label="Agents Hired"    primary={totalHired}    sub1={`${last90Count} in last 90 days`} />
+        <MetricCard label="Active Writers"  primary={activeWriters} sub1="issued policy in last 90 days" />
+        <MetricCard label="Inactive Writers" primary={totalHired - activeWriters} sub1="no recent production" />
       </div>
 
-      <CardShell className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 dark:border-white/8">
-              {['Agent','Level','Hire Date','APV (Period)','APV (YTD)','Active'].map(h => (
-                <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-            {sorted.map(a => {
-              const prod = agentProd[a.sfg_id] ?? { periodApv: 0, ytdApv: 0, active: false }
-              return (
-                <tr key={a.sfg_id} className="hover:bg-gray-50 dark:hover:bg-white/3">
-                  <td className="px-4 py-2.5 font-medium text-gray-700 dark:text-white/80">{a.name}</td>
-                  <td className="px-4 py-2.5 text-gray-500 dark:text-white/50">{a.commission_level ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-gray-500 dark:text-white/50 whitespace-nowrap">{fmtDate(a.hire_date)}</td>
-                  <td className="px-4 py-2.5 text-gray-700 dark:text-white/70">{fmtAPV(prod.periodApv)}</td>
-                  <td className="px-4 py-2.5 text-gray-600 dark:text-white/60">{fmtAPV(prod.ytdApv)}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`inline-flex items-center gap-1 text-xs font-medium ${
-                      prod.active
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-gray-400 dark:text-white/30'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${prod.active ? 'bg-green-500' : 'bg-gray-300 dark:bg-white/20'}`} />
-                      {prod.active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </CardShell>
+      {/* Team production — mirrors the agent production cards */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-3">
+          Team Production — {periodLabel}
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <MetricCard label="Submitted APV"      primary={fmtAPV(teamSubmAPV)}                            sub1={periodLabel} />
+          <MetricCard label="Issued APV"         primary={fmtAPV(teamIssdAPV)}                            sub1={periodLabel} />
+          <MetricCard label="Apps Submitted"     primary={teamCntSubm}                                    sub1={periodLabel} />
+          <MetricCard label="Policies Issued"    primary={teamCntIssd}                                    sub1={periodLabel} />
+          <MetricCard label="Avg APV per Policy" primary={teamAvgAPV != null ? fmtAPV(teamAvgAPV) : '—'} sub1={periodLabel} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -1350,12 +1275,12 @@ export default function CoachingPage() {
       {selectedSfgId && !loading && data && (
         <div className="space-y-6">
 
-          {/* 1. Agent Header */}
-          <AgentHeader agent={data.agent} />
+          {/* 1. Agent Header (includes promotion history) */}
+          <AgentHeader agent={data.agent} promotions={data.promotions} />
 
           {/* 2. Production Summary */}
           <SectionCard title="Production Summary">
-            <ProductionSummary policies={data.policies} period={period} isDark={isDark} />
+            <ProductionSummary policies={data.policies} period={period} />
           </SectionCard>
 
           {/* 3. Policy Metrics */}
@@ -1371,11 +1296,6 @@ export default function CoachingPage() {
           {/* 5. Activity Metrics */}
           <SectionCard title="Activity Metrics">
             <ActivityMetrics activity={data.activity} period={period} isDark={isDark} />
-          </SectionCard>
-
-          {/* 6. Promotion History */}
-          <SectionCard title="Promotion History">
-            <PromotionHistory promotions={data.promotions} />
           </SectionCard>
 
           {/* 7. Contracting Status */}
