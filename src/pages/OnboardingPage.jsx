@@ -55,6 +55,8 @@ export default function OnboardingPage() {
 
   const [masterPersonnel,  setMasterPersonnel]  = useState([])
   const [contractCounts,   setContractCounts]   = useState({}) // sfg_id → count of core carrier numbers
+  const [carrierSets,      setCarrierSets]      = useState({}) // sfg_id → string[] of carriers they have
+  const [coreCarriers,     setCoreCarriers]     = useState([]) // all core carrier names
   const [totalCarriers,    setTotalCarriers]    = useState(11) // from API
   const [hiddenIds,        setHiddenIds]        = useState(new Set())
   const [loading,         setLoading]         = useState(true)
@@ -117,9 +119,11 @@ export default function OnboardingPage() {
         const ids = sorted.map(p => p.sfg_id).join(',')
         const cRes = await fetch(`/api/personnel?action=contract_counts&sfg_ids=${encodeURIComponent(ids)}`)
         if (cRes.ok) {
-          const { counts, total } = await cRes.json()
+          const { counts, carrierSets: cs, total, coreCarriers: cc } = await cRes.json()
           setContractCounts(counts ?? {})
+          setCarrierSets(cs ?? {})
           if (total) setTotalCarriers(total)
+          if (cc?.length) setCoreCarriers(cc)
         }
       }
     } catch (e) {
@@ -332,6 +336,9 @@ export default function OnboardingPage() {
                           complete={r.contracting_complete}
                           contractCount={contractCounts[r.sfg_id] ?? 0}
                           totalCarriers={totalCarriers}
+                          agentCarriers={carrierSets[r.sfg_id] ?? []}
+                          coreCarriers={coreCarriers}
+                          noEando={!!r.no_eando}
                         />
                       </td>
                     </tr>
@@ -387,16 +394,52 @@ export default function OnboardingPage() {
 
 // ─── Contracting Cell ─────────────────────────────────────────────────────────
 
-function ContractingCell({ toProducerDate, complete, contractCount = 0, totalCarriers = 11 }) {
+// Carriers that are exempt from the 14-day red rule when no_eando is TRUE.
+// "Banner Life (BeyondTerm)" may be stored under either name in the DB.
+const CONTRACTING_TRANSAMERICA = 'Transamerica'
+const CONTRACTING_EXEMPT = new Set(['Banner Life', 'BeyondTerm', 'SBLi', 'American General'])
+
+function contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando) {
+  if (!coreCarriers.length) return false
+  const days = daysSince(toProducerDate)
+  if (days === null) return false
+
+  const have = new Set(agentCarriers)
+  const missing = coreCarriers.filter(c => !have.has(c))
+  if (!missing.length) return false
+
+  const missingTa     = missing.includes(CONTRACTING_TRANSAMERICA)
+  const missingOthers = missing.filter(c => c !== CONTRACTING_TRANSAMERICA)
+
+  // Rule 1: Transamerica missing + >30 days
+  if (missingTa && days > 30) return true
+
+  // Rule 2: any non-Transamerica carrier missing + >14 days
+  if (missingOthers.length > 0 && days > 14) {
+    // Exception: ALL remaining missing are exempt carriers AND agent has no E&O
+    const onlyExempt = missingOthers.every(c => CONTRACTING_EXEMPT.has(c))
+    if (onlyExempt && noEando) return false
+    return true
+  }
+
+  return false
+}
+
+function ContractingCell({
+  toProducerDate, complete, contractCount = 0, totalCarriers = 11,
+  agentCarriers = [], coreCarriers = [], noEando = false,
+}) {
   // All contracts received → green Complete
   if (complete && contractCount >= totalCarriers)
     return <span className="text-xs bg-green-500/20 text-green-600 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
 
-  // Contracting marked complete, numbers partially or not yet populated → amber
+  // Contracting marked complete, numbers partially or not yet populated
   if (complete) {
+    const red = contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando)
+    const cls = red ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
     if (contractCount > 0)
-      return <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">{contractCount} of {totalCarriers}</span>
-    return <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Requested</span>
+      return <span className={`text-xs font-semibold ${cls}`}>{contractCount} of {totalCarriers}</span>
+    return <span className={`text-xs font-semibold ${cls}`}>Requested</span>
   }
 
   // Contracting sent but not complete → orange

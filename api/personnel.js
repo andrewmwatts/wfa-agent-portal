@@ -167,17 +167,23 @@ export default async function handler(req, res) {
         .in('carrier', coreCarriers)
       if (cnErr) throw cnErr
 
-      // Count distinct core carriers per agent
+      // Count distinct core carriers per agent + track which carriers each agent has
       const counts = {}
+      const agentCarrierMap = {}
       for (const row of cns ?? []) {
         const id = row.sfg_id
-        if (!counts[id]) counts[id] = new Set()
+        if (!counts[id]) { counts[id] = new Set(); agentCarrierMap[id] = [] }
         counts[id].add(row.carrier)
+        agentCarrierMap[id].push(row.carrier)
       }
       const result = {}
-      for (const [id, set] of Object.entries(counts)) result[id] = set.size
+      const carrierSets = {}
+      for (const [id, set] of Object.entries(counts)) {
+        result[id] = set.size
+        carrierSets[id] = [...set]
+      }
 
-      return res.status(200).json({ counts: result, total: coreCarriers.length })
+      return res.status(200).json({ counts: result, carrierSets, total: coreCarriers.length, coreCarriers })
     } catch (err) {
       return res.status(500).json({ error: err.message })
     }
