@@ -2,6 +2,7 @@
 // Pending + lapse data is fetched once by Dashboard and passed as props.
 
 import { SectionShell } from './MyInfoSection'
+import { fmtDate } from '../../utils/format'
 
 export default function PendingBusinessSection({ subject, canWrite, pending = [], lapse = [], loading }) {
   if (loading) return (
@@ -131,16 +132,3 @@ function DaysBadge({ days }) {
   return <span className={`text-xs tabular-nums ${cls}`}>{days}</span>
 }
 
-function parseDateLocal(str) {
-  if (!str) return null
-  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
-}
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = parseDateLocal(d)
-  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}

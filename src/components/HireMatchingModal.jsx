@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { fmtDate } from '../utils/format'
 
 // ── Fuzzy scoring ──────────────────────────────────────────────────────────────
 
@@ -97,14 +98,6 @@ function confidenceLabel(score) {
   if (score >= 70) return { label: 'Strong match',   cls: 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'  }
   if (score >= 50) return { label: 'Likely match',   cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'      }
   return                  { label: 'Possible match', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'   }
-}
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const iso = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!iso) return d
-  return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────

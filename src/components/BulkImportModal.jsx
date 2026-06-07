@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
+import { fmtDate as fmtDateUtil, fmtCurrency } from '../utils/format'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Editable-grid variants: blank (not "—") when empty
+const fmtDate = s => fmtDateUtil(s, { empty: '' })
+const fmtAmt  = v => fmtCurrency(v, { empty: '' })
 
 function toTitleCase(str) {
   if (!str) return ''
@@ -37,21 +42,6 @@ function fmtISO(d) {
   const m  = String(d.getMonth() + 1).padStart(2, '0')
   const dy = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${dy}`
-}
-
-function fmtDate(isoStr) {
-  if (!isoStr) return ''
-  const iso = String(isoStr).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!iso) return isoStr
-  const d = new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function fmtAmt(val) {
-  if (val === null || val === undefined || val === '') return ''
-  const n = parseFloat(String(val).replace(/[$,]/g, ''))
-  if (isNaN(n)) return ''
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
 function parseNum(val) {

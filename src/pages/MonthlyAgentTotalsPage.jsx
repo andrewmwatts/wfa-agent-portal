@@ -3,6 +3,7 @@ import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
+import { fmtCurrency as fmtAmt } from '../utils/format'
 
 // ─── Milestone helpers (mirrors AgentsPage) ───────────────────────────────────
 
@@ -199,13 +200,6 @@ function parseCbApv(str) {
   if (typeof str === 'number') return str
   const n = parseFloat(str.replace(/[$,]/g, ''))
   return isNaN(n) ? 0 : n
-}
-
-function fmtAmt(n) {
-  if (n === null || n === undefined) return '—'
-  if (n === 0) return '$0'
-  const abs = Math.round(Math.abs(n))
-  return (n < 0 ? '-$' : '$') + abs.toLocaleString('en-US')
 }
 
 function hlCls(status) {

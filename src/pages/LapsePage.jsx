@@ -3,20 +3,8 @@ import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
-
-const CARRIER_ALIASES = {
-  'american amicable group': 'American Amicable',
-  'occidental':              'American Amicable',
-  'lga':                     'Banner',
-  'corebridge':              'American General',
-  'transamerica group':      'TransAmerica',
-  'foresters dfl':           'Foresters',
-}
-
-function normalizeCarrier(raw) {
-  if (!raw) return raw
-  return CARRIER_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
-}
+import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
+import { normalizeCarrier } from '../../shared/carriers'
 
 function daysToLapse(conservationDate) {
   if (!conservationDate) return null
@@ -33,20 +21,6 @@ function getUrgency(days) {
   if (days <= 7)   return 'critical'
   if (days <= 30)  return 'warning'
   return 'normal'
-}
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function fmtAmt(v) {
-  if (v === null || v === undefined || v === '') return '—'
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''))
-  if (isNaN(n)) return v || '—'
-  if (n === 0) return '$0'
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
 // ─── Quick filter config ──────────────────────────────────────────────────────

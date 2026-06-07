@@ -5,12 +5,7 @@
 import { useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
 import { SectionShell } from './MyInfoSection'
-
-function fmtAmt(n) {
-  if (!n && n !== 0) return '—'
-  if (n === 0) return '$0'
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-}
+import { fmtCurrency as fmtAmt } from '../../utils/format'
 
 export default function MetricsSection({
   subject,

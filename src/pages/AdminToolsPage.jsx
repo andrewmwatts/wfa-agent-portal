@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { fmtDate, fmtDateTime } from '../utils/format'
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 const TH  = 'text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 pb-2 pr-4 whitespace-nowrap'
@@ -39,15 +40,6 @@ const SUBTYPES = [
   'Accidental','Health','Disability / Annuity','Children\'s','Instant Issue',
   'Instant/Simplified','IUL','Medical','Simplified','Simplified/Medical',
 ]
-
-function fmtDate(s) {
-  if (!s) return '—'
-  return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-function fmtDateTime(s) {
-  if (!s) return '—'
-  return new Date(s).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 

@@ -1,8 +1,12 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import HireMatchingModal from './HireMatchingModal'
+import { fmtDate as fmtDateUtil } from '../utils/format'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Editable-grid variant: blank (not "—") when empty
+const fmtDate = s => fmtDateUtil(s, { empty: '' })
 
 /** Case-insensitive column picker — tries each key in order, exact then fuzzy */
 function getField(row, ...keys) {
@@ -54,14 +58,6 @@ function fmtISO(d) {
   const m  = String(d.getMonth() + 1).padStart(2, '0')
   const dy = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${dy}`
-}
-
-function fmtDate(isoStr) {
-  if (!isoStr) return ''
-  const iso = String(isoStr).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!iso) return isoStr
-  const d = new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Row processing ────────────────────────────────────────────────────────────

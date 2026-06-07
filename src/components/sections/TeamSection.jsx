@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { SectionShell } from './MyInfoSection'
+import { parseDateLocal, fmtDate } from '../../utils/format'
 
 export default function TeamSection({ subject, canWrite }) {
   const [members, setMembers]       = useState([])
@@ -171,16 +172,3 @@ function ProgressBar({ pct }) {
   )
 }
 
-function parseDateLocal(str) {
-  if (!str) return null
-  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]))
-  const d = new Date(str)
-  return isNaN(d.getTime()) ? null : d
-}
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = parseDateLocal(d)
-  return (!dt || isNaN(dt)) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
