@@ -258,11 +258,6 @@ function getFridayColumns(year, month) {
 export default function MonthlyAgentTotalsPage() {
   const { activeSubject, permissions } = useViewing()
   const { theme }         = useTheme()
-  if (!permissions.metrics.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
-    </main>
-  )
 
   const now = new Date()
   const [selectedYear,  setSelectedYear]  = useState(now.getFullYear())
@@ -596,6 +591,11 @@ export default function MonthlyAgentTotalsPage() {
   const yearOptions = []
   for (let y = now.getFullYear(); y >= 2022; y--) yearOptions.push(y)
 
+  if (!permissions.metrics.read) return (
+    <main className="max-w-4xl mx-auto px-6 py-8">
+      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    </main>
+  )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
       <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view agent totals.</p>

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { normalizeCarrier } from '../shared/carriers.js'
-import { requireAuth, authorizeScope, getAllowedSfgIds } from './_auth.js'
+import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -632,6 +632,7 @@ export default async function handler(req, res) {
     if (!f.sfg_id || !f.applicant) {
       return res.status(400).json({ error: 'sfg_id and applicant are required' })
     }
+    if (!(await authorizeScope(req, res, caller, supabase, [String(f.sfg_id).trim().toUpperCase()]))) return
     try {
       const record = {
         sfg_id:            f.sfg_id       ? String(f.sfg_id).trim()      : null,
@@ -662,8 +663,9 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── POST /api/policies?type=import  (bulk import) ─────────────────────────
+  // ── POST /api/policies?type=import  (bulk import, super_admin only) ─────────
   if (req.method === 'POST' && type === 'import') {
+    if (!(await requireSuperAdmin(req, res))) return
     const { rows } = req.body ?? {}
     if (!Array.isArray(rows) || !rows.length) {
       return res.status(400).json({ error: 'No rows provided' })
@@ -736,6 +738,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing or invalid id or updates' })
     }
 
+    // Resolve the policy's owning agent and authorize before mutating.
+    {
+      const { data: pol } = await supabase.from('policies').select('sfg_id').eq('id', id).maybeSingle()
+      if (!pol) return res.status(404).json({ error: 'Policy not found' })
+      if (!(await authorizeScope(req, res, caller, supabase, [pol.sfg_id]))) return
+    }
+
     // Whitelist of actual table columns — prevents phantom fields (e.g. derived
     // "agent" name) from reaching Supabase and causing a 400/500.
     const ALLOWED_COLS = new Set([
@@ -766,6 +775,9 @@ export default async function handler(req, res) {
   if (req.method === 'DELETE') {
     const { id } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'Missing policy id' })
+    const { data: pol } = await supabase.from('policies').select('sfg_id').eq('id', id).maybeSingle()
+    if (!pol) return res.status(404).json({ error: 'Policy not found' })
+    if (!(await authorizeScope(req, res, caller, supabase, [pol.sfg_id]))) return
     try {
       const { error } = await supabase.from('policies').delete().eq('id', id)
       if (error) throw error

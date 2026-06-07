@@ -99,11 +99,6 @@ const SORT_OPTIONS = [
 
 export default function WeeklyMetricsPage() {
   const { activeSubject, permissions } = useViewing()
-  if (!permissions.metrics.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
-    </main>
-  )
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [policies, setPolicies]     = useState([])
   const [metrics, setMetrics]               = useState(null)
@@ -194,6 +189,11 @@ export default function WeeklyMetricsPage() {
       .slice(0, TOP_N)
   }, [weeks, topSort])
 
+  if (!permissions.metrics.read) return (
+    <main className="max-w-4xl mx-auto px-6 py-8">
+      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    </main>
+  )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
       <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view metrics.</p>

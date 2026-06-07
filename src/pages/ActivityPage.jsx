@@ -136,11 +136,6 @@ function getStatDateRange(rangeKey) {
 
 export default function ActivityPage() {
   const { activeSubject, permissions } = useViewing()
-  if (!permissions.activity.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
-    </main>
-  )
 
   const [weekStart,  setWeekStart]  = useState(() => getWeekStart(new Date()))
   const [logs,       setLogs]       = useState({}) // { 'YYYY-MM-DD': row }
@@ -361,7 +356,12 @@ export default function ActivityPage() {
     ]
   }, [totals])
 
-  // ── Guard ────────────────────────────────────────────────────────────────────
+  // ── Guards ───────────────────────────────────────────────────────────────────
+  if (!permissions.activity.read) return (
+    <main className="max-w-4xl mx-auto px-6 py-8">
+      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    </main>
+  )
   if (!activeSubject) {
     return (
       <div className="flex items-center justify-center py-24">

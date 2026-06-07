@@ -130,11 +130,6 @@ const TYPE_FILTERS = [
 export default function LeadsPage() {
   const { session, userProfile, fetchAndSetProfile } = useAuth()
   const { activeSubject, permissions } = useViewing()
-  if (!permissions.leads.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
-    </main>
-  )
 
   // Auth header for all leads API calls
   function authHeaders(extra) {
@@ -397,6 +392,11 @@ export default function LeadsPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  if (!permissions.leads.read) return (
+    <main className="max-w-4xl mx-auto px-6 py-8">
+      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    </main>
+  )
   if (!activeSubject) {
     return (
       <div className="flex items-center justify-center py-24">

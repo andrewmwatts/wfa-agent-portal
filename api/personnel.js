@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth, authorizeScope, getAllowedSfgIds } from './_auth.js'
+import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -198,6 +198,7 @@ export default async function handler(req, res) {
   if (req.method === 'PUT' && req.query.action === 'upsert_contract') {
     const { sfg_id, carrier, contract_number } = req.body ?? {}
     if (!sfg_id || !carrier) return res.status(400).json({ error: 'sfg_id and carrier required' })
+    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
     try {
       if (!contract_number?.trim()) {
@@ -423,6 +424,7 @@ export default async function handler(req, res) {
     }
 
     const normalSfgId = sfg_id.trim().toUpperCase()
+    if (!(await authorizeScope(req, res, caller, supabase, [normalSfgId]))) return
     const patch = {}
     const milChanges = {} // { 'commission:2': { type, level, 0: val, 1: val }, ... }
 
@@ -518,8 +520,9 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── POST — bulk upsert agents ──────────────────────────────────────────────
+  // ── POST — bulk upsert agents (super_admin only) ──────────────────────────
   if (req.method === 'POST') {
+    if (!(await requireSuperAdmin(req, res))) return
     let rows, statusUpdates
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
