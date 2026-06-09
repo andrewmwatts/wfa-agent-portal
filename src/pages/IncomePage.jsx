@@ -1441,7 +1441,8 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
 
 export default function IncomePage() {
   const { theme } = useTheme()
-  const { permissions } = useViewing()
+  const { permissions, activeSubject, isSelf } = useViewing()
+  const { userProfile } = useAuth()
 
   const [allTx,   setAllTx]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -1454,11 +1455,18 @@ export default function IncomePage() {
   const [importOpen, setImportOpen] = useState(false)
   const [deleteErr,  setDeleteErr]  = useState(null)
 
+  const viewAsSfgId = (!isSelf && userProfile?.role === 'super_admin' && activeSubject?.sfg_id)
+    ? activeSubject.sfg_id
+    : null
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/transactions')
+      const url = viewAsSfgId
+        ? `/api/transactions?view_as=${encodeURIComponent(viewAsSfgId)}`
+        : '/api/transactions'
+      const res = await fetch(url)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to load transactions')
       setAllTx(data.transactions ?? [])
@@ -1467,7 +1475,7 @@ export default function IncomePage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [viewAsSfgId])
 
   useEffect(() => { load() }, [load])
 

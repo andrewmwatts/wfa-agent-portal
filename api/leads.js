@@ -439,7 +439,7 @@ export default async function handler(req, res) {
     const sfgId = await resolveCallerSfgId(req, body.sfg_id)
     if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { name, ...fields } = body
+    const { name, sfg_id: _sfg, preferred_name: _pn, ...fields } = body
     if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
 
     const { data, error } = await sb
@@ -468,6 +468,7 @@ export default async function handler(req, res) {
     delete patch.id
     delete patch.sfg_id
     delete patch.created_at
+    delete patch.preferred_name
     patch.updated_at = new Date().toISOString()
 
     if (!bypass) {

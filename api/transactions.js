@@ -41,12 +41,18 @@ export default async function handler(req, res) {
 
   // ── GET ───────────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
+    // Super admins may pass ?view_as=<sfg_id> to read another user's transactions
+    let targetSfgId = sfgId
+    if (req.query.view_as && caller.role === 'super_admin') {
+      targetSfgId = req.query.view_as.trim().toUpperCase()
+    }
+
     // Hashes-only mode: used by bulk import to detect duplicates client-side
     if (req.query.hashes_only === '1') {
       const { data, error } = await supabase
         .from('transactions')
         .select('import_hash')
-        .eq('sfg_id', sfgId)
+        .eq('sfg_id', targetSfgId)
         .not('import_hash', 'is', null)
       if (error) return res.status(500).json({ error: error.message })
       return res.status(200).json({ hashes: (data ?? []).map(r => r.import_hash) })
@@ -55,7 +61,7 @@ export default async function handler(req, res) {
     let query = supabase
       .from('transactions')
       .select('*')
-      .eq('sfg_id', sfgId)
+      .eq('sfg_id', targetSfgId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
 

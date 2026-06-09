@@ -3,8 +3,9 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer,
 } from 'recharts'
-import { useAuth }  from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
+import { useAuth }    from '../context/AuthContext'
+import { useViewing } from '../context/ViewingContext'
+import { useTheme }   from '../context/ThemeContext'
 import { fmtDate, parseDateLocal } from '../utils/format'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -1270,6 +1271,7 @@ const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
 
 export default function CoachingPage() {
   const { userProfile, session } = useAuth()
+  const { activeSubject, isSelf } = useViewing()
   const { theme }                = useTheme()
   const isDark                   = theme === 'dark'
   const token                    = session?.access_token
@@ -1295,17 +1297,20 @@ export default function CoachingPage() {
   }
 
   // ── Load downline for agent selector ──────────────────────────────────────
+  // When viewing as another user, load their downline instead of ours
+  const rootSfgId = (!isSelf && activeSubject?.sfg_id) ? activeSubject.sfg_id : userProfile?.sfg_id
+
   useEffect(() => {
-    if (!userProfile?.sfg_id || !token) return
+    if (!rootSfgId || !token) return
     setAgentsLoading(true)
-    fetch(`/api/personnel?root=${encodeURIComponent(userProfile.sfg_id)}&mode=master`, {
+    fetch(`/api/personnel?root=${encodeURIComponent(rootSfgId)}&mode=master`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
       .then(rows => {
-        const callerSfg = userProfile.sfg_id.toUpperCase()
+        const rootUpper = rootSfgId.toUpperCase()
         const list = (Array.isArray(rows) ? rows : [])
-          .filter(a => a.sfg_id.toUpperCase() !== callerSfg)
+          .filter(a => a.sfg_id.toUpperCase() !== rootUpper)
           .map(a => ({
             sfg_id:           a.sfg_id,
             name:             a.name || a.preferred_name || '',
@@ -1319,7 +1324,7 @@ export default function CoachingPage() {
       })
       .catch(err => console.error('[coaching/agents]', err))
       .finally(() => setAgentsLoading(false))
-  }, [userProfile?.sfg_id, token])
+  }, [rootSfgId, token])
 
   // ── Load coaching data when agent selected ────────────────────────────────
   useEffect(() => {
