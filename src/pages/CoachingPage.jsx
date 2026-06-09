@@ -390,68 +390,27 @@ function AgentHeader({ agent, promotions, nextCommTarget, nextLeadTarget }) {
         </div>
       </div>
 
-      {/* Next promotion targets */}
+      {/* Next promotion targets — inline text, same weight as Level/Upline */}
       {(nextCommTarget || nextLeadTarget) && (
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-3">
-            Next Targets
-          </p>
-          <div className="flex flex-wrap gap-3">
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-white/8 flex flex-wrap gap-x-5 gap-y-1">
             {nextCommTarget && (
-              <div className="flex-1 min-w-[180px] rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/8 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-400 dark:text-blue-400/70 mb-1">
-                  Commission → Level {nextCommTarget.level}
-                </p>
-                <div className="flex gap-4 flex-wrap">
-                  {nextCommTarget.regular != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Regular</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextCommTarget.regular)}</p>
-                    </div>
-                  )}
-                  {nextCommTarget.slingshot != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Slingshot ⚡</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextCommTarget.slingshot)}</p>
-                    </div>
-                  )}
-                  {nextCommTarget.writers != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Writers</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{nextCommTarget.writers}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <p className="text-sm text-gray-500 dark:text-white/50">
+                Next commission:
+                <span className="font-medium text-gray-700 dark:text-white/70"> Lvl {nextCommTarget.level}</span>
+                {nextCommTarget.regular != null && <span className="text-gray-400 dark:text-white/40"> · {fmtAPV(nextCommTarget.regular)} reg</span>}
+                {nextCommTarget.slingshot != null && <span className="text-gray-400 dark:text-white/40"> · {fmtAPV(nextCommTarget.slingshot)} ⚡</span>}
+                {nextCommTarget.writers != null && <span className="text-gray-400 dark:text-white/40"> · {nextCommTarget.writers} writers</span>}
+              </p>
             )}
             {nextLeadTarget && (
-              <div className="flex-1 min-w-[180px] rounded-xl border border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/8 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-400 dark:text-violet-400/70 mb-1">
-                  Leadership → {nextLeadTarget.level}
-                </p>
-                <div className="flex gap-4 flex-wrap">
-                  {nextLeadTarget.regular != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Regular</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextLeadTarget.regular)}</p>
-                    </div>
-                  )}
-                  {nextLeadTarget.slingshot != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Slingshot ⚡</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextLeadTarget.slingshot)}</p>
-                    </div>
-                  )}
-                  {nextLeadTarget.writers != null && (
-                    <div>
-                      <p className="text-[10px] text-gray-400 dark:text-white/35">Writers</p>
-                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{nextLeadTarget.writers}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <p className="text-sm text-gray-500 dark:text-white/50">
+                Next leadership:
+                <span className="font-medium text-gray-700 dark:text-white/70"> {nextLeadTarget.level}</span>
+                {nextLeadTarget.regular != null && <span className="text-gray-400 dark:text-white/40"> · {fmtAPV(nextLeadTarget.regular)} reg</span>}
+                {nextLeadTarget.slingshot != null && <span className="text-gray-400 dark:text-white/40"> · {fmtAPV(nextLeadTarget.slingshot)} ⚡</span>}
+                {nextLeadTarget.writers != null && <span className="text-gray-400 dark:text-white/40"> · {nextLeadTarget.writers} writers</span>}
+              </p>
             )}
-          </div>
         </div>
       )}
 
