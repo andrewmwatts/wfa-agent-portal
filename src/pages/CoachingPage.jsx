@@ -25,6 +25,9 @@ const SUBMITTED_COLOR = '#3b82f6'
 const ISSUED_COLOR    = '#22c55e'
 const LINE_COLORS     = ['#3b82f6', '#10b981', '#f59e0b']
 
+const CONTRACT_LEVELS   = [85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
+const LEADERSHIP_ORDER  = ['TL', 'KL', 'AO']
+
 // ─── Date / period helpers ─────────────────────────────────────────────────────
 
 function toYMD(d) {
@@ -343,7 +346,7 @@ function AgentSelector({ agents, selectedSfgId, onSelect }) {
 
 // ─── Section 1: Agent Header (with inline promotion history) ──────────────────
 
-function AgentHeader({ agent, promotions }) {
+function AgentHeader({ agent, promotions, nextCommTarget, nextLeadTarget }) {
   const ten   = tenure(agent.hire_date)
   const isAct = (agent.status ?? '').toLowerCase() !== 'inactive'
 
@@ -351,6 +354,8 @@ function AgentHeader({ agent, promotions }) {
   const commPromos = (promotions ?? [])
     .filter(p => p.promotion_type === 'commission' && p.qualified_date)
     .sort((a, b) => a.qualified_date.localeCompare(b.qualified_date))
+
+  const fmtAPV = v => v != null ? `$${Math.round(v).toLocaleString()}` : '—'
 
   return (
     <CardShell className="p-6">
@@ -383,6 +388,71 @@ function AgentHeader({ agent, promotions }) {
           </span>
         </div>
       </div>
+
+      {/* Next promotion targets */}
+      {(nextCommTarget || nextLeadTarget) && (
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-3">
+            Next Targets
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {nextCommTarget && (
+              <div className="flex-1 min-w-[180px] rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/8 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-400 dark:text-blue-400/70 mb-1">
+                  Commission → Level {nextCommTarget.level}
+                </p>
+                <div className="flex gap-4 flex-wrap">
+                  {nextCommTarget.regular != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Regular</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextCommTarget.regular)}</p>
+                    </div>
+                  )}
+                  {nextCommTarget.slingshot != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Slingshot ⚡</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextCommTarget.slingshot)}</p>
+                    </div>
+                  )}
+                  {nextCommTarget.writers != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Writers</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{nextCommTarget.writers}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {nextLeadTarget && (
+              <div className="flex-1 min-w-[180px] rounded-xl border border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/8 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-400 dark:text-violet-400/70 mb-1">
+                  Leadership → {nextLeadTarget.level}
+                </p>
+                <div className="flex gap-4 flex-wrap">
+                  {nextLeadTarget.regular != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Regular</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextLeadTarget.regular)}</p>
+                    </div>
+                  )}
+                  {nextLeadTarget.slingshot != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Slingshot ⚡</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{fmtAPV(nextLeadTarget.slingshot)}</p>
+                    </div>
+                  )}
+                  {nextLeadTarget.writers != null && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 dark:text-white/35">Writers</p>
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{nextLeadTarget.writers}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Compact promotion timeline */}
       {commPromos.length > 0 && (
@@ -1211,6 +1281,7 @@ export default function CoachingPage() {
   const [data,          setData]          = useState(null)
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
+  const [qualMap,       setQualMap]       = useState({})
 
   // Role guard
   if (userProfile && !LEADER_ROLES.has(userProfile.role)) {
@@ -1263,6 +1334,15 @@ export default function CoachingPage() {
       .catch(err => setError(err.message ?? 'Failed to load agent data'))
       .finally(() => setLoading(false))
   }, [selectedSfgId, token])
+
+  // ── Load qualifications (cached on server; fetch once) ───────────────────
+  useEffect(() => {
+    if (!token) return
+    fetch('/api/activity?type=qualifications', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.qualifications) setQualMap(d.qualifications) })
+      .catch(() => {})
+  }, [token])
 
   function handleSelect(sfgId) {
     sessionStorage.setItem('coaching-agent', sfgId)
@@ -1343,11 +1423,37 @@ export default function CoachingPage() {
       )}
 
       {/* ── Sections ─────────────────────────────────────────────────────────── */}
-      {selectedSfgId && !loading && data && (
+      {selectedSfgId && !loading && data && (() => {
+        // ── Compute next commission target ──────────────────────────────────
+        const currCommLevel = data.agent.commission_level  // e.g. 100 (number or null)
+        const nextCommLevel = CONTRACT_LEVELS.find(l => currCommLevel == null ? true : l > currCommLevel) ?? null
+        const nextCommTarget = nextCommLevel != null && qualMap[String(nextCommLevel)]
+          ? { level: nextCommLevel, ...qualMap[String(nextCommLevel)] }
+          : null
+
+        // ── Compute next leadership target ─────────────────────────────────
+        const leaderPromos = (data.promotions ?? [])
+          .filter(p => p.promotion_type === 'leadership' && p.qualified_date)
+        const highestLeadLevel = LEADERSHIP_ORDER.reduce((found, lv) => {
+          return leaderPromos.some(p => String(p.level).toUpperCase() === lv) ? lv : found
+        }, null)
+        const nextLeadLevel = highestLeadLevel == null
+          ? LEADERSHIP_ORDER[0]
+          : LEADERSHIP_ORDER[LEADERSHIP_ORDER.indexOf(highestLeadLevel) + 1] ?? null
+        const nextLeadTarget = nextLeadLevel != null && qualMap[nextLeadLevel]
+          ? { level: nextLeadLevel, ...qualMap[nextLeadLevel] }
+          : null
+
+        return (
         <div className="space-y-6">
 
           {/* 1. Agent Header (includes promotion history) */}
-          <AgentHeader agent={data.agent} promotions={data.promotions} />
+          <AgentHeader
+            agent={data.agent}
+            promotions={data.promotions}
+            nextCommTarget={nextCommTarget}
+            nextLeadTarget={nextLeadTarget}
+          />
 
           {/* 2. Production Summary */}
           <SectionCard title="Production Summary">
@@ -1389,7 +1495,8 @@ export default function CoachingPage() {
           </SectionCard>
 
         </div>
-      )}
+        )
+      })()}
     </main>
     </>
   )

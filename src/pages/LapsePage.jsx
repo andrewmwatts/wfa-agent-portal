@@ -283,10 +283,10 @@ export default function LapsePage() {
       ) : (
         <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[820px]">
+            <table className="w-full text-sm min-w-[960px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
-                  {['Agent', 'Client', 'Carrier', 'Status', 'Issued APV', 'Expected Lapse Date', 'Days'].map(h => (
+                  {['Agent', 'Client', 'Carrier', 'Status', 'Issued APV', 'Issue Date', 'Expected Lapse Date', 'Days'].map(h => (
                     <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 first:pl-5 last:pr-5 whitespace-nowrap">
                       {h}
                     </th>
@@ -315,6 +315,7 @@ export default function LapsePage() {
                       <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{p.carrier}</td>
                       <td className="px-4 py-3"><ConsBadge status={p.conservation_status} urg={urg} /></td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.issue_date)}</td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
                       <td className="px-4 py-3 pr-5"><DaysBadge days={days} /></td>
                     </tr>

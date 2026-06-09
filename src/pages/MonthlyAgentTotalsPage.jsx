@@ -531,6 +531,9 @@ export default function MonthlyAgentTotalsPage() {
         return Math.max(best, legApv)
       }, 0)
 
+      // Agent personal submitted APV (submit-week-based, for the selected month)
+      const agentSubmitted = ownPols.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
+
       // Weekly submission lookup — must come before promoStatuses so submissionMet can be passed in
       const agentWeekNums      = new Set(ownPols.map(p => p.submit_week_num?.trim()).filter(Boolean))
       const hasSlingshotTarget = (promoQual?.slingshot ?? null) !== null
@@ -563,7 +566,8 @@ export default function MonthlyAgentTotalsPage() {
       return {
         sfg_id: agent.sfg_id,
         name:   agent.name,
-        agentIssued, agentPending, agentIncomplete,
+        agentSubmitted, agentIssued, agentPending, agentIncomplete,
+        ownPols,
         teamIssued, teamPending, teamIncomplete,
         writers,
         hasDownlines,
@@ -674,12 +678,13 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
   const BL = 'border-l border-gray-200 dark:border-white/10'
 
   const thGroup = (color, extra = '') =>
-    `text-xs font-bold uppercase tracking-widest px-3 py-1.5 text-center border-b border-gray-200 dark:border-white/10 ${color} ${extra}`
+    `text-xs font-bold uppercase tracking-widest px-2.5 py-1.5 text-center border-b border-gray-200 dark:border-white/10 ${color} ${extra}`
 
   const thCol = (extra = '') =>
-    `text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-3 py-2 text-right whitespace-nowrap ${extra}`
+    `text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-2.5 py-2 text-right whitespace-nowrap ${extra}`
 
-  const THEAD_BG = 'bg-gray-50 dark:bg-white/[0.04]'
+  const THEAD_BG  = 'bg-gray-50 dark:bg-white/[0.04]'
+  const STICKY_BG = 'bg-gray-50 dark:bg-[#003539]'
 
   return (
     <div className="border border-gray-200 dark:border-white/10 rounded-2xl [overflow:clip]">
@@ -690,11 +695,11 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
             <tr className={`border-b border-gray-200 dark:border-white/10 ${THEAD_BG}`}>
               <th
                 rowSpan={2}
-                className={`text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-2 text-left sticky left-0 z-20 ${THEAD_BG} border-r border-gray-200 dark:border-white/10 whitespace-nowrap`}
+                className={`text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-3 py-2 text-left sticky left-0 z-20 ${STICKY_BG} border-r border-gray-200 dark:border-white/10 whitespace-nowrap`}
               >
                 Agent
               </th>
-              <th className={thGroup('text-blue-600 dark:text-blue-300', BL)} colSpan={3}>Agent</th>
+              <th className={thGroup('text-blue-600 dark:text-blue-300', BL)} colSpan={4}>Agent</th>
               <th className={thGroup('text-accent dark:text-accent/80', BL)} colSpan={4}>Team</th>
               <th className={thGroup('text-emerald-600 dark:text-emerald-400', BL)} colSpan={3}>Promotion Targets</th>
               <th className={thGroup('text-purple-600 dark:text-purple-400', BL)} colSpan={2}>Leadership Targets</th>
@@ -708,7 +713,8 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
             {/* ── Row 2: Column labels ────────────────────────────────────── */}
             <tr className={`border-b border-gray-200 dark:border-white/10 ${THEAD_BG}`}>
               {/* Agent */}
-              <th className={thCol(BL)}>Issued</th>
+              <th className={thCol(BL)}>Submitted</th>
+              <th className={thCol()}>Issued</th>
               <th className={thCol()}>Pending</th>
               <th className={thCol()}>Incomplete</th>
               {/* Team */}
@@ -733,7 +739,7 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
           <tbody className="divide-y divide-gray-100 dark:divide-white/5">
             {agentRows.length === 0 ? (
               <tr>
-                <td colSpan={13 + weekColumns.length} className="text-center py-14 text-gray-400 dark:text-white/30 text-sm">
+                <td colSpan={14 + weekColumns.length} className="text-center py-14 text-gray-400 dark:text-white/30 text-sm">
                   No submissions found for this month.
                 </td>
               </tr>
@@ -874,8 +880,9 @@ function PolicyBreakdownModal({ modal, onClose }) {
 // ─── Agent Row ─────────────────────────────────────────────────────────────────
 
 function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
-  const BL    = 'border-l border-gray-100 dark:border-white/5 '
-  const rowBg = isEven ? 'bg-white dark:bg-transparent' : 'bg-gray-50/50 dark:bg-white/[0.018]'
+  const BL       = 'border-l border-gray-100 dark:border-white/5 '
+  const rowBg    = isEven ? 'bg-white dark:bg-transparent' : 'bg-gray-50/50 dark:bg-white/[0.018]'
+  const stickyBg = isEven ? 'bg-white dark:bg-[#003539]'  : 'bg-gray-50 dark:bg-[#003539]'
 
   // Production cells — value, dash, or negative (red); clickable when non-zero
   function apvCell(v, borderL = false, modalConfig = null) {
@@ -886,7 +893,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
     const clickable = modalConfig && (v !== 0 || hasChargebacks)
     return (
       <td
-        className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap ${cls} ${clickable ? 'cursor-pointer hover:underline' : ''}`}
+        className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums whitespace-nowrap ${cls} ${clickable ? 'cursor-pointer hover:underline' : ''}`}
         onClick={clickable ? () => onCellClick(modalConfig) : undefined}
       >
         {(v !== 0 || clickable) ? fmtAmt(v) : '—'}
@@ -896,7 +903,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
 
   function numCell(v, borderL = false) {
     return (
-      <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums ${v > 0 ? 'text-gray-700 dark:text-white/80' : 'text-gray-300 dark:text-white/20'}`}>
+      <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums ${v > 0 ? 'text-gray-700 dark:text-white/80' : 'text-gray-300 dark:text-white/20'}`}>
         {v > 0 ? v : '—'}
       </td>
     )
@@ -905,10 +912,10 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
   // Target cells — with conditional highlighting
   function targetApvCell(value, status, borderL = false) {
     if (value == null) {
-      return <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
+      return <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
     }
     return (
-      <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
+      <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
         <span className={`px-1.5 py-0.5 ${hlCls(status)}`}>{fmtAmt(value)}</span>
       </td>
     )
@@ -916,10 +923,10 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
 
   function targetNumCell(value, status, borderL = false) {
     if (value == null) {
-      return <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
+      return <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
     }
     return (
-      <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums`}>
+      <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums`}>
         <span className={`px-1.5 py-0.5 ${hlCls(status)}`}>{value}</span>
       </td>
     )
@@ -928,10 +935,10 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
   // Leadership target cells — blank if no downlines
   function leadApvCell(value, status, hasDownlines, borderL = false) {
     if (!hasDownlines || value == null) {
-      return <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
+      return <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
     }
     return (
-      <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
+      <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
         <span className={`px-1.5 py-0.5 ${hlCls(status)}`}>{fmtAmt(value)}</span>
       </td>
     )
@@ -939,10 +946,10 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
 
   function leadNumCell(value, status, hasDownlines, borderL = false) {
     if (!hasDownlines || value == null) {
-      return <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
+      return <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right text-gray-300 dark:text-white/15`}>—</td>
     }
     return (
-      <td className={`${borderL ? BL : ''}px-3 py-2 text-xs text-right tabular-nums`}>
+      <td className={`${borderL ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums`}>
         <span className={`px-1.5 py-0.5 ${hlCls(status)}`}>{value}</span>
       </td>
     )
@@ -951,13 +958,16 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
   return (
     <tr className={`${rowBg} hover:bg-accent/5 dark:hover:bg-accent/[0.06] transition-colors`}>
 
-      {/* Name — sticky */}
-      <td className={`px-4 py-2 text-xs font-medium text-gray-900 dark:text-white sticky left-0 z-10 border-r border-gray-100 dark:border-white/5 whitespace-nowrap ${rowBg}`}>
+      {/* Name — sticky with opaque background to block scrolled content */}
+      <td className={`px-3 py-2 text-xs font-medium text-gray-900 dark:text-white sticky left-0 z-10 border-r border-gray-100 dark:border-white/5 whitespace-nowrap ${stickyBg}`}>
         {r.name || r.sfg_id}
       </td>
 
       {/* Agent APVs */}
-      {apvCell(r.agentIssued, true,
+      {apvCell(r.agentSubmitted, true,
+        { title: `${r.name} — Agent Submitted`, pols: r.ownPols, cbPols: [],
+          showAgent: false, apvField: 'submitted_apv', showNotes: true })}
+      {apvCell(r.agentIssued, false,
         { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols,
           likelyCbPols: r.ownLikelyCbPols,
           showAgent: false, apvField: 'issued_apv', showNotes: false })}
@@ -995,7 +1005,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
         const hasIt = r.agentWeekNums.has(wk.numStr)
         const show  = r.submissionStatus !== 'suppress' && hasIt
         return (
-          <td key={wk.numStr} className={`${i === 0 ? BL : ''}px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
+          <td key={wk.numStr} className={`${i === 0 ? BL : ''}px-2.5 py-2 text-xs text-right tabular-nums whitespace-nowrap`}>
             {show
               ? <span className={`px-1.5 py-0.5 ${hlCls(r.submissionStatus)}`}>{wk.label}</span>
               : <span className="text-gray-300 dark:text-white/15">—</span>
