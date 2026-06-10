@@ -93,11 +93,17 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'transactions array required' })
       }
 
+      // Super admins may write on behalf of another user
+      let bulkSfgId = sfgId
+      if (req.query.view_as && caller.role === 'super_admin') {
+        bulkSfgId = req.query.view_as.trim().toUpperCase()
+      }
+
       const enriched = rows.map(r => {
         // r.amount is already signed (positive=income, negative=expense)
         const signedAmt = r.type === 'expense' ? -Math.abs(Number(r.amount)) : Math.abs(Number(r.amount))
         return {
-          sfg_id:         sfgId,
+          sfg_id:         bulkSfgId,
           date:           r.date,
           description:    r.description,
           amount:         signedAmt,
@@ -137,6 +143,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'type must be income or expense' })
     }
 
+    // Super admins may write on behalf of another user
+    let writeSfgId = sfgId
+    if (req.query.view_as && caller.role === 'super_admin') {
+      writeSfgId = req.query.view_as.trim().toUpperCase()
+    }
+
     const signedAmt = type === 'expense' ? -Math.abs(Number(amount)) : Math.abs(Number(amount))
     const hash = txHash(date, signedAmt, description)
 
@@ -144,7 +156,7 @@ export default async function handler(req, res) {
       const { data: existing } = await supabase
         .from('transactions')
         .select('id, date, description, amount, type')
-        .eq('sfg_id', sfgId)
+        .eq('sfg_id', writeSfgId)
         .eq('import_hash', hash)
         .maybeSingle()
 
@@ -160,7 +172,7 @@ export default async function handler(req, res) {
     const { data, error } = await supabase
       .from('transactions')
       .insert({
-        sfg_id: sfgId,
+        sfg_id: writeSfgId,
         date, description,
         amount: signedAmt,
         type,
@@ -196,7 +208,7 @@ export default async function handler(req, res) {
       .eq('id', id)
       .maybeSingle()
     if (!current)            return res.status(404).json({ error: 'Transaction not found' })
-    if (current.sfg_id !== sfgId) return res.status(403).json({ error: 'Forbidden' })
+    if (current.sfg_id !== sfgId && caller.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden' })
 
     const { date, description, amount, type, category, source, tax_deductible, notes } = body
 
@@ -244,7 +256,7 @@ export default async function handler(req, res) {
       .eq('id', id)
       .maybeSingle()
     if (!existing)               return res.status(404).json({ error: 'Transaction not found' })
-    if (existing.sfg_id !== sfgId) return res.status(403).json({ error: 'Forbidden' })
+    if (existing.sfg_id !== sfgId && caller.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden' })
 
     const { error } = await supabase.from('transactions').delete().eq('id', id)
     if (error) return res.status(500).json({ error: error.message })
