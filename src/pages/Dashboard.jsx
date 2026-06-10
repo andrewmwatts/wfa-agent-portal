@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useAuth } from '../context/AuthContext'
 import MetricsSection from '../components/sections/MetricsSection'
@@ -24,6 +24,12 @@ export default function Dashboard() {
 
   // Director = role-based; drives master/baseshop toggle + parallel data fetching
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
+
+  // Baseshop sfg_id set — used to filter pending/lapse to own baseshop for directors
+  const baseshopSfgIds = useMemo(
+    () => new Set(baseshopPersonnel.map(p => (p.sfg_id ?? '').toUpperCase())),
+    [baseshopPersonnel]
+  )
   const showActivitySummary = ['agent', 'leader', 'super_admin'].includes(activeSubject?.role)
   const [loading,    setLoading]    = useState(false)
 
@@ -146,8 +152,10 @@ export default function Dashboard() {
         <PendingBusinessSection
           subject={activeSubject}
           canWrite={permissions.appsAndPolicies.write}
-          pending={[...(baseshopAppsData?.pending ?? []), ...(baseshopAppsData?.incomplete ?? [])]}
-          lapse={baseshopAppsData?.lapse ?? []}
+          pending={[...(baseshopAppsData?.pending ?? []), ...(baseshopAppsData?.incomplete ?? [])]
+            .filter(p => !isDirector || baseshopSfgIds.has((p.sfg_id ?? '').toUpperCase()))}
+          lapse={(baseshopAppsData?.lapse ?? [])
+            .filter(p => !isDirector || baseshopSfgIds.has((p.sfg_id ?? '').toUpperCase()))}
           loading={loading}
         />
       )}
