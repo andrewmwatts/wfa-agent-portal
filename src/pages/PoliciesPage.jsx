@@ -107,6 +107,7 @@ export default function PoliciesPage() {
 
   // Quick filter — default to This Month
   const [quickFilter,   setQuickFilter]   = useState('this-month')
+  const [notInOptOnly,  setNotInOptOnly]  = useState(false)
 
   // Dropdown / search filters
   const [search,        setSearch]        = useState('')
@@ -290,6 +291,9 @@ export default function PoliciesPage() {
       // ── Agent dropdown ───────────────────────────────────────────────────
       if (agentFilter !== 'all' && p.agent?.toLowerCase() !== agentFilter) return false
 
+      // ── Not in Opt toggle ────────────────────────────────────────────────
+      if (notInOptOnly && !p.not_in_opt) return false
+
       // ── Search ───────────────────────────────────────────────────────────
       if (q && !p.applicant?.toLowerCase().includes(q) && !p.agent?.toLowerCase().includes(q) && !p.policy_no?.toLowerCase().includes(q)) return false
 
@@ -303,7 +307,7 @@ export default function PoliciesPage() {
 
       return true
     })
-  }, [policies, quickFilter, search, statusFilter, carrierFilter, agentFilter,
+  }, [policies, quickFilter, notInOptOnly, search, statusFilter, carrierFilter, agentFilter,
       dateField, dateStart, dateEnd, monthStart, monthEnd, lmStart, lmEnd])
 
   // ── Sorted rows ───────────────────────────────────────────────────────────
@@ -334,11 +338,11 @@ export default function PoliciesPage() {
     p.status?.toLowerCase() === 'issued' ? s + (Number(p.issued_apv) || 0) : s, 0)
 
   const hasCustomDate      = dateStart || dateEnd
-  const hasSecondaryFilter = search || statusFilter !== 'all' || carrierFilter !== 'all' || agentFilter !== 'all' || hasCustomDate
+  const hasSecondaryFilter = search || statusFilter !== 'all' || carrierFilter !== 'all' || agentFilter !== 'all' || hasCustomDate || notInOptOnly
 
   function clearAll() {
     setSearch(''); setStatusFilter('all'); setCarrierFilter('all')
-    setAgentFilter('all'); setDateStart(''); setDateEnd('')
+    setAgentFilter('all'); setDateStart(''); setDateEnd(''); setNotInOptOnly(false)
   }
 
   // ── Loading skeleton ───────────────────────────────────────────────────────
@@ -421,6 +425,17 @@ export default function PoliciesPage() {
               {label}
             </button>
           ))}
+          <div className="w-px bg-gray-200 dark:bg-white/10 self-stretch mx-1" />
+          <button
+            onClick={() => setNotInOptOnly(v => !v)}
+            className={`text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors whitespace-nowrap
+              ${notInOptOnly
+                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-400/40'
+                : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/15 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
+              }`}
+          >
+            Not in Opt
+          </button>
         </div>
 
         {/* ── Secondary filters ───────────────────────────────────────────── */}
