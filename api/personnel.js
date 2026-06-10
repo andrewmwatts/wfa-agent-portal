@@ -129,7 +129,7 @@ const ALLOWED_FIELDS = new Set([
   'hire_date', 'birth_date', 'npn',
   'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
-  'phone', 'address', 'city', 'state', 'zip',
+  'phone', 'address', 'city', 'state', 'zip', 'status',
 ])
 
 // Frontend key → DB column (for fields whose names differ)
