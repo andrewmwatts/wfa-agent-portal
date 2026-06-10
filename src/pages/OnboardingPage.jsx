@@ -149,7 +149,7 @@ export default function OnboardingPage() {
     return personnel.filter(r => {
       const id = r.sfg_id?.toLowerCase() ?? ''
       if (!showHidden && hiddenIds.has(id)) return false
-      if ((contractCounts[r.sfg_id] ?? 0) >= totalCarriers) return false
+      if (!showHidden && r.contracting_complete && (contractCounts[r.sfg_id] ?? 0) >= totalCarriers) return false
       if (q && !r.name?.toLowerCase().includes(q)) return false
       if (quickFilter === 'contracting' && r.contracting_complete) return false
       return true
