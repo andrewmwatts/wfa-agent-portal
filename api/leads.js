@@ -81,10 +81,13 @@ export default async function handler(req, res) {
 
       const bypass = process.env.VITE_BYPASS_AUTH === 'true'
       if (!bypass) {
-        const sfgId = await resolveCallerSfgId(req, null)
-        if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
-        const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
-        if (!lead || lead.sfg_id !== sfgId) return res.status(403).json({ error: 'Forbidden' })
+        const caller = await getCaller(req)
+        if (!caller?.sfg_id) return res.status(401).json({ error: 'Unauthorized' })
+        // Super admins may read activity for any user's lead
+        if (caller.role !== 'super_admin') {
+          const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
+          if (!lead || lead.sfg_id !== caller.sfg_id) return res.status(403).json({ error: 'Forbidden' })
+        }
       }
 
       const { data, error } = await sb
@@ -105,10 +108,13 @@ export default async function handler(req, res) {
 
       const bypass = process.env.VITE_BYPASS_AUTH === 'true'
       if (!bypass) {
-        const callerSfgId = await resolveCallerSfgId(req, sfg_id)
-        if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
-        const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
-        if (!lead || lead.sfg_id !== callerSfgId) return res.status(403).json({ error: 'Forbidden' })
+        const caller = await getCaller(req)
+        if (!caller?.sfg_id) return res.status(401).json({ error: 'Unauthorized' })
+        // Super admins may add activity to any user's lead
+        if (caller.role !== 'super_admin') {
+          const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', lead_id).single()
+          if (!lead || lead.sfg_id !== caller.sfg_id) return res.status(403).json({ error: 'Forbidden' })
+        }
       }
 
       const { data: entry, error: entryErr } = await sb
@@ -436,8 +442,13 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const body = req.body ?? {}
-    const sfgId = await resolveCallerSfgId(req, body.sfg_id)
-    if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+    const caller = await getCaller(req)
+    if (!caller?.sfg_id) return res.status(401).json({ error: 'Unauthorized' })
+
+    // Super admins may write on behalf of another user via body.sfg_id
+    const sfgId = (caller.role === 'super_admin' && body.sfg_id)
+      ? String(body.sfg_id).trim().toUpperCase()
+      : caller.sfg_id
 
     const { name, sfg_id: _sfg, preferred_name: _pn, ...fields } = body
     if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
@@ -472,16 +483,15 @@ export default async function handler(req, res) {
     patch.updated_at = new Date().toISOString()
 
     if (!bypass) {
-      const sfgId = await resolveCallerSfgId(req, null)
-      if (!sfgId) return res.status(401).json({ error: 'Unauthorized' })
+      const caller = await getCaller(req)
+      if (!caller?.sfg_id) return res.status(401).json({ error: 'Unauthorized' })
 
-      const { data, error } = await sb
-        .from('leads')
-        .update(patch)
-        .eq('id', id)
-        .eq('sfg_id', sfgId)
-        .select()
-        .single()
+      let query = sb.from('leads').update(patch).eq('id', id)
+      // Super admins may update any user's lead; others restricted to their own
+      if (caller.role !== 'super_admin') {
+        query = query.eq('sfg_id', caller.sfg_id)
+      }
+      const { data, error } = await query.select().single()
 
       if (error) return res.status(500).json({ error: error.message })
       if (!data)  return res.status(404).json({ error: 'Lead not found' })

@@ -353,6 +353,7 @@ export default function AgentsPage() {
                     {/* Name */}
                     <td className="px-5 pl-6 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <StatusDot status={p.status} />
                         <span className="font-medium text-gray-900 dark:text-white">{p.name || '—'}</span>
                         {p._hasEP && <Badge label="EP" color="purple" />}
                         {p._hasTP && !p._hasEP && <Badge label="TP" color="blue" />}
@@ -465,7 +466,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
       const updates = {}
 
       // Standard fields
-      const standardKeys = ['name', 'upline_name', 'hire_date', 'birth_date', 'email', 'npn', 'opt_name', 'surelc_profile_date', 'contracting_to_producer', 'contracting_complete']
+      const standardKeys = ['name', 'upline_name', 'hire_date', 'birth_date', 'email', 'npn', 'opt_name', 'surelc_profile_date', 'contracting_to_producer', 'contracting_complete', 'phone', 'address', 'city', 'state', 'zip', 'status']
       for (const key of standardKeys) {
         if (String(draft[key] ?? '') !== String(p[key] ?? '')) {
           updates[key] = String(draft[key] ?? '')
@@ -533,6 +534,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">{p.name || '—'}</h2>
+              {p.status && <StatusDot status={p.status} showLabel />}
               {hasEP && <Badge label="EP" color="purple" />}
               {hasTP && !hasEP && <Badge label="TP" color="blue" />}
               {leadershipLvl && <LeaderPill level={leadershipLvl} />}
@@ -601,6 +603,24 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <AgentEditField label="NPN"         value={draft.npn}          onChange={v => setField('npn', v)} />
                 <AgentEditField label="Hire Date"   value={toInputDate(draft.hire_date)}  onChange={v => setField('hire_date', v)}  type="date" />
                 <AgentEditField label="Birth Date"  value={toInputDate(draft.birth_date)} onChange={v => setField('birth_date', v)} type="date" />
+                <AgentEditField label="Phone"       value={draft.phone}        onChange={v => setField('phone', v)} />
+                <AgentEditField label="Address"     value={draft.address}      onChange={v => setField('address', v)} />
+                <AgentEditField label="City"        value={draft.city}         onChange={v => setField('city', v)} />
+                <AgentEditField label="State"       value={draft.state}        onChange={v => setField('state', v)} />
+                <AgentEditField label="Zip"         value={draft.zip}          onChange={v => setField('zip', v)} />
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
+                  <select
+                    value={draft.status ?? ''}
+                    onChange={e => setField('status', e.target.value || null)}
+                    className={AGENT_INPUT_CLS}
+                  >
+                    <option value="">— Select —</option>
+                    {['Active', 'Stalled', 'Lapsed', 'Terminated'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
                 <AgentEditField label="Opt Name"    value={draft.opt_name}     onChange={v => setField('opt_name', v)} />
               </div>
             ) : (
@@ -610,6 +630,13 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <InfoField label="NPN"        value={p.npn} />
                 <InfoField label="Hire Date"  value={fmtDate(p.hire_date)} />
                 <InfoField label="Birth Date" value={fmtDate(p.birth_date)} />
+                {p.phone && <InfoField label="Phone" value={p.phone} />}
+                {(p.address || p.city || p.state || p.zip) && (
+                  <InfoField
+                    label="Address"
+                    value={[p.address, p.city, [p.state, p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+                  />
+                )}
                 <InfoField label="Opt Name"   value={p.opt_name} />
               </div>
             )}
@@ -715,6 +742,28 @@ function AgentEditField({ label, value, onChange, type = 'text' }) {
 // ─── Small components ─────────────────────────────────────────────────────────
 
 const LEADER_LABELS = { TL: 'Team Leader', KL: 'Key Leader', AO: 'Agency Owner', TP: 'Top Producer', EP: 'Elite Producer' }
+
+const STATUS_COLORS = {
+  Active:     { dot: 'bg-green-500',  text: 'text-green-700 dark:text-green-400',  ring: 'bg-green-500/10 dark:bg-green-500/15' },
+  Stalled:    { dot: 'bg-yellow-400', text: 'text-yellow-700 dark:text-yellow-300', ring: 'bg-yellow-400/10 dark:bg-yellow-400/15' },
+  Lapsed:     { dot: 'bg-amber-500',  text: 'text-amber-700 dark:text-amber-400',  ring: 'bg-amber-500/10 dark:bg-amber-500/15' },
+  Terminated: { dot: 'bg-red-500',    text: 'text-red-700 dark:text-red-400',      ring: 'bg-red-500/10 dark:bg-red-500/15' },
+}
+
+function StatusDot({ status, showLabel = false }) {
+  if (!status) return null
+  const c = STATUS_COLORS[status]
+  const dot = c?.dot ?? 'bg-gray-400'
+  if (!showLabel) {
+    return <span title={status} className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+  }
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full ${c?.ring ?? 'bg-gray-100 dark:bg-white/10'} ${c?.text ?? 'text-gray-600 dark:text-white/60'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {status}
+    </span>
+  )
+}
 
 function Badge({ label, color }) {
   const cls = color === 'purple'

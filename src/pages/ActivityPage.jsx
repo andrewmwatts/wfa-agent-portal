@@ -683,12 +683,9 @@ export default function ActivityPage() {
                       />
                     </div>
                   ))}
-                </div>
-
-                <div className="mb-4 flex gap-4 items-start">
-                  <div className="w-40">
+                  <div>
                     <label className="block text-xs font-semibold mb-1.5 text-red-500 dark:text-red-400">
-                      Lead $ <span className="font-normal text-gray-400 dark:text-white/40">(expense)</span>
+                      Lead $
                     </label>
                     <input
                       type="number"
@@ -702,18 +699,19 @@ export default function ActivityPage() {
                       className="w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums"
                     />
                   </div>
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-400 dark:text-white/40 mb-1.5">
-                      Notes <span className="font-normal">(optional)</span>
-                    </label>
-                    <textarea
-                      value={draft.notes}
-                      onChange={e => setField('notes', e.target.value)}
-                      rows={2}
-                      placeholder="Follow-ups, observations…"
-                      className="w-full text-sm rounded-lg px-3 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors resize-y"
-                    />
-                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-xs text-gray-400 dark:text-white/40 mb-1.5">
+                    Notes <span className="font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    value={draft.notes}
+                    onChange={e => setField('notes', e.target.value)}
+                    rows={2}
+                    placeholder="Follow-ups, observations…"
+                    className="w-full text-sm rounded-lg px-3 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors resize-y"
+                  />
                 </div>
 
                 {saveError && (

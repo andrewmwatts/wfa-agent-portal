@@ -12,7 +12,7 @@ import AcceptInvite from './pages/AcceptInvite'
 import Dashboard from './pages/Dashboard'
 import PoliciesPage from './pages/PoliciesPage'
 import OnboardingPage from './pages/OnboardingPage'
-import LapsePage from './pages/LapsePage'
+import EngagementPage from './pages/EngagementPage'
 import MonthlyMetricsPage from './pages/MonthlyMetricsPage'
 import WeeklyMetricsPage from './pages/WeeklyMetricsPage'
 import MonthlyAgentTotalsPage from './pages/MonthlyAgentTotalsPage'
@@ -46,7 +46,7 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/dashboard"       element={<Dashboard />} />
                 <Route path="/policies"        element={<PoliciesPage />} />
-                <Route path="/lapse"           element={<LapsePage />} />
+                <Route path="/engagement"      element={<EngagementPage />} />
                 <Route path="/monthly-metrics"  element={<MonthlyMetricsPage />} />
                 <Route path="/weekly-metrics"   element={<WeeklyMetricsPage />} />
                 <Route path="/carrier-metrics"  element={<CarrierMetricsPage />} />

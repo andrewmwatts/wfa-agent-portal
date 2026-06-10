@@ -15,7 +15,7 @@ export const NAV_SECTIONS = [
     label: 'Business',
     items: [
       { path: '/policies',   label: 'Policies'              },
-      { path: '/lapse',      label: 'Lapse / Pending Lapse' },
+      { path: '/engagement', label: 'Client Engagement'     },
       { path: '/activity',   label: 'Activity Tracking'     },
       { path: '/leads',      label: 'Leads'                 },
       { path: '/recruiting', label: 'Recruiting'            },

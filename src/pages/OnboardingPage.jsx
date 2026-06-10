@@ -16,12 +16,6 @@ function isTruthy(val) {
 }
 
 
-// ─── Quick-filter definitions ──────────────────────────────────────────────────
-const QUICK_FILTERS = [
-  { id: 'all',         label: 'All'         },
-  { id: 'contracting', label: 'Contracting' },
-]
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
@@ -42,8 +36,7 @@ export default function OnboardingPage() {
 
   // Director = role-based; drives master/baseshop toggle
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
-  const [quickFilter, setQuickFilter] = useState('all')
-  const [search,      setSearch]      = useState('')
+  const [search, setSearch] = useState('')
 
   const [selected,    setSelected]    = useState(null) // personnel row for detail modal
   const [showAdd,     setShowAdd]     = useState(false)
@@ -149,12 +142,11 @@ export default function OnboardingPage() {
     return personnel.filter(r => {
       const id = r.sfg_id?.toLowerCase() ?? ''
       if (!showHidden && hiddenIds.has(id)) return false
-      if ((contractCounts[r.sfg_id] ?? 0) >= totalCarriers) return false
+      if (!showHidden && r.contracting_complete && (contractCounts[r.sfg_id] ?? 0) >= totalCarriers) return false
       if (q && !r.name?.toLowerCase().includes(q)) return false
-      if (quickFilter === 'contracting' && r.contracting_complete) return false
       return true
     })
-  }, [personnel, hiddenIds, showHidden, quickFilter, search, contractCounts, totalCarriers])
+  }, [personnel, hiddenIds, showHidden, search, contractCounts, totalCarriers])
 
   // Visible (non-hidden) count for the counter chip
   const visibleCount = useMemo(
@@ -215,22 +207,7 @@ export default function OnboardingPage() {
         {/* ── Filter bar ───────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
 
-          {/* Quick filters — primary interaction */}
-          {QUICK_FILTERS.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setQuickFilter(id)}
-              className={`text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors whitespace-nowrap
-                ${quickFilter === id
-                  ? 'bg-accent/20 text-accent border-accent/40'
-                  : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/15 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
-                }`}
-            >
-              {label}
-            </button>
-          ))}
-
-          {/* Right side: show-hidden + search */}
+          {/* Show-hidden + search */}
           <div className="ml-auto flex items-center gap-2">
 
             {/* Show hidden — secondary escape hatch */}

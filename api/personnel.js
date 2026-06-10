@@ -129,6 +129,7 @@ const ALLOWED_FIELDS = new Set([
   'hire_date', 'birth_date', 'npn',
   'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
+  'phone', 'address', 'city', 'state', 'zip', 'status',
 ])
 
 // Frontend key → DB column (for fields whose names differ)
@@ -292,7 +293,7 @@ export default async function handler(req, res) {
     try {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
       // so we don't fetch every row in both tables just to filter them in JS.
-      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status'
+      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
       const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
       const upperIds   = requestedIds.map(id => id.toUpperCase())
       const useDbFilter = !rootParam && requestedIds.length > 0

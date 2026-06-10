@@ -775,7 +775,7 @@ const AMOUNT_FORMATS = [
   { key: 'split',       label: 'Separate credit and debit columns' },
 ]
 
-function BulkImportWizard({ onImported }) {
+function BulkImportWizard({ onImported, viewAsSfgId }) {
   const [step, setStep] = useState(0)
 
   // Step 0 → 1: CSV parse
@@ -835,7 +835,10 @@ function BulkImportWizard({ onImported }) {
     // Fetch existing hashes
     let existingHashes = new Set()
     try {
-      const res = await fetch('/api/transactions?hashes_only=1')
+      const hashUrl = viewAsSfgId
+        ? `/api/transactions?hashes_only=1&view_as=${encodeURIComponent(viewAsSfgId)}`
+        : '/api/transactions?hashes_only=1'
+      const res = await fetch(hashUrl)
       const { hashes } = await res.json()
       existingHashes = new Set(hashes ?? [])
     } catch { /* ignore, dedup won't work but import still proceeds */ }
@@ -915,7 +918,10 @@ function BulkImportWizard({ onImported }) {
           tax_deductible: cat?.type === 'expense' ? (TAX_DEFAULT[cat?.category] ?? false) : false,
         }
       })
-      const res = await fetch('/api/transactions?bulk=1', {
+      const bulkUrl = viewAsSfgId
+        ? `/api/transactions?bulk=1&view_as=${encodeURIComponent(viewAsSfgId)}`
+        : '/api/transactions?bulk=1'
+      const res = await fetch(bulkUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactions }),
@@ -1533,7 +1539,9 @@ export default function IncomePage() {
   // Save handler (add or edit)
   async function handleSave(tx, force = false) {
     const isEdit = !!tx.id
-    const url    = isEdit ? `/api/transactions?id=${tx.id}` : '/api/transactions'
+    const url    = isEdit
+      ? `/api/transactions?id=${tx.id}`
+      : `/api/transactions${viewAsSfgId ? `?view_as=${encodeURIComponent(viewAsSfgId)}` : ''}`
     const method = isEdit ? 'PATCH' : 'POST'
     const body   = force ? { ...tx, force: true } : tx
 
@@ -1624,7 +1632,7 @@ export default function IncomePage() {
             </button>
             {importOpen && (
               <div className="px-5 pb-5 border-t border-gray-100 dark:border-white/5 pt-4">
-                <BulkImportWizard onImported={() => { load(); }} />
+                <BulkImportWizard onImported={() => { load(); }} viewAsSfgId={viewAsSfgId} />
               </div>
             )}
           </CardShell>}
