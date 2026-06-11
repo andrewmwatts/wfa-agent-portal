@@ -349,6 +349,12 @@ export default async function handler(req, res) {
           no_eando:                p.no_eando ?? false,
           contracting_to_producer: p.contracting_to_producer  ?? '',
           contracting_complete:    p.contracting_complete      ?? '',
+          status:                  p.status?.trim()            ?? '',
+          phone:                   p.phone?.trim()             ?? '',
+          address:                 p.address?.trim()           ?? '',
+          city:                    p.city?.trim()              ?? '',
+          state:                   p.state?.trim()             ?? '',
+          zip:                     p.zip?.trim()               ?? '',
           milestones,
           named_milestones,
         }
