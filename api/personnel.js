@@ -524,16 +524,20 @@ export default async function handler(req, res) {
   // ── POST — bulk upsert agents (super_admin only) ──────────────────────────
   if (req.method === 'POST') {
     if (!(await requireSuperAdmin(req, res))) return
-    let rows, statusUpdates
+    let rows, agentUpdates
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
-      rows          = body.rows
-      statusUpdates = body.statusUpdates
+      rows         = body.rows
+      agentUpdates = body.agentUpdates
     } catch {
       return res.status(400).json({ error: 'Invalid JSON body' })
     }
 
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows must be an array' })
+
+    // Fields allowed to be updated on existing agents (sfg_id, preferred_name,
+    // hire_date, birth_date are protected and never overwritten by the importer)
+    const UPSERT_FIELDS = ['opt_name', 'upline_sfg_id', 'npn', 'phone', 'address', 'city', 'state', 'zip', 'status']
 
     try {
       let inserted = 0, skipped = 0
@@ -551,15 +555,21 @@ export default async function handler(req, res) {
         skipped  = rows.length - inserted
       }
 
-      let statusUpdated = 0
-      if (Array.isArray(statusUpdates) && statusUpdates.length > 0) {
-        for (const { sfg_id, status } of statusUpdates) {
-          const { error } = await supabase.from('personnel').update({ status }).eq('sfg_id', sfg_id)
-          if (error) { errors.push({ sfg_id, error: error.message }) } else { statusUpdated++ }
+      let updated = 0
+      if (Array.isArray(agentUpdates) && agentUpdates.length > 0) {
+        for (const entry of agentUpdates) {
+          const { sfg_id } = entry
+          const patch = {}
+          for (const field of UPSERT_FIELDS) {
+            if (entry[field] !== null && entry[field] !== undefined) patch[field] = entry[field]
+          }
+          if (!Object.keys(patch).length) continue
+          const { error } = await supabase.from('personnel').update(patch).eq('sfg_id', sfg_id)
+          if (error) { errors.push({ sfg_id, error: error.message }) } else { updated++ }
         }
       }
 
-      return res.status(200).json({ inserted, skipped, statusUpdated, errors, insertedAgents })
+      return res.status(200).json({ inserted, skipped, updated, errors, insertedAgents })
     } catch (err) {
       console.error('[personnel/post]', err)
       return res.status(500).json({ error: err?.message ?? 'Failed to import agents' })
