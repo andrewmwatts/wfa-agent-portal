@@ -632,10 +632,15 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <InfoField label="Birth Date" value={fmtDate(p.birth_date)} />
                 {p.phone && <InfoField label="Phone" value={p.phone} />}
                 {(p.address || p.city || p.state || p.zip) && (
-                  <InfoField
-                    label="Address"
-                    value={[p.address, p.city, [p.state, p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
-                  />
+                  <div>
+                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Address</p>
+                    {p.address && <p className="text-sm text-gray-800 dark:text-white/90">{p.address}</p>}
+                    {(p.city || p.state || p.zip) && (
+                      <p className="text-sm text-gray-800 dark:text-white/90">
+                        {[p.city, [p.state, p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+                      </p>
+                    )}
+                  </div>
                 )}
                 <InfoField label="Opt Name"   value={p.opt_name} />
               </div>
