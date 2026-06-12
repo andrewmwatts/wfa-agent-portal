@@ -84,6 +84,7 @@ function processRows(csvRows, existingPersonnel) {
     const rawHire      = getField(raw, 'ContractStartDt', 'hire_date')
     const rawBirth     = getField(raw, 'BirthDt', 'BirthDate', 'Birth Date', 'birth_date', 'DOB', 'Date of Birth', 'DateOfBirth', 'Birthday', 'Birth_Date')
     const rawNPN       = getField(raw, 'NPN', 'npn', 'NPN Number')
+    const rawEmail     = getField(raw, 'AgentEmail', 'Email', 'email')
     const rawPhone     = getField(raw, 'AgentPhone', 'Phone', 'phone')
     const rawAddress   = getField(raw, 'StreetAddress', 'Street Address', 'address')
     const rawCity      = getField(raw, 'City', 'city')
@@ -132,6 +133,7 @@ function processRows(csvRows, existingPersonnel) {
       hire_date:        hireDateISO  || null,
       birth_date:       birthDateISO || null,
       npn:              rawNPN       || null,
+      email:            rawEmail     || null,
       phone:            rawPhone     || null,
       address:          rawAddress   || null,
       city:             rawCity      || null,
@@ -305,6 +307,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
         hire_date:      r.hire_date      || null,
         birth_date:     r.birth_date     || null,
         npn:            r.npn            || null,
+        email:          r.email          || null,
         phone:          r.phone          || null,
         address:        r.address        || null,
         city:           r.city           || null,
@@ -321,6 +324,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
         opt_name:      r.opt_name      || null,
         upline_sfg_id: r.upline_sfg_id || null,
         npn:           r.npn           || null,
+        email:         r.email         || null,
         phone:         r.phone         || null,
         address:       r.address       || null,
         city:          r.city          || null,

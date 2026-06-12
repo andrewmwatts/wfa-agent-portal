@@ -126,7 +126,7 @@ function computeBaseshop(rootSfgId, allPersonnel, ownerSet) {
 // Direct DB column names (personnel table)
 const ALLOWED_FIELDS = new Set([
   'preferred_name', 'opt_name',
-  'hire_date', 'birth_date', 'npn',
+  'hire_date', 'birth_date', 'npn', 'email',
   'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
   'phone', 'address', 'city', 'state', 'zip', 'status',
@@ -293,7 +293,7 @@ export default async function handler(req, res) {
     try {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
       // so we don't fetch every row in both tables just to filter them in JS.
-      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
+      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, email, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
       const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
       const upperIds   = requestedIds.map(id => id.toUpperCase())
       const useDbFilter = !rootParam && requestedIds.length > 0
@@ -344,6 +344,7 @@ export default async function handler(req, res) {
           hire_date:               p.hire_date                ?? '',
           birth_date:              p.birth_date               ?? '',
           npn:                     p.npn?.trim()              ?? '',
+          email:                   p.email?.trim()            ?? '',
           surelc_profile_date:     p.surelc_profile_date      ?? '',
           profile_issues:          p.profile_issues?.trim()   ?? '',
           no_eando:                p.no_eando ?? false,
@@ -543,7 +544,7 @@ export default async function handler(req, res) {
 
     // Fields allowed to be updated on existing agents (sfg_id, preferred_name,
     // hire_date, birth_date are protected and never overwritten by the importer)
-    const UPSERT_FIELDS = ['opt_name', 'upline_sfg_id', 'npn', 'phone', 'address', 'city', 'state', 'zip', 'status']
+    const UPSERT_FIELDS = ['opt_name', 'upline_sfg_id', 'npn', 'email', 'phone', 'address', 'city', 'state', 'zip', 'status']
 
     try {
       let inserted = 0, skipped = 0
