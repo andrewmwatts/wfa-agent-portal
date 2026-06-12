@@ -642,6 +642,8 @@ export default function PoliciesPage() {
               setPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
             }}
             onDelete={id => setPolicies(prev => prev.filter(p => p.id !== id))}
+            agentPhone={personnel.find(pers => pers.sfg_id === selected.sfg_id)?.phone}
+            viewerSfgId={activeSubject?.sfg_id}
           />
         </PolicyModalErrorBoundary>
       )}
@@ -758,7 +760,7 @@ const CONSERVATION_STATUS_OPTIONS = [
   'Withdrawn, On Snapshot',
 ]
 
-function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete }) {
+function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId }) {
   const [editing,         setEditing]         = useState(false)
   const [draft,           setDraft]           = useState(null)
   const [saving,          setSaving]          = useState(false)
@@ -916,6 +918,25 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete 
             </p>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            {!editing && (() => {
+              const sl = p.status?.toLowerCase()?.trim() ?? ''
+              const notAgent = viewerSfgId && p.sfg_id && viewerSfgId.toLowerCase() !== p.sfg_id.toLowerCase()
+              if (notAgent && agentPhone && ['', 'pending', 'incomplete'].includes(sl)) {
+                return (
+                  <a
+                    href={`sms:${agentPhone}`}
+                    onClick={e => e.stopPropagation()}
+                    title="Text agent"
+                    className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </a>
+                )
+              }
+              return null
+            })()}
             {!editing && <StatusBadge status={display.status} />}
             {canWrite && !editing && (
               <button
