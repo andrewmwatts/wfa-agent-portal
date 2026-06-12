@@ -2,10 +2,20 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
+import webpush from 'web-push'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
+
+// Configure VAPID once at module load (no-ops if keys aren't set yet)
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_MAILTO || 'mailto:portal@wattsfamilyagency.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  )
+}
 
 /**
  * Leads Ingest API
@@ -111,6 +121,12 @@ export default async function handler(req, res) {
     })
 
     if (error) return res.status(500).json({ success: false, error: error.message })
+
+    // Best-effort push notification — never throws or delays the response
+    sendLeadPushNotification(sb, lead).catch(e =>
+      console.error('[push] notification error:', e.message)
+    )
+
     return res.status(201).json({ success: true })
   }
 
@@ -158,4 +174,48 @@ export default async function handler(req, res) {
 
   // ── Unknown action ────────────────────────────────────────────────────────
   return res.status(400).json({ error: `Unknown action: ${action}` })
+}
+
+// ── Push helper ───────────────────────────────────────────────────────────────
+
+async function sendLeadPushNotification(sb, lead) {
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return
+
+  const sfgId = lead.sfg_id?.toUpperCase()
+  if (!sfgId) return
+
+  const { data: subs } = await sb
+    .from('push_subscriptions')
+    .select('id, subscription')
+    .eq('sfg_id', sfgId)
+
+  if (!subs?.length) return
+
+  const bodyParts = [
+    lead.name,
+    lead.type || lead.lead_type || null,
+    lead.state || null,
+  ].filter(Boolean)
+
+  const payload = JSON.stringify({
+    title: 'New Lead',
+    body:  bodyParts.join(' — '),
+    url:   '/leads',
+  })
+
+  const staleIds = []
+  await Promise.allSettled(
+    subs.map(async sub => {
+      try {
+        await webpush.sendNotification(sub.subscription, payload)
+      } catch (e) {
+        if (e.statusCode === 410) staleIds.push(sub.id)
+        else console.error('[push] send failed for sub', sub.id, e.message)
+      }
+    })
+  )
+
+  if (staleIds.length) {
+    await sb.from('push_subscriptions').delete().in('id', staleIds)
+  }
 }

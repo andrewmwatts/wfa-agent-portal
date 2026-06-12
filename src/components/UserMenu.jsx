@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { BugReportModal } from '../pages/AdminToolsPage'
+import { registerPushSubscription, unregisterPushSubscription } from '../utils/pushNotifications'
 
 // Sections available for delegation (maps to assistant_permissions.section values)
 const SECTIONS = [
@@ -293,7 +294,97 @@ function ProfileModal({ userProfile, onClose }) {
           </button>
         </div>
       </form>
+
+      <div className="mt-5 pt-5 border-t border-gray-200 dark:border-white/10">
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Push Notifications</p>
+        <NotificationsSection userProfile={userProfile} />
+      </div>
     </Modal>
+  )
+}
+
+// ── Notifications section (inside Profile modal) ───────────────────────────────
+
+function NotificationsSection({ userProfile }) {
+  const [permission, setPermission] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  )
+  const [registering, setRegistering] = useState(false)
+  const [regError,    setRegError]    = useState(null)
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
+  const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+
+  async function handleEnable() {
+    setRegistering(true)
+    setRegError(null)
+    try {
+      const sub = await registerPushSubscription(userProfile?.id, userProfile?.sfg_id)
+      if (sub) {
+        setPermission('granted')
+      } else {
+        // Permission was denied or not granted
+        setPermission(Notification.permission)
+      }
+    } catch (e) {
+      setRegError(e.message)
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  if (!supported) {
+    return (
+      <p className="text-xs text-gray-400 dark:text-white/40">
+        Push notifications are not supported in this browser.
+      </p>
+    )
+  }
+
+  if (isIOS && !isPWA) {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-xs text-gray-500 dark:text-white/50">
+          To receive push notifications on iOS, add this app to your Home Screen first, then re-open it from there.
+        </p>
+      </div>
+    )
+  }
+
+  if (permission === 'granted') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+        <p className="text-xs text-green-700 dark:text-green-400">Push notifications enabled</p>
+      </div>
+    )
+  }
+
+  if (permission === 'denied') {
+    return (
+      <p className="text-xs text-gray-400 dark:text-white/40">
+        Notifications blocked. Enable them in your browser settings to receive lead alerts.
+      </p>
+    )
+  }
+
+  // default — not yet asked
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-gray-500 dark:text-white/50">
+        Get notified when a new lead is assigned to you.
+      </p>
+      {regError && <p className="text-xs text-accent">{regError}</p>}
+      <button
+        type="button"
+        onClick={handleEnable}
+        disabled={registering}
+        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        {registering ? 'Enabling…' : 'Enable Push Notifications'}
+      </button>
+    </div>
   )
 }
 
