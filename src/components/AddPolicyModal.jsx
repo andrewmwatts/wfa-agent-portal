@@ -25,8 +25,8 @@ const EMPTY = {
   split_reset: false,
 }
 
-const INPUT_CLS = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:ring-accent/30 focus:border-accent/60'
-const INPUT_ERR = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white border-red-400 focus:ring-red-400/30 focus:border-red-400'
+const INPUT_CLS = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/10 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 border-gray-200 dark:border-white/15 focus:ring-accent/30 focus:border-accent/60'
+const INPUT_ERR = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/10 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 border-red-400 focus:ring-red-400/30 focus:border-red-400'
 
 export default function AddPolicyModal({ personnel, existingCarriers = [], existingPolicyTypes = [], onClose, onPolicyAdded }) {
   const [form,      setForm]      = useState(EMPTY)
