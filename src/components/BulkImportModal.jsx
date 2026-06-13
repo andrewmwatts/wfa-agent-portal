@@ -310,7 +310,7 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
         {row.rowStatus === 'red' && !row.excluded ? (
           <div className="relative w-48 flex-shrink-0">
             <input
-              className="border rounded px-2 py-0.5 text-xs w-full"
+              className="border rounded px-2 py-0.5 text-xs w-full text-gray-900 bg-white"
               placeholder="Search agent…"
               value={agentSearch}
               onChange={e => setAgentSearch(e.target.value)}
@@ -684,7 +684,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                       onChange={e => { setDefaultAgentSearch(e.target.value); setShowDefaultAgentList(true) }}
                       onFocus={() => setShowDefaultAgentList(true)}
                       onBlur={() => setTimeout(() => setShowDefaultAgentList(false), 150)}
-                      className="w-full border border-red-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400"
+                      className="w-full border border-red-300 rounded px-2 py-1 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
                     />
                     {showDefaultAgentList && defaultAgentResults.length > 0 && (
                       <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto">
