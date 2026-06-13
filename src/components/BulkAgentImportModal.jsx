@@ -64,7 +64,7 @@ function fmtISO(d) {
 
 const VALID_STATUSES = new Set(['Active', 'Lapsed', 'Terminated'])
 
-function processRows(csvRows, existingPersonnel) {
+function processRows(csvRows, existingPersonnel, updateMode = 'add_new') {
   // Build map sfg_id (lower) → existing record so we can compare statuses
   const existingMap = new Map(
     existingPersonnel
@@ -119,7 +119,10 @@ function processRows(csvRows, existingPersonnel) {
     const isDuplicate = sfgId && existingMap.has(sfgId.toLowerCase())
 
     if (isDuplicate) {
-      warnings.push('Already exists — fields will be updated')
+      warnings.push(updateMode === 'full_update'
+        ? 'Already exists — fields will be updated'
+        : 'Already exists — will skip'
+      )
     }
 
     const rowStatus = errors.length > 0 ? 'red' : warnings.length > 0 ? 'yellow' : 'green'
@@ -243,6 +246,7 @@ function PreviewRow({ row, onUpdate, idx }) {
 
 export default function BulkAgentImportModal({ onClose, existingPersonnel = [], onImportDone, authHeaders }) {
   const [phase,          setPhase]          = useState('upload')  // upload | preview | confirm | importing | result
+  const [updateMode,     setUpdateMode]     = useState('add_new') // 'add_new' | 'full_update'
   const [rows,           setRows]           = useState([])
   const [parseError,     setParseError]     = useState('')
   const [result,         setResult]         = useState(null)
@@ -259,7 +263,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
       skipEmptyLines: true,
       complete(res) {
         if (!res.data?.length) { setParseError('No data rows found in file.'); return }
-        setRows(processRows(res.data, existingPersonnel))
+        setRows(processRows(res.data, existingPersonnel, updateMode))
         setPhase('preview')
       },
       error(err) { setParseError(err.message) },
@@ -280,7 +284,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
 
   const newAgentCount  = toImport.filter(r => !r.isDuplicate).length
   const updateCount    = toImport.filter(r =>  r.isDuplicate).length
-  const actionCount    = newAgentCount + updateCount
+  const actionCount    = updateMode === 'full_update' ? newAgentCount + updateCount : newAgentCount
 
   const counts = {
     green:    rows.filter(r => r.rowStatus === 'green'  && !r.excluded).length,
@@ -316,22 +320,23 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
         status:         r.status         || null,
       }))
 
-    // Updates for existing agents — all non-protected fields
-    const agentUpdates = toImport
-      .filter(r => r.isDuplicate)
-      .map(r => ({
-        sfg_id:        r.sfg_id,
-        opt_name:      r.opt_name      || null,
-        upline_sfg_id: r.upline_sfg_id || null,
-        npn:           r.npn           || null,
-        email:         r.email         || null,
-        phone:         r.phone         || null,
-        address:       r.address       || null,
-        city:          r.city          || null,
-        state:         r.state         || null,
-        zip:           r.zip           || null,
-        status:        r.status        || null,
-      }))
+    // Updates for existing agents — only in full_update mode; opt_name excluded (protected)
+    const agentUpdates = updateMode === 'full_update'
+      ? toImport
+          .filter(r => r.isDuplicate)
+          .map(r => ({
+            sfg_id:        r.sfg_id,
+            upline_sfg_id: r.upline_sfg_id || null,
+            npn:           r.npn           || null,
+            email:         r.email         || null,
+            phone:         r.phone         || null,
+            address:       r.address       || null,
+            city:          r.city          || null,
+            state:         r.state         || null,
+            zip:           r.zip           || null,
+            status:        r.status        || null,
+          }))
+      : []
 
     try {
       const res  = await fetch('/api/personnel', {
@@ -367,9 +372,37 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
           {/* ── Upload ── */}
           {phase === 'upload' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Upload a CSV with agent data. New agents will be inserted; existing agents will be updated (opt name, upline, NPN, phone, address, and status).
-              </p>
+              {/* Mode selector */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase mb-2">Import mode</p>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm w-fit">
+                  <button
+                    onClick={() => setUpdateMode('add_new')}
+                    className={`px-4 py-2 font-medium transition-colors ${
+                      updateMode === 'add_new'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Add new only
+                  </button>
+                  <button
+                    onClick={() => setUpdateMode('full_update')}
+                    className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${
+                      updateMode === 'full_update'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Add new + update existing
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {updateMode === 'add_new'
+                    ? 'New agents will be inserted; existing agents will be skipped.'
+                    : 'New agents will be inserted; existing agents will have upline, NPN, email, phone, address, and status updated.'}
+                </p>
+              </div>
               <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-600 space-y-1">
                 <p className="font-medium text-gray-700">Recognized column names:</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs mt-1">
@@ -474,7 +507,8 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
 
               <p className="text-xs text-gray-500">
                 <strong>{newAgentCount}</strong> new agent{newAgentCount !== 1 ? 's' : ''} to insert
-                {updateCount > 0 && <>, <strong>{updateCount}</strong> existing agent{updateCount !== 1 ? 's' : ''} to update</>}.
+                {updateCount > 0 && updateMode === 'full_update' && <>, <strong>{updateCount}</strong> existing agent{updateCount !== 1 ? 's' : ''} to update</>}
+                {updateCount > 0 && updateMode === 'add_new'    && <>, <strong>{updateCount}</strong> duplicate{updateCount !== 1 ? 's' : ''} will be skipped</>}.
               </p>
             </div>
           )}
@@ -488,10 +522,16 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
                   <span className="text-gray-600">New agents to insert</span>
                   <span className="font-semibold text-green-700">{newAgentCount}</span>
                 </div>
-                {updateCount > 0 && (
+                {updateCount > 0 && updateMode === 'full_update' && (
                   <div className="flex justify-between border-b pb-2">
                     <span className="text-gray-600">Existing agents to update</span>
                     <span className="font-semibold text-blue-700">{updateCount}</span>
+                  </div>
+                )}
+                {updateCount > 0 && updateMode === 'add_new' && (
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Duplicates to skip</span>
+                    <span className="font-semibold text-gray-500">{updateCount}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
