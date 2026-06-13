@@ -210,7 +210,7 @@ function processRows(csvRows, personnel, existingPolicies) {
         if (existing.not_in_opt) {
           isNotInOptRestore = true
           existingId        = existing.id
-          warnings.push('Currently marked Not in Opt — will restore into Opt and set APV')
+          warnings.push('Currently marked Not in Opt — will override and set APV')
         }
       }
     }
@@ -754,7 +754,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                 </div>
                 {toImport.filter(r => r.isNotInOptRestore).length > 0 && (
                   <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Not-in-Opt policies to restore</span>
+                    <span className="text-gray-600">Not-in-Opt policies to merge</span>
                     <span className="font-semibold text-blue-700">{toImport.filter(r => r.isNotInOptRestore).length}</span>
                   </div>
                 )}
@@ -792,7 +792,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                 </div>
                 {(result.restored ?? 0) > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Not-in-Opt restored</span>
+                    <span className="text-gray-600">Not-in-Opt merged</span>
                     <span className="font-semibold text-blue-700">{result.restored}</span>
                   </div>
                 )}
