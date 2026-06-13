@@ -666,12 +666,12 @@ export default async function handler(req, res) {
   // ── POST /api/policies?type=import  (bulk import, super_admin only) ─────────
   if (req.method === 'POST' && type === 'import') {
     if (!(await requireSuperAdmin(req, res))) return
-    const { rows } = req.body ?? {}
-    if (!Array.isArray(rows) || !rows.length) {
+    const { rows, restores } = req.body ?? {}
+    if ((!Array.isArray(rows) || !rows.length) && (!Array.isArray(restores) || !restores.length)) {
       return res.status(400).json({ error: 'No rows provided' })
     }
     try {
-      let inserted = 0, skipped = 0
+      let inserted = 0, skipped = 0, restored = 0
       const errors = []
 
       // Batched dedup: pull the dedup-key columns for every agent in this import
@@ -685,7 +685,8 @@ export default async function handler(req, res) {
         (policyName ?? '').trim().toLowerCase(),
       ].join('||')
 
-      const importIds = [...new Set(rows.map(r => r.sfg_id).filter(Boolean).map(id => id.toLowerCase()))]
+      const insertRows = Array.isArray(rows) ? rows : []
+      const importIds = [...new Set(insertRows.map(r => r.sfg_id).filter(Boolean).map(id => id.toLowerCase()))]
       const seen = new Set()
       if (importIds.length) {
         const existingRows = await fetchPolicies(supabase, importIds)
@@ -694,7 +695,7 @@ export default async function handler(req, res) {
         }
       }
 
-      for (const row of rows) {
+      for (const row of insertRows) {
         if (!row.includeAnyway) {
           const key = dedupKey(row.sfg_id, row.applicant, row.submit_date, row.carrier, row.policy_name)
           if (seen.has(key)) { skipped++; continue }
@@ -724,7 +725,22 @@ export default async function handler(req, res) {
           seen.add(dedupKey(record.sfg_id, record.applicant, record.submit_date, record.carrier, record.policy_name))
         }
       }
-      return res.status(200).json({ inserted, skipped, errors })
+      // Handle not_in_opt restores — flip not_in_opt to false and set submitted_apv
+      if (Array.isArray(restores) && restores.length) {
+        for (const r of restores) {
+          if (!r.id) continue
+          const patch = { not_in_opt: false }
+          if (r.submitted_apv != null) patch.submitted_apv = r.submitted_apv
+          const { error } = await supabase.from('policies').update(patch).eq('id', r.id)
+          if (error) {
+            errors.push({ error: `Restore failed for policy ${r.id}: ${error.message}` })
+          } else {
+            restored++
+          }
+        }
+      }
+
+      return res.status(200).json({ inserted, skipped, restored, errors })
     } catch (err) {
       console.error('[policies/import]', err)
       return res.status(500).json({ error: 'Failed to import policies' })

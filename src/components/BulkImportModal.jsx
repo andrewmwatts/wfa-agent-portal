@@ -108,12 +108,14 @@ function processRows(csvRows, personnel, existingPolicies) {
     personByOpt[sfgLower] = entry
   }
 
-  // Build natural-key duplicate set from existing policies
-  const dupKeys = new Set()
+  // Build natural-key duplicate map from existing policies
+  // Value stores { id, not_in_opt } so we can detect "restore" cases
+  const dupMap = new Map()
   for (const p of existingPolicies) {
     if (p.sfg_id && p.applicant && p.submit_date && p.carrier && p.policy_name) {
-      dupKeys.add(
-        `${p.sfg_id.toLowerCase()}||${p.applicant.toLowerCase()}||${p.submit_date}||${p.carrier.toLowerCase()}||${p.policy_name.toLowerCase()}`
+      dupMap.set(
+        `${p.sfg_id.toLowerCase()}||${p.applicant.toLowerCase()}||${p.submit_date}||${p.carrier.toLowerCase()}||${p.policy_name.toLowerCase()}`,
+        { id: p.id, not_in_opt: !!p.not_in_opt }
       )
     }
   }
@@ -197,45 +199,58 @@ function processRows(csvRows, personnel, existingPolicies) {
     }
 
     // Duplicate check
-    let isDuplicate = false
+    let isDuplicate      = false
+    let isNotInOptRestore = false
+    let existingId       = null
     if (sfg_id && applicant && submitDateISO && carrier && policyName) {
       const key = `${sfg_id.toLowerCase()}||${applicant.toLowerCase()}||${submitDateISO}||${carrier.toLowerCase()}||${policyName.toLowerCase()}`
-      isDuplicate = dupKeys.has(key)
+      const existing = dupMap.get(key)
+      if (existing) {
+        isDuplicate = true
+        if (existing.not_in_opt) {
+          isNotInOptRestore = true
+          existingId        = existing.id
+          warnings.push('Currently marked Not in Opt — will restore into Opt and set APV')
+        }
+      }
     }
 
     const rowStatus = !matched ? 'red' : (isDuplicate || warnings.length > 0) ? 'yellow' : 'green'
 
     return {
-      _csvIdx:         idx,
+      _csvIdx:          idx,
       sfg_id,
       agentName,
       rawAgent,
       applicant,
       carrier,
-      policy_name:     policyName,
-      policy_number:   policyNo,
-      status:          '',   // never import status from CSV — left blank for manual entry
-      submit_date:     submitDateISO,
-      issue_date:      issueDateISO,
-      face_amount:     faceAmt,
-      submitted_apv:   submApv,
-      issued_apv:      submApv,
-      submit_week:     submitWeekISO,
-      submit_week_num: submitWeekNum,
+      policy_name:      policyName,
+      policy_number:    policyNo,
+      status:           '',   // never import status from CSV — left blank for manual entry
+      submit_date:      submitDateISO,
+      issue_date:       issueDateISO,
+      face_amount:      faceAmt,
+      submitted_apv:    submApv,
+      issued_apv:       submApv,
+      submit_week:      submitWeekISO,
+      submit_week_num:  submitWeekNum,
       isChildPolicy,
       isDuplicate,
+      isNotInOptRestore,
+      existingId,
       rowStatus,
       warnings,
       errors,
-      excluded:        isDuplicate,   // duplicates excluded by default
-      includeAnyway:   false,
+      excluded:         isDuplicate && !isNotInOptRestore,  // restore rows auto-included
+      includeAnyway:    false,
     }
   })
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, excluded, isDuplicate }) {
+function StatusBadge({ status, excluded, isDuplicate, isNotInOptRestore }) {
+  if (isNotInOptRestore) return <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Restore</span>
   if (excluded && isDuplicate) return <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Duplicate</span>
   if (excluded) return <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Excluded</span>
   const map = {
@@ -282,7 +297,7 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
     <div className={`border-b last:border-0 px-3 py-2 text-sm ${bgCls}`}>
       <div className="flex items-center gap-2 flex-wrap">
         <div className="w-16 flex-shrink-0">
-          <StatusBadge status={row.rowStatus} excluded={row.excluded} isDuplicate={row.isDuplicate} />
+          <StatusBadge status={row.rowStatus} excluded={row.excluded} isDuplicate={row.isDuplicate} isNotInOptRestore={row.isNotInOptRestore} />
         </div>
 
         <span className="w-36 truncate font-medium flex-shrink-0">{row.applicant || <em className="text-gray-400">—</em>}</span>
@@ -494,7 +509,8 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
     green:     rows.filter(r => r.rowStatus === 'green'  && !r.excluded).length,
     yellow:    rows.filter(r => r.rowStatus === 'yellow' && !r.excluded).length,
     red:       rows.filter(r => r.rowStatus === 'red'    && !r.excluded).length,
-    duplicate: rows.filter(r => r.isDuplicate).length,
+    duplicate: rows.filter(r => r.isDuplicate && !r.isNotInOptRestore).length,
+    restore:   rows.filter(r => r.isNotInOptRestore).length,
     excluded:  rows.filter(r => r.excluded && !r.isDuplicate).length,
   }
 
@@ -506,7 +522,12 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
     // Rows excluded client-side (duplicates + manually excluded) never reach the
     // server, so we have to track them here and fold them into the result.
     const clientExcluded = rows.filter(r => r.excluded).length
-    const payload = toImport.map(r => ({
+
+    // Separate restore rows (not_in_opt updates) from regular inserts
+    const toInsert  = toImport.filter(r => !r.isNotInOptRestore)
+    const toRestore = toImport.filter(r =>  r.isNotInOptRestore)
+
+    const payload = toInsert.map(r => ({
       sfg_id:          r.sfg_id,
       applicant:       r.applicant,
       carrier:         r.carrier,
@@ -524,22 +545,28 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
       agentName:       r.agentName,
     }))
 
+    const restores = toRestore.map(r => ({
+      id:            r.existingId,
+      submitted_apv: r.submitted_apv,
+    }))
+
     try {
       const res  = await fetch('/api/policies?type=import', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ rows: payload }),
+        body:    JSON.stringify({ rows: payload, restores }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error ?? `Server error ${res.status}`)
       setResult({
         inserted: data.inserted  ?? 0,
+        restored: data.restored  ?? 0,
         skipped:  (data.skipped  ?? 0) + clientExcluded,
         errors:   Array.isArray(data.errors) ? data.errors : [],
       })
       setPhase('result')
     } catch (err) {
-      setResult({ inserted: 0, skipped: clientExcluded, errors: [{ error: err.message }] })
+      setResult({ inserted: 0, restored: 0, skipped: clientExcluded, errors: [{ error: err.message }] })
       setPhase('result')
     }
   }
@@ -616,6 +643,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                 <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 text-sm font-medium">{counts.yellow} need review</span>
                 <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 text-sm font-medium">{counts.red} no agent</span>
                 {counts.duplicate > 0 && <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-sm font-medium">{counts.duplicate} duplicate{counts.duplicate !== 1 ? 's' : ''}</span>}
+                {counts.restore > 0  && <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">{counts.restore} to restore</span>}
                 {counts.excluded > 0  && <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-600 text-sm font-medium">{counts.excluded} excluded</span>}
               </div>
 
@@ -722,8 +750,14 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
               <div className="bg-gray-50 rounded-lg p-5 space-y-3 text-sm">
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-gray-600">Rows to insert</span>
-                  <span className="font-semibold text-green-700">{toImport.length}</span>
+                  <span className="font-semibold text-green-700">{toImport.filter(r => !r.isNotInOptRestore).length}</span>
                 </div>
+                {toImport.filter(r => r.isNotInOptRestore).length > 0 && (
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Not-in-Opt policies to restore</span>
+                    <span className="font-semibold text-blue-700">{toImport.filter(r => r.isNotInOptRestore).length}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-gray-600">Rows excluded / skipped</span>
                   <span className="font-semibold">{rows.length - toImport.length}</span>
@@ -756,6 +790,12 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                   <span className="text-gray-600">Rows inserted</span>
                   <span className="font-semibold text-green-700">{result.inserted}</span>
                 </div>
+                {(result.restored ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Not-in-Opt restored</span>
+                    <span className="font-semibold text-blue-700">{result.restored}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-600">Skipped (duplicates)</span>
                   <span className="font-semibold text-gray-700">{result.skipped}</span>
