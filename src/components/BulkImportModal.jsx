@@ -210,7 +210,7 @@ function processRows(csvRows, personnel, existingPolicies) {
         if (existing.not_in_opt) {
           isNotInOptRestore = true
           existingId        = existing.id
-          warnings.push('Currently marked Not in Opt — will override and set APV')
+          warnings.push('Currently marked Not in Opt — will merge and set APV')
         }
       }
     }
