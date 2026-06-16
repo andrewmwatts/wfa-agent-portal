@@ -19,6 +19,7 @@ const EMPTY = {
   issued_apv:  '',
   status:      'Pending',
   submit_date: new Date().toISOString().slice(0, 10),
+  issue_date:  '',
   app_notes:    '',
   policy_notes: '',
   not_in_opt:  false,
@@ -157,6 +158,10 @@ export default function AddPolicyModal({ personnel, existingCarriers = [], exist
               <Field label="Submit Date" required error={errors.submit_date}>
                 <input type="date" value={form.submit_date} onChange={e => set('submit_date', e.target.value)}
                   className={(errors.submit_date ? INPUT_ERR : INPUT_CLS) + ' dark:[color-scheme:dark]'} />
+              </Field>
+              <Field label="Issue Date">
+                <input type="date" value={form.issue_date} onChange={e => set('issue_date', e.target.value)}
+                  className={INPUT_CLS + ' dark:[color-scheme:dark]'} />
               </Field>
             </div>
           </FormSection>
