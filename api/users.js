@@ -44,7 +44,8 @@ async function resolveRole(supabase, sfgId) {
   const ao = byLevel['AO']
   if (ao?.month_1 && ao?.month_2 && ao?.month_3) return 'owner'
   const kl = byLevel['KL']
-  if (kl?.month_1 && kl?.month_2) return 'leader'
+  const tl = byLevel['TL']
+  if ((kl?.month_1 && kl?.month_2) || (tl?.month_1 && tl?.month_2)) return 'leader'
   return 'agent'
 }
 
