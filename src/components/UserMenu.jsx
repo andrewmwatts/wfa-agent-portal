@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { BugReportModal } from '../pages/AdminToolsPage'
+import { registerPushSubscription, unregisterPushSubscription } from '../utils/pushNotifications'
 
 // Sections available for delegation (maps to assistant_permissions.section values)
 const SECTIONS = [
@@ -13,7 +14,7 @@ const SECTIONS = [
   { key: 'activity',          label: 'Activity'             },
   { key: 'income',            label: 'Income / Expenses'    },
   { key: 'accountability',    label: 'Accountability'       },
-  { key: 'snapshot',          label: 'Snapshot'             },
+  { key: 'snapshot',          label: 'Promotions'           },
 ]
 
 // Sections where write access can always be delegated (no admin grant needed)
@@ -151,6 +152,7 @@ export default function UserMenu({ userProfile, onSignOut }) {
                 {calConnecting ? 'Connecting…' : 'Connect Google Calendar'}
               </DropItem>
             )}
+            <NotificationMenuItem userProfile={userProfile} />
             <div className="my-1 border-t border-gray-100 dark:border-white/10" />
             <DropItem onClick={() => { setOpen(false); openModal('bug') }}>
               <BugIcon /> Report a Bug
@@ -294,6 +296,103 @@ function ProfileModal({ userProfile, onClose }) {
         </div>
       </form>
     </Modal>
+  )
+}
+
+// ── Notifications menu item (in the UserMenu dropdown) ──────────────────────────
+
+function NotificationMenuItem({ userProfile }) {
+  // 'checking' | 'unsupported' | 'ios' | 'denied' | 'subscribed' | 'unsubscribed'
+  const [status, setStatus] = useState('checking')
+  const [busy,   setBusy]   = useState(false)
+
+  const isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  const isPWA      = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
+  const supported  = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+
+  useEffect(() => {
+    if (!supported) { setStatus('unsupported'); return }
+    if (isIOS && !isPWA) { setStatus('ios'); return }
+    if (Notification.permission === 'denied') { setStatus('denied'); return }
+    navigator.serviceWorker.ready
+      .then(reg => reg.pushManager.getSubscription())
+      .then(sub => setStatus(sub ? 'subscribed' : 'unsubscribed'))
+      .catch(() => setStatus('unsubscribed'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Self-heal: if the browser already has a live subscription, make sure the
+  // server has it saved too (idempotent — re-subscribing returns the same
+  // subscription object, no new permission prompt).
+  useEffect(() => {
+    if (status !== 'subscribed') return
+    registerPushSubscription(userProfile?.id, userProfile?.sfg_id).catch(e => {
+      console.error('[push] re-sync failed:', e.message)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
+  async function handleEnable() {
+    setBusy(true)
+    try {
+      const sub = await registerPushSubscription(userProfile?.id, userProfile?.sfg_id)
+      setStatus(sub ? 'subscribed' : (Notification.permission === 'denied' ? 'denied' : 'unsubscribed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDisable() {
+    setBusy(true)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) await sub.unsubscribe()
+      await unregisterPushSubscription(userProfile?.id, userProfile?.sfg_id)
+      setStatus('unsubscribed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (status === 'unsupported' || status === 'checking') return null
+
+  if (status === 'ios') {
+    return (
+      <DropItem disabled>
+        <BellIcon />
+        <span className="flex-1">Push Notifications</span>
+        <span className="text-[10px] text-gray-400 dark:text-white/30 whitespace-nowrap">Add to Home Screen</span>
+      </DropItem>
+    )
+  }
+
+  if (status === 'denied') {
+    return (
+      <DropItem disabled>
+        <BellIcon /> Notifications Blocked
+      </DropItem>
+    )
+  }
+
+  if (status === 'subscribed') {
+    return (
+      <DropItem onClick={handleDisable} disabled={busy}>
+        <BellIcon />
+        <span className="flex-1">Push Notifications</span>
+        <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">
+          {busy ? '…' : 'On'}
+        </span>
+      </DropItem>
+    )
+  }
+
+  // unsubscribed — not yet enabled, or previously disabled
+  return (
+    <DropItem onClick={handleEnable} disabled={busy}>
+      <BellIcon />
+      {busy ? 'Enabling…' : 'Enable Push Notifications'}
+    </DropItem>
   )
 }
 
@@ -809,6 +908,14 @@ function CalendarIcon() {
     </svg>
   )
 }
+function BellIcon() {
+  return (
+    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+    </svg>
+  )
+}
+
 function BugIcon() {
   return (
     <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>

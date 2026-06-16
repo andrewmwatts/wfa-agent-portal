@@ -126,7 +126,7 @@ function computeBaseshop(rootSfgId, allPersonnel, ownerSet) {
 // Direct DB column names (personnel table)
 const ALLOWED_FIELDS = new Set([
   'preferred_name', 'opt_name',
-  'hire_date', 'birth_date', 'npn',
+  'hire_date', 'birth_date', 'npn', 'email',
   'upline_sfg_id', 'profile_issues', 'no_eando',
   'contracting_to_producer', 'contracting_complete', 'surelc_profile_date',
   'phone', 'address', 'city', 'state', 'zip', 'status',
@@ -293,7 +293,7 @@ export default async function handler(req, res) {
     try {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
       // so we don't fetch every row in both tables just to filter them in JS.
-      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
+      const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, email, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
       const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
       const upperIds   = requestedIds.map(id => id.toUpperCase())
       const useDbFilter = !rootParam && requestedIds.length > 0
@@ -344,11 +344,18 @@ export default async function handler(req, res) {
           hire_date:               p.hire_date                ?? '',
           birth_date:              p.birth_date               ?? '',
           npn:                     p.npn?.trim()              ?? '',
+          email:                   p.email?.trim()            ?? '',
           surelc_profile_date:     p.surelc_profile_date      ?? '',
           profile_issues:          p.profile_issues?.trim()   ?? '',
           no_eando:                p.no_eando ?? false,
           contracting_to_producer: p.contracting_to_producer  ?? '',
           contracting_complete:    p.contracting_complete      ?? '',
+          status:                  p.status?.trim()            ?? '',
+          phone:                   p.phone?.trim()             ?? '',
+          address:                 p.address?.trim()           ?? '',
+          city:                    p.city?.trim()              ?? '',
+          state:                   p.state?.trim()             ?? '',
+          zip:                     p.zip?.trim()               ?? '',
           milestones,
           named_milestones,
         }
@@ -524,16 +531,20 @@ export default async function handler(req, res) {
   // ── POST — bulk upsert agents (super_admin only) ──────────────────────────
   if (req.method === 'POST') {
     if (!(await requireSuperAdmin(req, res))) return
-    let rows, statusUpdates
+    let rows, agentUpdates
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
-      rows          = body.rows
-      statusUpdates = body.statusUpdates
+      rows         = body.rows
+      agentUpdates = body.agentUpdates
     } catch {
       return res.status(400).json({ error: 'Invalid JSON body' })
     }
 
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows must be an array' })
+
+    // Fields allowed to be updated on existing agents (sfg_id, preferred_name,
+    // hire_date, birth_date are protected and never overwritten by the importer)
+    const UPSERT_FIELDS = ['opt_name', 'upline_sfg_id', 'npn', 'email', 'phone', 'address', 'city', 'state', 'zip', 'status']
 
     try {
       let inserted = 0, skipped = 0
@@ -551,15 +562,21 @@ export default async function handler(req, res) {
         skipped  = rows.length - inserted
       }
 
-      let statusUpdated = 0
-      if (Array.isArray(statusUpdates) && statusUpdates.length > 0) {
-        for (const { sfg_id, status } of statusUpdates) {
-          const { error } = await supabase.from('personnel').update({ status }).eq('sfg_id', sfg_id)
-          if (error) { errors.push({ sfg_id, error: error.message }) } else { statusUpdated++ }
+      let updated = 0
+      if (Array.isArray(agentUpdates) && agentUpdates.length > 0) {
+        for (const entry of agentUpdates) {
+          const { sfg_id } = entry
+          const patch = {}
+          for (const field of UPSERT_FIELDS) {
+            if (entry[field] !== null && entry[field] !== undefined) patch[field] = entry[field]
+          }
+          if (!Object.keys(patch).length) continue
+          const { error } = await supabase.from('personnel').update(patch).eq('sfg_id', sfg_id)
+          if (error) { errors.push({ sfg_id, error: error.message }) } else { updated++ }
         }
       }
 
-      return res.status(200).json({ inserted, skipped, statusUpdated, errors, insertedAgents })
+      return res.status(200).json({ inserted, skipped, updated, errors, insertedAgents })
     } catch (err) {
       console.error('[personnel/post]', err)
       return res.status(500).json({ error: err?.message ?? 'Failed to import agents' })

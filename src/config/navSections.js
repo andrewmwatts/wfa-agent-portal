@@ -28,7 +28,7 @@ export const NAV_SECTIONS = [
       { path: '/contracting',          label: 'Contracting',          roles: LEADER_ROLES },
       { path: '/accountability',       label: 'Accountability',       roles: OWNER_ROLES  },
       { path: '/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
-      { path: '/snapshot',             label: 'Snapshot',             roles: OWNER_ROLES  },
+      { path: '/promotions',           label: 'Promotions',           roles: OWNER_ROLES  },
       { path: '/agents',               label: 'Agents',               roles: LEADER_ROLES },
     ],
   },

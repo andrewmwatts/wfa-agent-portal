@@ -71,7 +71,7 @@ export default function App() {
             <Route element={<ProtectedRoute allowedRoles={['owner', 'director', 'super_admin']} />}>
               <Route element={<AppLayout />}>
                 <Route path="/accountability" element={<AccountabilityPage />} />
-                <Route path="/snapshot"       element={<SnapshotPage />} />
+                <Route path="/promotions"     element={<SnapshotPage />} />
               </Route>
             </Route>
 

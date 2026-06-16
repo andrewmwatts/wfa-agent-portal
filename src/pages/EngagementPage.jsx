@@ -650,6 +650,8 @@ export default function EngagementPage() {
             setSelected(updated)
             setAllPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
           }}
+          agentPhone={masterPersonnel.find(pers => pers.sfg_id === selected.sfg_id)?.phone}
+          viewerSfgId={activeSubject?.sfg_id}
         />
       )}
 
@@ -769,7 +771,7 @@ function LapseEditField({ label, value, onChange, type = 'text', span2 }) {
 
 // ─── Lapse Detail Modal ───────────────────────────────────────────────────────
 
-function LapseModal({ policy: p, onClose, canWrite, onUpdate }) {
+function LapseModal({ policy: p, onClose, canWrite, onUpdate, agentPhone, viewerSfgId }) {
   const [editing,   setEditing]   = useState(false)
   const [draft,     setDraft]     = useState(null)
   const [saving,    setSaving]    = useState(false)
@@ -857,6 +859,18 @@ function LapseModal({ policy: p, onClose, canWrite, onUpdate }) {
 
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
+              {agentPhone && viewerSfgId && p.sfg_id && viewerSfgId.toLowerCase() !== p.sfg_id.toLowerCase() && (
+                <a
+                  href={`sms:${agentPhone}`}
+                  onClick={e => e.stopPropagation()}
+                  title="Text agent"
+                  className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </a>
+              )}
               {canWrite && !editing && display.conservation_status && (
                 <button
                   onClick={handleRemoveConservation}

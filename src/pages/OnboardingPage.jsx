@@ -492,7 +492,21 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
           <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white truncate">{agent.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white truncate">{agent.name}</h2>
+              {agent.phone && (
+                <a
+                  href={`sms:${agent.phone}`}
+                  onClick={e => e.stopPropagation()}
+                  title="Text"
+                  className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </a>
+              )}
+            </div>
             <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">{agent.sfg_id}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -552,6 +566,24 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
             </div>
           </div>
         )}
+
+        {/* Agent status strip */}
+        <div className="px-6 py-3 border-b border-gray-200 dark:border-white/10 flex-shrink-0 flex flex-wrap items-center gap-2">
+          {agent.profile_issues
+            ? <span className="text-xs bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{agent.profile_issues}</span>
+            : <span className="text-xs text-gray-300 dark:text-white/20">No profile issues</span>
+          }
+          {isTruthy(agent.no_eando)
+            ? <span className="text-xs bg-red-500/15 text-red-600 dark:text-red-400 font-medium px-2 py-0.5 rounded">No E&amp;O</span>
+            : <span className="text-xs text-gray-300 dark:text-white/20">E&amp;O on file</span>
+          }
+          {agent.contracting_complete
+            ? <span className="text-xs text-green-600 dark:text-green-400">Contracts completed {fmtDate(agent.contracting_complete)}</span>
+            : agent.contracting_to_producer
+            ? <span className="text-xs text-amber-600 dark:text-amber-400">Contracts sent {fmtDate(agent.contracting_to_producer)}</span>
+            : <span className="text-xs text-gray-400 dark:text-white/30">Contracts not sent</span>
+          }
+        </div>
 
         {/* Contract numbers */}
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">

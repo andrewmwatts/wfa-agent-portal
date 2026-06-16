@@ -39,6 +39,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',   // show our own update prompt rather than auto-refreshing
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       includeAssets: [
         'favicon.ico',
         'icon.svg',
@@ -61,26 +64,9 @@ export default defineConfig({
           { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         // Precache all build output
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            // Never cache API calls — always go to network
-            urlPattern: /^\/api\//,
-            handler: 'NetworkOnly',
-          },
-          {
-            // Supabase REST — network first, fall back to cache for offline reads
-            urlPattern: /^https:\/\/.*\.supabase\.co\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-cache',
-              networkTimeoutSeconds: 10,
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-            },
-          },
-        ],
       },
     }),
   ],
