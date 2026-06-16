@@ -29,10 +29,10 @@ export async function registerPushSubscription(userId, sfgId) {
   return subscription
 }
 
-export async function unregisterPushSubscription(userId, sfgId) {
+export async function unregisterPushSubscription(userId, sfgId, endpoint) {
   await fetch('/api/push-subscribe', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, sfg_id: sfgId }),
+    body: JSON.stringify({ user_id: userId, sfg_id: sfgId, endpoint }),
   })
 }

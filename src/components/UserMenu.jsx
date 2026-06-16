@@ -347,8 +347,11 @@ function NotificationMenuItem({ userProfile }) {
     try {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.getSubscription()
+      const endpoint = sub?.endpoint
       if (sub) await sub.unsubscribe()
-      await unregisterPushSubscription(userProfile?.id, userProfile?.sfg_id)
+      // Pass this device's endpoint so disabling here doesn't remove a
+      // subscription belonging to another device signed into the same account.
+      await unregisterPushSubscription(userProfile?.id, userProfile?.sfg_id, endpoint)
       setStatus('unsubscribed')
     } finally {
       setBusy(false)
