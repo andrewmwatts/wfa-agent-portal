@@ -265,6 +265,9 @@ export default function MonthlyAgentTotalsPage() {
 
   // Pending/incomplete only shown when the selected month is the exact current month
   const isCurrentMonth = selectedYear === now.getFullYear() && selectedMonth === now.getMonth()
+  // Past month = strictly before the current month/year (not current, not future)
+  const isPastMonth = selectedYear < now.getFullYear() ||
+    (selectedYear === now.getFullYear() && selectedMonth < now.getMonth())
 
   const [masterPersonnel,  setMasterPersonnel]  = useState([])
   const [displayPersonnel, setDisplayPersonnel] = useState([])
@@ -499,12 +502,12 @@ export default function MonthlyAgentTotalsPage() {
       const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
       const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
 
-      // APV sums — always use issued_apv; chargebacks reduce issued totals
+      // APV sums — always use issued_apv; chargebacks reduce issued totals for past months only
       const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
-      const agentIssued     = sumApv(agentIssuedPols) - ownCb  - (includeLikelyCb ? ownLikelyCbAmt  : 0)
+      const agentIssued     = sumApv(agentIssuedPols) - (isPastMonth ? ownCb  : 0) - (includeLikelyCb ? ownLikelyCbAmt  : 0)
       const agentPending    = sumApv(agentPendingPols)
       const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb - (includeLikelyCb ? teamLikelyCbAmt : 0)
+      const teamIssued      = sumApv(teamIssuedPolsList) - (isPastMonth ? teamCb : 0) - (includeLikelyCb ? teamLikelyCbAmt : 0)
       const teamPending     = sumApv(teamPendingPols)
       const teamIncomplete  = sumApv(teamIncompletePols)
 
@@ -578,7 +581,9 @@ export default function MonthlyAgentTotalsPage() {
         // Drill-down policy lists
         agentIssuedPols, agentPendingPols, agentIncompletePols,
         teamIssuedPols: teamIssuedPolsList, teamPendingPols, teamIncompletePols,
-        ownCbPols, teamCbPols,
+        // CB line items shown in modal only for past months (where they affect the total)
+        ownCbPols:   isPastMonth ? ownCbPols  : [],
+        teamCbPols:  isPastMonth ? teamCbPols : [],
         ownLikelyCbPols, teamLikelyCbPols,
       }
     })
@@ -589,7 +594,7 @@ export default function MonthlyAgentTotalsPage() {
     )
     // Alphabetical by name
     .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, likelyCbMemo, includeLikelyCb, isCurrentMonth, weekColumns])
+  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, likelyCbMemo, includeLikelyCb, isCurrentMonth, isPastMonth, weekColumns])
 
   // ── Year options ───────────────────────────────────────────────────────────
   const yearOptions = []
