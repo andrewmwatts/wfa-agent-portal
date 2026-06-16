@@ -154,6 +154,7 @@ function coerce(col, val) {
     }
     return null
   }
+  if (col === 'sfg_id') return String(val ?? '').trim().toUpperCase() || null
   if (DATE_COLS.has(col)) return (val === '' || val == null) ? null : val
   if (NUMERIC_COLS.has(col)) {
     if (val === '' || val == null) return null
@@ -770,7 +771,7 @@ export default async function handler(req, res) {
       'application_notes', 'policy_notes', 'not_in_opt', 'split_reset', 'chargeback_exempt',
       'conservation_status', 'conservation_date',
       'snapshot_chargeback_month', 'snapshot_chargeback_apv',
-      'sfg_id',
+      'sfg_id', 'agent', 'agent_email',
     ])
 
     try {
