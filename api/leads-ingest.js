@@ -122,10 +122,15 @@ export default async function handler(req, res) {
 
     if (error) return res.status(500).json({ success: false, error: error.message })
 
-    // Best-effort push notification — never throws or delays the response
-    sendLeadPushNotification(sb, lead).catch(e =>
+    // Best-effort push notification — awaited so the serverless function
+    // doesn't tear down before it completes. An un-awaited promise here can
+    // get killed mid-flight the instant the response is sent, silently
+    // dropping the push with no error ever logged.
+    try {
+      await sendLeadPushNotification(sb, lead)
+    } catch (e) {
       console.error('[push] notification error:', e.message)
-    )
+    }
 
     return res.status(201).json({ success: true })
   }
