@@ -316,6 +316,17 @@ function NotificationsSection({ userProfile }) {
   const isPWA = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
   const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
 
+  // Browser-level permission can be 'granted' even if our server-side save
+  // previously failed (e.g. a transient DB error). Re-sync silently whenever
+  // we render in the "granted" state so a past failure gets retried without
+  // the user having to revoke and re-grant browser permission.
+  useEffect(() => {
+    if (permission !== 'granted' || !supported || (isIOS && !isPWA)) return
+    registerPushSubscription(userProfile?.id, userProfile?.sfg_id).catch(e => {
+      console.error('[push] re-sync failed:', e.message)
+    })
+  }, [permission]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleEnable() {
     setRegistering(true)
     setRegError(null)
