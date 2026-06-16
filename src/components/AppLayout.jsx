@@ -6,6 +6,7 @@ import { useAgencyLogo } from '../context/AgencyContext'
 import Sidebar from './Sidebar'
 import ViewingBanner from './ViewingBanner'
 import UserMenu from './UserMenu'
+import { registerPushSubscription } from '../utils/pushNotifications'
 
 // Header height as a shared constant so sidebar top offset stays in sync
 export const HEADER_H = 'h-14'
@@ -22,6 +23,20 @@ export default function AppLayout() {
     await signOut()
     navigate('/login', { replace: true })
   }
+
+  // Re-sync push subscription to DB on every app load so a server-side row
+  // deletion (e.g. DB migration) doesn't silently drop notifications.
+  useEffect(() => {
+    if (!userProfile?.id || !userProfile?.sfg_id) return
+    const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+    if (!supported || Notification.permission !== 'granted') return
+    navigator.serviceWorker.ready
+      .then(reg => reg.pushManager.getSubscription())
+      .then(sub => {
+        if (sub) registerPushSubscription(userProfile.id, userProfile.sfg_id).catch(() => {})
+      })
+      .catch(() => {})
+  }, [userProfile?.id, userProfile?.sfg_id])
 
   // Fetch active system messages on mount and on each page load
   useEffect(() => {
