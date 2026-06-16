@@ -2,7 +2,7 @@ import { Component, useEffect, useMemo, useRef, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import AddPolicyModal from '../components/AddPolicyModal'
+import AddPolicyModal, { AgentLookup } from '../components/AddPolicyModal'
 import BulkImportModal from '../components/BulkImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
@@ -634,6 +634,7 @@ export default function PoliciesPage() {
         <PolicyModalErrorBoundary onClose={closeDetail}>
           <PolicyModal
             policy={selected}
+            personnel={personnel}
             onClose={closeDetail}
             onBack={selectedSource === 'search' ? closeDetail : null}
             canWrite={permissions?.appsAndPolicies?.write ?? false}
@@ -716,6 +717,9 @@ class PolicyModalErrorBoundary extends Component {
 // ─── Policy Detail Modal ───────────────────────────────────────────────────────
 
 const POLICY_COL_MAP = {
+  sfg_id:              'sfg_id',
+  agent:               'agent',
+  agent_email:         'agent_email',
   applicant:           'applicant',
   carrier:             'carrier',
   policy_type:         'policy_name',
@@ -760,7 +764,7 @@ const CONSERVATION_STATUS_OPTIONS = [
   'Withdrawn, On Snapshot',
 ]
 
-function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId }) {
+function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId }) {
   const [editing,         setEditing]         = useState(false)
   const [draft,           setDraft]           = useState(null)
   const [saving,          setSaving]          = useState(false)
@@ -1042,7 +1046,20 @@ function PolicyModal({ policy: p, onClose, onBack, canWrite, onUpdate, onDelete,
           <ModalSection title="Application">
             {editing ? (
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                <EditField label="Agent" value={draft.agent} onChange={v => setField('agent', v)} />
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Agent</p>
+                  <AgentLookup
+                    personnel={personnel}
+                    value={draft.sfg_id ?? ''}
+                    onSelect={person => setDraft(d => ({
+                      ...d,
+                      sfg_id:      person.sfg_id,
+                      agent:       person.name || person.preferred_name || person.full_name || '',
+                      agent_email: person.email || '',
+                    }))}
+                    onClear={() => setDraft(d => ({ ...d, sfg_id: '', agent: '', agent_email: '' }))}
+                  />
+                </div>
                 <EditField label="Client" value={draft.applicant} onChange={v => setField('applicant', v)} />
                 <div className="col-span-2">
                   <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>

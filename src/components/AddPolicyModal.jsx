@@ -275,7 +275,7 @@ export default function AddPolicyModal({ personnel, existingCarriers = [], exist
 
 // ── Agent name-lookup typeahead ────────────────────────────────────────────────
 
-function AgentLookup({ personnel, value, onSelect, onClear, error }) {
+export function AgentLookup({ personnel, value, onSelect, onClear, error }) {
   const selected = value ? personnel.find(p => p.sfg_id === value) ?? null : null
 
   const [query, setQuery] = useState(
