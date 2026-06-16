@@ -21,11 +21,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'subscription, sfg_id, and user_id are required' })
     }
 
+    // Keyed on (user_id, sfg_id, endpoint) so each device/browser gets its own
+    // row — without endpoint in the conflict target, a second device's
+    // subscription would silently overwrite the first.
     const { error } = await sb
       .from('push_subscriptions')
       .upsert(
-        { user_id, sfg_id: sfg_id.toUpperCase(), subscription },
-        { onConflict: 'user_id,sfg_id', ignoreDuplicates: false }
+        { user_id, sfg_id: sfg_id.toUpperCase(), subscription, endpoint: subscription.endpoint },
+        { onConflict: 'user_id,sfg_id,endpoint', ignoreDuplicates: false }
       )
 
     if (error) return res.status(500).json({ error: error.message })
@@ -34,17 +37,17 @@ export default async function handler(req, res) {
 
   // ── DELETE — remove subscription ──────────────────────────────────────────
   if (req.method === 'DELETE') {
-    const { user_id, sfg_id } = req.body ?? {}
+    const { user_id, sfg_id, endpoint } = req.body ?? {}
 
     if (!user_id || !sfg_id) {
       return res.status(400).json({ error: 'user_id and sfg_id are required' })
     }
 
-    const { error } = await sb
-      .from('push_subscriptions')
-      .delete()
-      .eq('user_id', user_id)
-      .eq('sfg_id', sfg_id.toUpperCase())
+    // Scope to this device's endpoint when provided, so disabling on one
+    // device doesn't remove another device's subscription for the same user.
+    let q = sb.from('push_subscriptions').delete().eq('user_id', user_id).eq('sfg_id', sfg_id.toUpperCase())
+    if (endpoint) q = q.eq('endpoint', endpoint)
+    const { error } = await q
 
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ success: true })
