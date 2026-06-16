@@ -7,6 +7,13 @@ import { ExpirationPlugin } from 'workbox-expiration'
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
 
+// injectManifest mode doesn't wire this up automatically (unlike generateSW) —
+// without it, the "Update" button's updateServiceWorker(true) call has nothing
+// to skip waiting, so the new SW never activates and the page never reloads.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
+})
+
 // Never cache API calls
 registerRoute(
   ({ url }) => url.pathname.startsWith('/api/'),
