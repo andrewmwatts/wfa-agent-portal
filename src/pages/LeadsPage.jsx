@@ -193,6 +193,14 @@ export default function LeadsPage() {
 
   useEffect(() => { loadLeads() }, [loadLeads])
 
+  // Clear any pending push-notification badge when the agent views Leads directly
+  // (not via tapping the notification, which already clears it in the service worker)
+  useEffect(() => {
+    if ('clearAppBadge' in navigator) {
+      navigator.clearAppBadge().catch(() => {})
+    }
+  }, [])
+
   async function openLead(lead) {
     setSelected(lead)
     setShowNoteBox(false)
