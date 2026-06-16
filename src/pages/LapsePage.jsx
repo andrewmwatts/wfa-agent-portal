@@ -6,6 +6,17 @@ import { getBaseshopIds } from '../utils/agencyScope'
 import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 
+const CONSERVATION_STATUS_OPTIONS = [
+  'Cancelled',
+  'Death',
+  'Declined, On Snapshot',
+  'First Premium Not Paid',
+  'Lapse pending',
+  'Lapsed',
+  'Not Taken, On Snapshot',
+  'Withdrawn, On Snapshot',
+]
+
 function daysToLapse(conservationDate) {
   if (!conservationDate) return null
   const today = new Date()
@@ -160,7 +171,10 @@ export default function LapsePage() {
   const quickSearchResults = useMemo(() => {
     if (!quickSearchQuery.trim()) return []
     const q = quickSearchQuery.toLowerCase()
-    return allPolicies.filter(p => p.applicant?.toLowerCase().includes(q)).slice(0, 20)
+    return allPolicies.filter(p =>
+      p.applicant?.toLowerCase().includes(q) ||
+      p.policy_no?.toLowerCase().includes(q)
+    ).slice(0, 20)
   }, [allPolicies, quickSearchQuery])
 
   function openFromTable(policy)  { setSelected(policy); setSelectedSource('table') }
@@ -409,7 +423,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
           <input
             autoFocus
             type="text"
-            placeholder="Search by client name…"
+            placeholder="Search by client name or policy number…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full bg-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 text-sm focus:outline-none"
@@ -701,7 +715,17 @@ function LapseModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
           <ModalSection title="Conservation">
             {editing ? (
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <LapseEditField label="Status"              value={draft.conservation_status}  onChange={v => setField('conservation_status', v)} />
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
+                  <select
+                    value={draft.conservation_status ?? ''}
+                    onChange={e => setField('conservation_status', e.target.value)}
+                    className={LAPSE_INPUT_CLS}
+                  >
+                    <option value="">— select —</option>
+                    {CONSERVATION_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
                 <LapseEditField label="Expected Lapse Date" value={toInputDate(draft.conservation_date)} onChange={v => setField('conservation_date', v)} type="date" />
                 <LapseEditField label="Chargeback Month"    value={draft.cb_month ?? ''}  onChange={v => setField('cb_month', v)} />
                 <LapseEditField label="Chargeback APV"      value={draft.cb_apv ?? ''}    onChange={v => setField('cb_apv', v)} />
