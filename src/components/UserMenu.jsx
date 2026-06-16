@@ -14,7 +14,7 @@ const SECTIONS = [
   { key: 'activity',          label: 'Activity'             },
   { key: 'income',            label: 'Income / Expenses'    },
   { key: 'accountability',    label: 'Accountability'       },
-  { key: 'snapshot',          label: 'Snapshot'             },
+  { key: 'snapshot',          label: 'Promotions'           },
 ]
 
 // Sections where write access can always be delegated (no admin grant needed)

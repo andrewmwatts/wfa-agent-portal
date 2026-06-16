@@ -17,7 +17,7 @@ const WRITE_SECTIONS = [
   { key: 'metrics',           label: 'Metrics'              },
   { key: 'activity',          label: 'Activity'             },
   { key: 'accountability',    label: 'Accountability'       },
-  { key: 'snapshot',          label: 'Snapshot'             },
+  { key: 'snapshot',          label: 'Promotions'           },
 ]
 
 const TABS = [
@@ -32,7 +32,7 @@ const TABS = [
 const PORTAL_PAGES = [
   'Dashboard','Policies','Lapse','Activity Tracking','Leads','Recruiting',
   'Monthly Metrics','Weekly Metrics','Carrier Metrics',
-  'Monthly Agent Totals','Contracting','Accountability','Coaching','Snapshot','Agents',
+  'Monthly Agent Totals','Contracting','Accountability','Coaching','Promotions','Agents',
   'Admin Tools','Other',
 ]
 
