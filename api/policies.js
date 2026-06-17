@@ -771,7 +771,7 @@ export default async function handler(req, res) {
       'application_notes', 'policy_notes', 'not_in_opt', 'split_reset', 'chargeback_exempt',
       'conservation_status', 'conservation_date',
       'snapshot_chargeback_month', 'snapshot_chargeback_apv',
-      'sfg_id', 'agent', 'agent_email',
+      'sfg_id',
     ])
 
     try {
