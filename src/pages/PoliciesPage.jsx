@@ -718,8 +718,6 @@ class PolicyModalErrorBoundary extends Component {
 
 const POLICY_COL_MAP = {
   sfg_id:              'sfg_id',
-  agent:               'agent',
-  agent_email:         'agent_email',
   applicant:           'applicant',
   carrier:             'carrier',
   policy_type:         'policy_name',
