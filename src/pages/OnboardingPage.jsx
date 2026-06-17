@@ -12,7 +12,8 @@ import { toInputDate, fmtDate } from '../utils/format'
 
 function isTruthy(val) {
   if (!val) return false
-  return ['true', 'yes', 'y', 'x', '1'].includes(val.trim().toLowerCase())
+  if (typeof val === 'boolean') return val
+  return ['true', 'yes', 'y', 'x', '1'].includes(String(val).trim().toLowerCase())
 }
 
 
