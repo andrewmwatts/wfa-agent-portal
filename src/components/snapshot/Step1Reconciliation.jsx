@@ -51,27 +51,19 @@ function parseXlsxDate(val) {
   return null
 }
 
+// Returns { from: 'YYYY-MM-01', to: 'YYYY-MM-DD' } for the full calendar month
+function monthWindow(isoMonth) {
+  const [y, m] = isoMonth.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return { from: `${isoMonth}-01`, to: `${isoMonth}-${String(lastDay).padStart(2, '0')}` }
+}
+
 function parseSnapshotXlsx(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = e => {
       try {
         const wb = XLSX.read(e.target.result, { type: 'array', cellDates: false })
-
-        // ── Sheet 1: SnapShot Details — extract date range ────────────────────
-        let dateFrom = null, dateTo = null
-        const detailSheet = wb.Sheets['SnapShot Details'] || wb.Sheets[wb.SheetNames[0]]
-        if (detailSheet) {
-          const rows = XLSX.utils.sheet_to_json(detailSheet, { header: 1, defval: '' })
-          for (let i = 0; i < Math.min(rows.length, 12); i++) {
-            const a = String(rows[i][0] ?? '').trim()
-            if (a.toLowerCase().includes('date from')) {
-              dateFrom = parseXlsxDate(rows[i][1])
-              dateTo   = parseXlsxDate(rows[i][3])
-              break
-            }
-          }
-        }
 
         // ── Sheet 2: SnapShot by Agent — parse agent rows ─────────────────────
         const agentSheet = wb.Sheets['SnapShot by Agent'] || wb.Sheets[wb.SheetNames[1]] || wb.Sheets[wb.SheetNames[0]]
@@ -117,7 +109,7 @@ function parseSnapshotXlsx(file) {
           }
         }
 
-        resolve({ dateFrom, dateTo, agents })
+        resolve({ agents })
       } catch (err) {
         reject(err)
       }
@@ -211,7 +203,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           month:           cycle.month,
-          snapshot_window: { from: parsed.dateFrom, to: parsed.dateTo },
+          snapshot_window: monthWindow(cycle.month),
           snapshot_agents: parsed.agents,
         }),
       })
@@ -324,7 +316,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
             {parsed && (
               <span className="text-xs text-green-600 dark:text-green-400">
                 Parsed: {parsed.agents.length} agent-carrier rows
-                {parsed.dateFrom && ` · Window: ${fmtDate(parsed.dateFrom)} – ${fmtDate(parsed.dateTo)}`}
+                {cycle.month && (() => { const w = monthWindow(cycle.month); return ` · Window: ${fmtDate(w.from)} – ${fmtDate(w.to)}` })()}
               </span>
             )}
             <button
