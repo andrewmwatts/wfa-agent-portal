@@ -361,7 +361,7 @@ export default async function handler(req, res) {
           zip:                     p.zip?.trim()               ?? '',
           milestones,
           named_milestones,
-          commission_contract:   levelMap[p.sfg_id?.toUpperCase()]?.contract   ?? null,
+          commission_contract:   levelMap[p.sfg_id?.toUpperCase()]?.contract   ?? { level: '80', qualified_date: null },
           commission_leadership: levelMap[p.sfg_id?.toUpperCase()]?.leadership ?? null,
           commission_prestige:   levelMap[p.sfg_id?.toUpperCase()]?.prestige   ?? [],
         }

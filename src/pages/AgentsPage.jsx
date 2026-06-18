@@ -19,6 +19,8 @@ const fmtDate = str => fmtDateUtil(str, { empty: null })
 
 // ─── Milestone helpers ────────────────────────────────────────────────────────
 
+const LEADERSHIP_ORDER = ['TL', 'KL', 'AO']
+
 function isOwnerRecord(p) {
   return p.commission_leadership?.level === 'AO'
 }
