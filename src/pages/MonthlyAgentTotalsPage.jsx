@@ -5,47 +5,7 @@ import ScopeDropdown from '../components/ScopeDropdown'
 import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
-// ─── Milestone helpers (mirrors AgentsPage) ───────────────────────────────────
-
-function allFilled(months) {
-  return Array.isArray(months) && months.length > 0 && months.every(m => m?.trim())
-}
-
-function contractLevel(milestones = {}) {
-  const levels = Object.keys(milestones).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
-  let highest = null
-  for (const lvl of levels) {
-    if (allFilled(milestones[String(lvl)])) highest = lvl
-  }
-  return highest ?? 80
-}
-
-const LEADERSHIP_ORDER = ['TL', 'KL', 'AO']
-function leadershipLevel(named = {}) {
-  let highest = null
-  for (const key of LEADERSHIP_ORDER) {
-    if (allFilled(named[key])) highest = key
-  }
-  return highest
-}
-
-// ─── Promotion-level sequencing ───────────────────────────────────────────────
-
-const CONTRACT_LEVELS = [85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
-
-function nextContractLevel(current) {
-  if (current < 85) return 85
-  const idx = CONTRACT_LEVELS.indexOf(current)
-  if (idx === -1 || idx === CONTRACT_LEVELS.length - 1) return null
-  return CONTRACT_LEVELS[idx + 1]
-}
-
-function nextLeadershipLevel(current) {
-  if (!current) return 'TL'
-  const idx = LEADERSHIP_ORDER.indexOf(current)
-  if (idx === -1 || idx === LEADERSHIP_ORDER.length - 1) return null
-  return LEADERSHIP_ORDER[idx + 1]
-}
+import { nextContractLevel, nextLeadershipLevel } from '../../shared/commissionLevel'
 
 // ─── Conditional-formatting logic ─────────────────────────────────────────────
 // Returns 'green' | 'yellow' | 'none'
@@ -515,8 +475,8 @@ export default function MonthlyAgentTotalsPage() {
       const writers = new Set(teamPols.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)).size
 
       // Current levels & next targets
-      const curContract  = contractLevel(agent.milestones ?? {})
-      const curLeader    = leadershipLevel(agent.named_milestones ?? {})
+      const curContract  = agent.commission_contract?.level ?? null
+      const curLeader    = agent.commission_leadership?.level ?? null
       const nextConLvl   = nextContractLevel(curContract)
       const nextLeadLvl  = nextLeadershipLevel(curLeader)
       const promoQual    = nextConLvl  ? (qualMap[String(nextConLvl)] ?? null) : null

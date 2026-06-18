@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
+import { buildLevelMap } from '../shared/commissionLevel.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -294,7 +295,7 @@ export default async function handler(req, res) {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
       // so we don't fetch every row in both tables just to filter them in JS.
       const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, email, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
-      const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
+      const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot, is_qualified, qualified_date'
       const upperIds   = requestedIds.map(id => id.toUpperCase())
       const useDbFilter = !rootParam && requestedIds.length > 0
 
@@ -322,6 +323,8 @@ export default async function handler(req, res) {
         if (!id) continue
         ;(promosBySfgId[id] ??= []).push(row)
       }
+
+      const levelMap = buildLevelMap(promoRows ?? [])
 
       const nameById = {}
       for (const p of personnelRows) {
@@ -358,6 +361,9 @@ export default async function handler(req, res) {
           zip:                     p.zip?.trim()               ?? '',
           milestones,
           named_milestones,
+          commission_contract:   levelMap[p.sfg_id?.toUpperCase()]?.contract   ?? null,
+          commission_leadership: levelMap[p.sfg_id?.toUpperCase()]?.leadership ?? null,
+          commission_prestige:   levelMap[p.sfg_id?.toUpperCase()]?.prestige   ?? [],
         }
       })
 
