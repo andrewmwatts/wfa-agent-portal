@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireSuperAdmin } from './_auth.js'
+import { buildLevelMap } from '../shared/commissionLevel.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -353,10 +354,16 @@ export default async function handler(req, res) {
         monthPolicies = polData ?? []
       }
 
+      const levelMap = buildLevelMap(promoRes.data ?? [])
+      const personnel = (personRes.data ?? []).map(p => {
+        const levels = levelMap[p.sfg_id?.toUpperCase()] ?? { contract: null, leadership: null, prestige: [] }
+        return { ...p, commission_contract: levels.contract, commission_leadership: levels.leadership, commission_prestige: levels.prestige }
+      })
+
       return res.status(200).json({
-        personnel:    personRes.data  ?? [],
-        qualifications: qualRes.data  ?? [],
-        promotions:   promoRes.data   ?? [],
+        personnel,
+        qualifications: qualRes.data ?? [],
+        promotions:     promoRes.data ?? [],
         monthPolicies,
       })
     } catch (err) {

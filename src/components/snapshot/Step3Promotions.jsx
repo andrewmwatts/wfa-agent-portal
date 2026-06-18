@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { fmtCurrency as fmtAmt } from '../../utils/format'
+import { nextContractLevel, nextLeadershipLevel } from '../../../shared/commissionLevel'
 
 const INPUT_CLS = 'w-full rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
 
@@ -175,9 +176,13 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     return m
   }, [personnel])
 
+  // Keyed by "SFGID||LEVEL" so an agent can have separate in-progress rows per track
   const agentPromoMap = useMemo(() => {
     const m = {}
-    for (const ap of agentPromos) m[ap.sfg_id?.toUpperCase()] = ap
+    for (const ap of agentPromos) {
+      const id = ap.sfg_id?.toUpperCase()
+      if (id && ap.level) m[`${id}||${ap.level}`] = ap
+    }
     return m
   }, [agentPromos])
 
@@ -208,60 +213,107 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   }, [personnel, apvByAgent])
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  function getThresholds(person) {
-    const q = qualByLevel[person?.commission_level?.toLowerCase()]
-    return q ? { regular: Number(q.regular) || 0, slingshot: Number(q.slingshot) || 0, writers: Number(q.writers) || 0 } : null
+  function getThresholds(level) {
+    // qualifications rows use string keys matching the level values exactly
+    return qualByLevel[String(level).toLowerCase()] ?? qualByLevel[String(level)] ?? null
   }
 
-  function detectPromoType(person, apv, writers) {
-    const q = getThresholds(person)
-    if (!q || apv < q.regular || writers < q.writers) return null
-    const level = person.commission_level?.toLowerCase() ?? ''
-    const isLeadership = ['tl', 'kl', 'ao', 'team leader', 'key leader', 'agency owner'].some(l => level.includes(l))
-    if (isLeadership) return apv >= q.slingshot && q.slingshot > 0 ? 'AO' : 'TL-KL'
-    return apv >= q.slingshot && q.slingshot > 0 ? 'Slingshot' : 'Standard'
+  function meetsThreshold(q, apv, writers) {
+    if (!q) return false
+    return apv >= (Number(q.regular) || 0) && writers >= (Number(q.writers) || 0)
   }
 
-  // Condition A: has active writing downlines (structural impact)
-  // Condition B: same commission level as upline (hierarchy parity)
+  function isSlingshot(q, apv) {
+    return !!(q?.slingshot && apv >= Number(q.slingshot))
+  }
+
+  // Condition A: agent has writing downlines this month (structural impact on promotion)
+  // Condition B: agent's contract level equals their upline's contract level (hierarchy parity)
   function hierarchyFlags(sfgId) {
     const id     = sfgId?.toUpperCase()
     const person = personnelMap[id]
     const condA  = personnel.some(p => p.upline_sfg_id?.toUpperCase() === id && (apvByAgent[p.sfg_id?.toUpperCase()] ?? 0) > 0)
     const upline = personnelMap[person?.upline_sfg_id?.toUpperCase()]
-    const condB  = !!(upline && upline.commission_level && upline.commission_level.toLowerCase() === person?.commission_level?.toLowerCase())
+    const condB  = !!(upline && upline.commission_contract?.level && upline.commission_contract.level === person?.commission_contract?.level)
     return { condA, condB, any: condA || condB }
   }
 
   // ── Qualifying agents ────────────────────────────────────────────────────────
+  // Each entry represents one qualifying opportunity (contract OR leadership track).
+  // A single agent may appear twice if they're qualifying on both tracks simultaneously.
   const qualifyingAgents = useMemo(() => {
     const result = []
+
     for (const person of personnel) {
       const sfgId = person.sfg_id?.toUpperCase()
-      if (!sfgId || skipped.has(sfgId)) continue
+      if (!sfgId) continue
 
       const apv     = apvByAgent[sfgId] ?? 0
       const writers = writersCount[sfgId] ?? 0
-      const q       = getThresholds(person)
-      if (!q || apv < q.regular || writers < q.writers) continue
+      const flags   = hierarchyFlags(sfgId)
 
-      const promoType = detectPromoType(person, apv, writers)
-      if (!promoType) continue
+      // ── Contract track ────────────────────────────────────────────────────
+      const nextContract = nextContractLevel(person.commission_contract?.level ?? null)
+      if (nextContract && !skipped.has(sfgId + '||' + nextContract)) {
+        const q = getThresholds(nextContract)
+        if (meetsThreshold(q, apv, writers)) {
+          const existing = agentPromoMap[`${sfgId}||${nextContract}`] ?? null
+          const months   = Number(q?.months) || 2
+          let monthNum   = 1
+          if (existing?.month_1 && !existing?.month_2) monthNum = 2
+          if (existing?.month_1 && existing?.month_2 && months === 3) monthNum = 3
 
-      const existing = agentPromoMap[sfgId]
-      let monthNum = 1
-      if (existing?.month_1 && !existing?.month_2) monthNum = 2
-      else if (existing?.month_1 && existing?.month_2 && !existing?.month_3) monthNum = 3
+          const key = `${sfgId}||contract||${nextContract}||${monthNum}`
+          const alreadyLogged = promotions.some(
+            a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
+                 a.level === nextContract && ['promotion', 'qualifying_month'].includes(a.action_type)
+          )
+          if (!alreadyLogged) {
+            result.push({
+              key, person, sfgId, apv, writers, monthNum,
+              track: 'contract',
+              targetLevel: nextContract,
+              promoType:   isSlingshot(q, apv) ? 'Slingshot' : 'Standard',
+              existing,
+              flags,
+              totalMonths: months,
+            })
+          }
+        }
+      }
 
-      // Skip if already logged for this cycle
-      const alreadyLogged = promotions.some(
-        a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
-             ['promotion', 'qualifying_month'].includes(a.action_type)
-      )
-      if (alreadyLogged) continue
+      // ── Leadership track ──────────────────────────────────────────────────
+      const nextLeadership = nextLeadershipLevel(person.commission_leadership?.level ?? null)
+      if (nextLeadership && !skipped.has(sfgId + '||' + nextLeadership)) {
+        const q = getThresholds(nextLeadership)
+        if (meetsThreshold(q, apv, writers)) {
+          const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
+          const qL       = getThresholds(nextLeadership)
+          const months   = Number(qL?.months) || 2
+          let monthNum   = 1
+          if (existing?.month_1 && !existing?.month_2) monthNum = 2
+          if (existing?.month_1 && existing?.month_2 && months === 3) monthNum = 3
 
-      result.push({ person, sfgId, apv, writers, monthNum, promoType, existing, flags: hierarchyFlags(sfgId) })
+          const key = `${sfgId}||leadership||${nextLeadership}||${monthNum}`
+          const alreadyLogged = promotions.some(
+            a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
+                 a.level === nextLeadership && ['promotion', 'qualifying_month'].includes(a.action_type)
+          )
+          if (!alreadyLogged) {
+            result.push({
+              key, person, sfgId, apv, writers, monthNum,
+              track: 'leadership',
+              targetLevel: nextLeadership,
+              promoType:   nextLeadership,
+              existing,
+              flags,
+              totalMonths: months,
+            })
+          }
+        }
+      }
     }
+
     return result.sort((a, b) => (a.person.opt_name ?? '').localeCompare(b.person.opt_name ?? ''))
   }, [personnel, apvByAgent, writersCount, agentPromoMap, qualByLevel, promotions, skipped])
 
@@ -286,11 +338,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   const unresolvedFlags = finalizedActions.filter(a => hierarchyFlags(a.sfg_id).any && !a.hierarchy_flag_noted)
 
   // ── Actions ──────────────────────────────────────────────────────────────────
-  async function logMonth(sfgId, monthNum, promoType) {
-    setSaving(sfgId + '-month')
+  async function logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths) {
+    setSaving(sfgId + '-' + targetLevel + '-month')
     try {
-      const existing = agentPromoMap[sfgId]
-      const isFinal  = monthNum === 3
+      const isFinal = monthNum >= totalMonths
 
       await fetch('/api/snapshot?type=agent_promotion', {
         method: 'POST',
@@ -298,10 +349,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         body: JSON.stringify({
           sfg_id:         sfgId,
           promotion_type: promoType,
-          level:          personnelMap[sfgId]?.commission_level ?? '',
+          level:          targetLevel,
           month_1:        monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
           month_2:        monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
-          month_3:        isFinal        ? cycleMonth : (existing?.month_3 ?? null),
+          month_3:        (isFinal && totalMonths === 3) ? cycleMonth : (existing?.month_3 ?? null),
           is_slingshot:   promoType === 'Slingshot',
           is_qualified:   isFinal,
           qualified_date: isFinal ? new Date().toISOString().slice(0, 10) : null,
@@ -316,10 +367,11 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           sfg_id:       sfgId,
           action_type:  isFinal ? 'promotion' : 'qualifying_month',
           month_number: monthNum,
+          level:        targetLevel,
         }),
       })
 
-      if (isFinal) setJotformOpen(prev => new Set([...prev, sfgId]))
+      if (isFinal) setJotformOpen(prev => new Set([...prev, sfgId + '||' + targetLevel]))
       await onRefresh()
     } finally {
       setSaving(null)
@@ -460,23 +512,30 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           </div>
         ) : (
           <div className="space-y-3">
-            {qualifyingAgents.map(({ person, sfgId, apv, writers, monthNum, promoType, existing, flags }) => {
-              const isFinal = monthNum === 3
-              const showJotform = isFinal || jotformOpen.has(sfgId)
+            {qualifyingAgents.map(({ key, person, sfgId, apv, writers, monthNum, promoType, targetLevel, track, existing, flags, totalMonths }) => {
+              const isFinal     = monthNum >= totalMonths
+              const jotformKey  = sfgId + '||' + targetLevel
+              const savingKey   = sfgId + '-' + targetLevel + '-month'
+              const showJotform = isFinal || jotformOpen.has(jotformKey)
               const jotformLines = buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing)
+              const currentLevelLabel = track === 'contract'
+                ? (person.commission_contract?.level ? `${person.commission_contract.level}%` : 'New')
+                : (person.commission_leadership?.level ?? 'None')
 
               return (
-                <div key={sfgId} className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
+                <div key={key} className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
                   {/* Header */}
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
                     <span className="font-semibold text-gray-900 dark:text-white text-sm">{person.opt_name}</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60">{person.commission_level}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50">
+                      {currentLevelLabel} → {track === 'contract' ? `${targetLevel}%` : targetLevel}
+                    </span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                       isFinal
                         ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400'
                         : 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                     }`}>
-                      {isFinal ? `FINAL — ${promoType}` : `Month ${monthNum} — ${promoType}`}
+                      {isFinal ? `FINAL — ${promoType}` : `Month ${monthNum}/${totalMonths} — ${promoType}`}
                     </span>
                     {flags.condA && (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400">Condition A</span>
@@ -504,30 +563,30 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                     {!readOnly && (
                       <div className="flex items-center gap-2 pt-1 flex-wrap">
                         <button
-                          onClick={() => logMonth(sfgId, monthNum, promoType)}
+                          onClick={() => logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths)}
                           disabled={!!saving}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${
                             isFinal
                               ? 'bg-green-600 text-white hover:bg-green-700'
                               : 'bg-accent text-white hover:bg-accent/90'
                           }`}>
-                          {saving === sfgId + '-month' ? 'Logging…' : isFinal ? 'Log & Submit Promotion' : `Log Month ${monthNum}`}
+                          {saving === savingKey ? 'Logging…' : isFinal ? 'Log & Submit Promotion' : `Log Month ${monthNum}`}
                         </button>
 
                         {!isFinal && (
                           <button
                             onClick={() => setJotformOpen(prev => {
                               const s = new Set(prev)
-                              s.has(sfgId) ? s.delete(sfgId) : s.add(sfgId)
+                              s.has(jotformKey) ? s.delete(jotformKey) : s.add(jotformKey)
                               return s
                             })}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 dark:text-white/50 border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5">
-                            {jotformOpen.has(sfgId) ? 'Hide Jotform' : 'Show Jotform'}
+                            {jotformOpen.has(jotformKey) ? 'Hide Jotform' : 'Show Jotform'}
                           </button>
                         )}
 
                         <button
-                          onClick={() => setSkipped(prev => new Set([...prev, sfgId]))}
+                          onClick={() => setSkipped(prev => new Set([...prev, sfgId + '||' + targetLevel]))}
                           className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-600 dark:hover:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">
                           Skip
                         </button>
