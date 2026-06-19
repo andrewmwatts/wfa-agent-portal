@@ -427,7 +427,6 @@ export default async function handler(req, res) {
         ])
         if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
         if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
-        console.log(`[snapshot/context] month=${monthYM} range=${monthStart}→${nextMonth} issued=${issuedRes.data?.length ?? 'ERR'} chargebacks=${cbRes.data?.length ?? 'ERR'}`)
         monthPolicies = issuedRes.data ?? []
 
         for (const p of monthPolicies) {
@@ -438,6 +437,31 @@ export default async function handler(req, res) {
           const key = p.sfg_id?.trim().toUpperCase()
           if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - (Number(p.issued_apv) || 0)
         }
+
+        // Build children map so we can compute cumulative (group) APV for each agent
+        const childrenOf = {}
+        for (const p of personRes.data ?? []) {
+          const sfg  = p.sfg_id?.trim().toUpperCase()
+          const upln = p.upline_sfg_id?.trim().toUpperCase()
+          if (sfg && upln) (childrenOf[upln] ??= []).push(sfg)
+        }
+
+        // Memoised recursive sum: personal APV + all downline APV
+        const COMPUTING = Symbol()
+        const cumulApv  = {}
+        function teamApv(id) {
+          if (id in cumulApv) return cumulApv[id] === COMPUTING ? (agentMonthApv[id] ?? 0) : cumulApv[id]
+          cumulApv[id] = COMPUTING
+          let total = agentMonthApv[id] ?? 0
+          for (const child of childrenOf[id] ?? []) total += teamApv(child)
+          return (cumulApv[id] = total)
+        }
+        const seedIds = new Set([
+          ...Object.keys(agentMonthApv),
+          ...(personRes.data ?? []).map(p => p.sfg_id?.trim().toUpperCase()).filter(Boolean),
+        ])
+        for (const id of seedIds) teamApv(id)
+        agentMonthApv = cumulApv
       }
 
       const levelMap = buildLevelMap(promoRes.data ?? [])

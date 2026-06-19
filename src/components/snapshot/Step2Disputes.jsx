@@ -101,13 +101,22 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           const p      = personnelMap[id]
           const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
 
-          // Net APV: base minus all excluded disputes for this agent
+          // Net APV: cumulative group APV minus excluded disputes for any agent
+          // in this agent's downline (walk each dispute's sfg_id upward; if 'id'
+          // appears in that upline path, the dispute affects this agent's group total).
           const base = agentMonthApv[id] ?? 0
           let deduction = 0
           for (const d of disputes) {
             const inc = includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
-            if (!inc && d.sfg_id?.trim()?.toUpperCase() === id) {
-              deduction += Number(d.disputed_amount) || 0
+            if (inc) continue
+            let cur = d.sfg_id?.trim().toUpperCase()
+            const seen = new Set()
+            while (cur && !seen.has(cur)) {
+              if (cur === id) { deduction += Number(d.disputed_amount) || 0; break }
+              seen.add(cur)
+              const up = personnelMap[cur]
+              if (!up?.upline_sfg_id) break
+              cur = up.upline_sfg_id.trim().toUpperCase()
             }
           }
           const net = base - deduction
@@ -211,22 +220,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     for (const p of policies) if (p.id) m[p.id] = p
     return m
   }, [policies])
-
-  // Debug: log what we actually received
-  useEffect(() => {
-    const apvCount = Object.keys(agentMonthApv).length
-    console.log('[Step2] personnel:', personnel.length, '| agentMonthApv entries:', apvCount)
-    if (apvCount > 0) {
-      console.log('[Step2] agentMonthApv sample keys:', Object.keys(agentMonthApv).slice(0, 5))
-    }
-    if (disputes.length > 0) {
-      const d0 = disputes[0]
-      const key = d0.sfg_id?.trim().toUpperCase()
-      console.log('[Step2] first dispute sfg_id:', JSON.stringify(d0.sfg_id), '→ key:', key, '→ apv:', agentMonthApv[key])
-      const p = personnel.find(p => p.sfg_id?.trim().toUpperCase() === key)
-      console.log('[Step2] first dispute upline_sfg_id:', p?.upline_sfg_id)
-    }
-  }, [agentMonthApv, personnel, disputes])
 
   // Qualifications from activity endpoint
   useEffect(() => {
