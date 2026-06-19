@@ -426,6 +426,9 @@ export default async function handler(req, res) {
             .ilike('status', 'issued')
             .not('conservation_date', 'is', null),
         ])
+        if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
+        if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
+        console.log(`[snapshot/context] month=${monthYM} range=${monthStart}→${nextMonth} issued=${issuedRes.data?.length ?? 'ERR'} chargebacks=${cbRes.data?.length ?? 'ERR'}`)
         monthPolicies = issuedRes.data ?? []
 
         for (const p of monthPolicies) {

@@ -212,6 +212,22 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     return m
   }, [policies])
 
+  // Debug: log what we actually received
+  useEffect(() => {
+    const apvCount = Object.keys(agentMonthApv).length
+    console.log('[Step2] personnel:', personnel.length, '| agentMonthApv entries:', apvCount)
+    if (apvCount > 0) {
+      console.log('[Step2] agentMonthApv sample keys:', Object.keys(agentMonthApv).slice(0, 5))
+    }
+    if (disputes.length > 0) {
+      const d0 = disputes[0]
+      const key = d0.sfg_id?.trim().toUpperCase()
+      console.log('[Step2] first dispute sfg_id:', JSON.stringify(d0.sfg_id), '→ key:', key, '→ apv:', agentMonthApv[key])
+      const p = personnel.find(p => p.sfg_id?.trim().toUpperCase() === key)
+      console.log('[Step2] first dispute upline_sfg_id:', p?.upline_sfg_id)
+    }
+  }, [agentMonthApv, personnel, disputes])
+
   // Qualifications from activity endpoint
   useEffect(() => {
     fetch('/api/activity?type=qualifications')
