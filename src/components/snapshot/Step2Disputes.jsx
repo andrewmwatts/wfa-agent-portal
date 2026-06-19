@@ -64,16 +64,16 @@ function buildJotformLines(agentName, dispute, policy) {
 // Shows APV + promotion targets for the writing agent and all uplines.
 
 function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, personnelMap, disputeNameMap, qualifications }) {
-  // Walk up the hierarchy
+  // Walk up the hierarchy — trim everywhere to survive trailing spaces in DB values
   const chain = []
-  let current = sfgId?.toUpperCase()
+  let current = sfgId?.trim().toUpperCase()
   const visited = new Set()
   while (current && !visited.has(current)) {
     visited.add(current)
     chain.push(current)
     const p = personnelMap[current]
     if (!p?.upline_sfg_id) break
-    current = p.upline_sfg_id.toUpperCase()
+    current = p.upline_sfg_id.trim().toUpperCase()
   }
 
   // Sorted thresholds: [ { level, regular, slingshot, writers }, ... ]
@@ -106,7 +106,7 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           let deduction = 0
           for (const d of disputes) {
             const inc = includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
-            if (!inc && d.sfg_id?.trim().toUpperCase() === id) {
+            if (!inc && d.sfg_id?.trim()?.toUpperCase() === id) {
               deduction += Number(d.disputed_amount) || 0
             }
           }

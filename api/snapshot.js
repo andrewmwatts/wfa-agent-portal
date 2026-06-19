@@ -402,8 +402,10 @@ export default async function handler(req, res) {
       let monthPolicies  = []
       let agentMonthApv  = {}   // uppercase sfg_id → net APV
       if (month) {
-        const [yr, mo] = month.split('-').map(Number)
-        const monthStart = `${month}-01`
+        // Normalize: month may be 'YYYY-MM' (varchar) or 'YYYY-MM-DD' (date type)
+        const monthYM    = String(month).slice(0, 7)   // always 'YYYY-MM'
+        const [yr, mo]   = monthYM.split('-').map(Number)
+        const monthStart = `${monthYM}-01`
         const nextMonth  = mo === 12
           ? `${yr + 1}-01-01`
           : `${yr}-${String(mo + 1).padStart(2, '0')}-01`
