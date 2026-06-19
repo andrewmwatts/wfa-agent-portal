@@ -157,11 +157,12 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
   const [resolveNote,          setResolveNote]          = useState('')
   const [savingId,             setSavingId]             = useState(null)
 
-  const [analyzingId,          setAnalyzingId]          = useState(null)
-  const [analyses,             setAnalyses]             = useState({})    // id → { candidates, unmatched }
-
   const [disputingCandidate,   setDisputingCandidate]   = useState(null)  // { recId, candidate }
   const [candidateDisputeNote, setCandidateDisputeNote] = useState('')
+
+  const [policySearches,    setPolicySearches]    = useState({})   // recId → query string
+  const [policyResults,     setPolicyResults]     = useState({})   // recId → [policy]
+  const [searchingId,       setSearchingId]       = useState(null)
 
   const [editPolicy,    setEditPolicy]    = useState(null)
   const [dupeOpen,      setDupeOpen]      = useState(false)
@@ -217,24 +218,21 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
     }
   }
 
-  async function handleRunAnalysis(rec) {
-    setAnalyzingId(rec.id)
+  async function handlePolicySearch(rec, q) {
+    setPolicySearches(s => ({ ...s, [rec.id]: q }))
+    if (!q.trim()) { setPolicyResults(r => ({ ...r, [rec.id]: [] })); return }
+    setSearchingId(rec.id)
     try {
-      const res = await fetch('/api/snapshot/analyze', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reconciliation_id: rec.id }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Analysis failed')
-      // data is { candidates: [...], unmatched: bool }
-      setAnalyses(a => ({ ...a, [rec.id]: data }))
-      await onRefresh()
-    } catch (err) {
-      console.error('analyze error', err)
-    } finally {
-      setAnalyzingId(null)
+      const params = new URLSearchParams({ type: 'policies', sfg_id: rec.sfg_id, carrier: rec.carrier, q: q.trim() })
+      const data = await fetch(`/api/snapshot?${params}`).then(r => r.json())
+      setPolicyResults(r => ({ ...r, [rec.id]: Array.isArray(data) ? data : [] }))
+    } catch { /* silent */ } finally {
+      setSearchingId(null)
     }
+  }
+
+  function openEditPolicy(policyData) {
+    setEditPolicy({ ...policyData, policy_no: policyData.policy_number ?? policyData.policy_no })
   }
 
   async function handleCandidateDispute(rec, candidate) {
@@ -403,17 +401,15 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       )}
 
       {sorted.map(rec => {
-        const isExpanded   = expanded[rec.id] ?? !rec.resolution
-        const isResolving  = resolvingId === rec.id
-        const isAnalyzing  = analyzingId === rec.id
-        const isDisputing  = disputingCandidate?.recId === rec.id
+        const isExpanded  = expanded[rec.id] ?? !rec.resolution
+        const isResolving = resolvingId === rec.id
+        const isDisputing = disputingCandidate?.recId === rec.id
 
-        // Parse stored analysis (new JSON format) or fall back to local cache
-        const storedRaw = rec.claude_hypothesis
-        let analysis = analyses[rec.id] ?? null
-        if (!analysis && storedRaw) {
+        // Parse analysis from stored JSON (populated by run.js)
+        let analysis = null
+        if (rec.claude_hypothesis) {
           try {
-            const p = JSON.parse(storedRaw)
+            const p = JSON.parse(rec.claude_hypothesis)
             if (p && 'candidates' in p) analysis = p
           } catch {}
         }
@@ -457,86 +453,87 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   </div>
                 )}
 
-                {/* Analysis candidates */}
-                {analysis ? (
+                {/* Analysis: candidates or policy search */}
+                {analysis?.candidates?.length > 0 ? (
                   <div className="space-y-2">
-                    {analysis.candidates.length > 0 ? (
-                      analysis.candidates.map((c, i) => (
-                        <CandidateRow
-                          key={i}
-                          candidate={c}
-                          isActive={isDisputing && disputingCandidate?.candidate === c}
-                          onDispute={() => {
-                            setDisputingCandidate({ recId: rec.id, candidate: c })
-                            setCandidateDisputeNote('')
-                          }}
-                          canWrite={!readOnly && !rec.resolution}
-                        />
-                      ))
-                    ) : (
-                      <p className="text-xs text-gray-400 dark:text-white/40 italic">
-                        No clear match found for Δ {fmtAmt(rec.delta)} — manual investigation needed.
-                      </p>
-                    )}
-
-                    {/* Per-candidate dispute inline form */}
-                    {isDisputing && (
-                      <div className="rounded-xl border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-500/5 px-4 py-3 space-y-2">
-                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                          Dispute: {disputingCandidate.candidate.applicant} — {fmtAmt(disputingCandidate.candidate.delta_contribution)}
-                        </p>
-                        <textarea
-                          rows={2}
-                          value={candidateDisputeNote}
-                          onChange={e => setCandidateDisputeNote(e.target.value)}
-                          placeholder="Notes (optional)…"
-                          className={INPUT + ' resize-none'}
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleCandidateDispute(rec, disputingCandidate.candidate)}
-                            disabled={savingId === rec.id}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60"
-                          >
-                            Send to Disputes
-                          </button>
-                          <button
-                            onClick={() => setDisputingCandidate(null)}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {analysis.candidates.map((c, i) => (
+                      <CandidateRow
+                        key={i}
+                        candidate={c}
+                        onEdit={() => openEditPolicy(c)}
+                        onDispute={() => { setDisputingCandidate({ recId: rec.id, candidate: c }); setCandidateDisputeNote('') }}
+                        canWrite={!readOnly && !rec.resolution}
+                      />
+                    ))}
                   </div>
                 ) : (
-                  !readOnly && (
-                    <button
-                      onClick={() => handleRunAnalysis(rec)}
-                      disabled={isAnalyzing}
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5"
-                    >
-                      {isAnalyzing && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
-                      {isAnalyzing ? 'Analyzing…' : 'Run Analysis'}
-                    </button>
-                  )
+                  <div className="space-y-3">
+                    {analysis?.unmatched && (
+                      <p className="text-xs text-gray-400 dark:text-white/40 italic">
+                        No automatic match found for Δ {fmtAmt(rec.delta)} — search for the policy below.
+                      </p>
+                    )}
+                    {/* Persistent policy search */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={policySearches[rec.id] ?? ''}
+                        onChange={e => handlePolicySearch(rec, e.target.value)}
+                        placeholder="Search by applicant name or policy #…"
+                        className={INPUT}
+                      />
+                      {searchingId === rec.id && (
+                        <svg className="w-4 h-4 animate-spin text-gray-400 flex-shrink-0 mt-1.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                      )}
+                    </div>
+                    {(policyResults[rec.id] ?? []).map((p, i) => (
+                      <CandidateRow
+                        key={i}
+                        candidate={{ ...p, flag: 'Search result', type: 'search', delta_contribution: p.issued_apv, policy_id: p.id }}
+                        onEdit={() => openEditPolicy(p)}
+                        onDispute={() => { setDisputingCandidate({ recId: rec.id, candidate: { ...p, flag: 'Search result', type: 'search', delta_contribution: p.issued_apv, policy_id: p.id } }); setCandidateDisputeNote('') }}
+                        canWrite={!readOnly && !rec.resolution}
+                      />
+                    ))}
+                    {policySearches[rec.id]?.trim() && policyResults[rec.id]?.length === 0 && searchingId !== rec.id && (
+                      <p className="text-xs text-gray-400 dark:text-white/40">No policies found.</p>
+                    )}
+                  </div>
                 )}
 
-                {/* Resolution controls */}
+                {/* Per-candidate dispute inline form */}
+                {isDisputing && (
+                  <div className="rounded-xl border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-500/5 px-4 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                      Generate dispute: {disputingCandidate.candidate.applicant} — {fmtAmt(disputingCandidate.candidate.delta_contribution)}
+                    </p>
+                    <textarea
+                      rows={2}
+                      value={candidateDisputeNote}
+                      onChange={e => setCandidateDisputeNote(e.target.value)}
+                      placeholder="Notes (optional)…"
+                      className={INPUT + ' resize-none'}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => handleCandidateDispute(rec, disputingCandidate.candidate)} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60">
+                        Generate Dispute
+                      </button>
+                      <button onClick={() => setDisputingCandidate(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resolution: Mark Resolved (for tracker-side fixes; disputes set this automatically) */}
                 {!readOnly && !rec.resolution && (
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
                     {!isResolving ? (
-                      <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => { setResolvingId(rec.id); setResolveNote('') }} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-500/25 transition-colors font-medium">Mark Legitimate</button>
-                        <button onClick={() => handleResolve(rec, 'no_action')} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Skip / No Action</button>
-                      </div>
+                      <button onClick={() => { setResolvingId(rec.id); setResolveNote('') }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Mark Resolved</button>
                     ) : (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-gray-600 dark:text-white/60">Note (optional):</p>
-                        <textarea rows={2} value={resolveNote} onChange={e => setResolveNote(e.target.value)} className={INPUT + ' resize-none'} placeholder="Reason this is legitimate…" />
+                        <p className="text-xs font-medium text-gray-600 dark:text-white/60">Resolution note (optional):</p>
+                        <textarea rows={2} value={resolveNote} onChange={e => setResolveNote(e.target.value)} className={INPUT + ' resize-none'} placeholder="How was this resolved?…" />
                         <div className="flex gap-2">
-                          <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm Legitimate</button>
+                          <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm</button>
                           <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
                         </div>
                       </div>
@@ -596,39 +593,36 @@ const CANDIDATE_STYLES = {
   straddle:   { border: 'border-purple-200 dark:border-purple-600/30',bg: 'bg-purple-50 dark:bg-purple-500/5', badge: 'bg-purple-500/15 text-purple-700 dark:text-purple-300' },
   not_taken:  { border: 'border-orange-200 dark:border-orange-600/30',bg: 'bg-orange-50 dark:bg-orange-500/5', badge: 'bg-orange-500/15 text-orange-700 dark:text-orange-300' },
   missing:    { border: 'border-red-200 dark:border-red-600/30',      bg: 'bg-red-50 dark:bg-red-500/5',       badge: 'bg-red-500/15 text-red-600 dark:text-red-400'       },
+  search:     { border: 'border-gray-200 dark:border-white/15',       bg: 'bg-gray-50 dark:bg-white/5',        badge: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-white/60' },
 }
 
-function CandidateRow({ candidate: c, onDispute, canWrite }) {
+function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
   const s = CANDIDATE_STYLES[c.type] ?? CANDIDATE_STYLES.missing
-  const matchLabel = c.match !== 'full' ? ` (${c.match} proration)` : ''
 
   return (
     <div className={`flex items-start justify-between gap-4 rounded-xl border ${s.border} ${s.bg} px-4 py-3`}>
       <div className="space-y-0.5 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>{c.flag}</span>
-          {c.match !== 'full' && <span className="text-xs text-gray-400 dark:text-white/40">{c.match} of APV</span>}
+          {c.match && c.match !== 'full' && <span className="text-xs text-gray-400 dark:text-white/40">{c.match} of APV</span>}
         </div>
         <p className="text-sm font-medium text-gray-800 dark:text-white/80">
           {c.applicant} <span className="text-gray-400 dark:text-white/40 font-normal">#{c.policy_number}</span>
         </p>
         <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 dark:text-white/50">
-          <span>Full APV: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.issued_apv)}</strong></span>
-          {c.match !== 'full' && <span>Contribution: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.delta_contribution)}{matchLabel}</strong></span>}
-          {c.conservation_date && <span>CB date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.conservation_date)}</strong></span>}
-          {c.conservation_status && <span>{c.conservation_status}</span>}
-          {c.issue_date && c.type === 'straddle' && <span>Issue date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.issue_date)}</strong></span>}
-          {c.submit_date && c.type === 'non_issued' && <span>Submitted: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.submit_date)}</strong></span>}
-          {c.status && c.type === 'non_issued' && <span>Status: {c.status}</span>}
+          <span>APV: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.issued_apv)}</strong></span>
+          {c.match && c.match !== 'full' && <span>Contribution: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.delta_contribution)}</strong></span>}
+          {c.conservation_date && <span>CB date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.conservation_date)}</strong>{c.conservation_status ? ` · ${c.conservation_status}` : ''}</span>}
+          {c.issue_date && (c.type === 'straddle' || c.type === 'missing' || c.type === 'search') && <span>Issue date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.issue_date)}</strong></span>}
+          {c.status && (c.type === 'non_issued' || c.type === 'search') && <span>Status: {c.status}</span>}
+          {c.submit_date && c.type === 'non_issued' && <span>Submitted: {fmtDate(c.submit_date)}</span>}
         </div>
       </div>
       {canWrite && (
-        <button
-          onClick={onDispute}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap"
-        >
-          Send to Disputes
-        </button>
+        <div className="flex gap-2 flex-shrink-0">
+          <button onClick={onEdit} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors font-medium whitespace-nowrap">Edit</button>
+          <button onClick={onDispute} className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap">Generate Dispute</button>
+        </div>
       )}
     </div>
   )

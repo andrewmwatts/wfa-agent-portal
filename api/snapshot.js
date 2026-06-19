@@ -343,6 +343,35 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── GET policies — policy search scoped to agent + carrier ──────────────────
+  if (method === 'GET' && type === 'policies') {
+    const { sfg_id, carrier, q } = req.query
+    if (!sfg_id || !carrier) return res.status(400).json({ error: 'sfg_id and carrier are required' })
+    const CARRIER_ALIASES = {
+      'American General': ['American General', 'Corebridge'],
+      'TransAmerica':     ['TransAmerica', 'Transamerica Group'],
+      'Banner':           ['Banner', 'LGA'],
+    }
+    const carrierVariants = CARRIER_ALIASES[carrier] ?? [carrier]
+    try {
+      let query = supabase
+        .from('policies')
+        .select('id, policy_number, applicant, carrier, issue_date, issued_apv, status, conservation_status, conservation_date, submit_date')
+        .eq('sfg_id', sfg_id)
+        .in('carrier', carrierVariants)
+      if (q?.trim()) {
+        const term = q.trim()
+        query = query.or(`policy_number.ilike.%${term}%,applicant.ilike.%${term}%`)
+      }
+      const { data, error } = await query.order('issue_date', { ascending: false }).limit(20)
+      if (error) throw error
+      return res.status(200).json(data ?? [])
+    } catch (err) {
+      console.error('[snapshot/policies GET]', err)
+      return res.status(500).json({ error: 'Failed to search policies' })
+    }
+  }
+
   // ── GET context (step 3 bootstrap) ──────────────────────────────────────────
   // Returns personnel tree + qualifications + agent_promotions in one round-trip.
   if (method === 'GET' && type === 'context') {
