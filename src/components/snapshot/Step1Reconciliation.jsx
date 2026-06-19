@@ -407,13 +407,13 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
         const isAnalyzing = analyzingId === rec.id
         const hypothesis  = hypotheses[rec.id] ?? rec.claude_hypothesis
 
-        const issuedPolicies    = safeJson(rec.issued_policies)      ?? []
-        const nonIssued         = safeJson(rec.non_issued_policies)  ?? []
-        const cbCandidates      = safeJson(rec.chargeback_candidates) ?? []
-        const priorInWindow     = safeJson(rec.prior_in_window)      ?? []
-        const mechanicalFlags   = rec.mechanical_flags               ?? []
+        const issuedPolicies  = safeJson(rec.issued_policies) ?? []
+        const mechanicalFlags = rec.mechanical_flags          ?? []
 
-        const agentName = issuedPolicies[0]?.agent_name ?? rec.sfg_id
+        const recSfgUpper = rec.sfg_id?.toUpperCase()
+        const agentName = issuedPolicies[0]?.agent_name
+          || personnel.find(p => p.sfg_id?.toUpperCase() === recSfgUpper)?.opt_name
+          || rec.sfg_id
 
         return (
           <div key={rec.id} className={`bg-white dark:bg-primary/30 border rounded-2xl overflow-hidden transition-colors ${rec.resolution ? 'border-gray-200 dark:border-white/10 opacity-75' : 'border-gray-200 dark:border-white/15'}`}>
@@ -467,16 +467,6 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                 {/* Issued policies table */}
                 {issuedPolicies.length > 0 && (
                   <PolicyTable policies={issuedPolicies} title={`Issued policies in window (${issuedPolicies.length})`} onEdit={canWrite ? setEditPolicy : null} />
-                )}
-
-                {/* Non-issued collapsible */}
-                {nonIssued.length > 0 && (
-                  <CollapsiblePolicyTable policies={nonIssued} title={`Non-issued policies (${nonIssued.length})`} onEdit={canWrite ? setEditPolicy : null} />
-                )}
-
-                {/* Prior in window collapsible */}
-                {priorInWindow.length > 0 && (
-                  <CollapsiblePolicyTable policies={priorInWindow} title={`Prior-month policies in window (${priorInWindow.length})`} onEdit={canWrite ? setEditPolicy : null} />
                 )}
 
                 {/* Resolution controls */}

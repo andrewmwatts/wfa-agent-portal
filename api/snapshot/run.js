@@ -11,18 +11,19 @@ loadEnv({ path: resolve(__dirname, '../../.env.local') })
 /**
  * POST /api/snapshot/run
  *
- * Body (JSON, parsed client-side from XLSX):
- * {
- *   month: "2026-05",
- *   min_diff: 1.50,               // optional, default 1.50
- *   snapshot_window: { from: "2026-04-26", to: "2026-05-30" },
- *   snapshot_agents: [
- *     { agent_name: "Jane Doe", carrier: "Americo", snapshot_apv: 12500.00 }
- *   ]
- * }
+ * Simple comparator:
+ *   1. Parse snapshot_agents from XLSX (name + carrier + APV)
+ *   2. Skip $0 snapshot entries
+ *   3. Convert agent names → sfg_ids via personnel table
+ *   4. Query issued policies in window, group by sfg_id + carrier
+ *   5. Compare; missing side = 0
+ *   6. Return |delta| > min_diff (default $1.50)
+ *   7. Attach agent names
+ *
+ * Broader context (non-issued, prior-month, chargebacks) is fetched
+ * per-discrepancy by analyze.js when the user clicks "Run Analysis".
  */
 
-// Snapshot-specific carrier aliases (superset of shared/carriers.js)
 const SNAPSHOT_ALIASES = {
   'lga':                                    'Banner',
   'banner':                                 'Banner',
@@ -50,46 +51,8 @@ function normalizeSnapshotCarrier(raw) {
   return SNAPSHOT_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
 }
 
-function parseIsoDate(str) {
-  if (!str) return null
-  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!m) return null
-  return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]))
-}
-
-function inWindow(dateStr, fromDate, toDate) {
-  const d = parseIsoDate(dateStr)
-  if (!d) return false
-  return d >= fromDate && d <= toDate
-}
-
 function sumApv(policies) {
   return policies.reduce((s, p) => s + (Number(p.issued_apv) || 0), 0)
-}
-
-function findDuplicatePolicies(allPolicies) {
-  const byNum = {}
-  for (const p of allPolicies) {
-    const num = p.policy_number?.trim()
-    if (!num) continue
-    ;(byNum[num] ??= []).push(p)
-  }
-  const dupes = []
-  for (const [, group] of Object.entries(byNum)) {
-    if (group.length > 1) {
-      for (const p of group) {
-        dupes.push({
-          policy_no:  p.policy_number,
-          applicant:  p.applicant   ?? '',
-          agent:      p.agent_name  ?? '',
-          carrier:    normalizeSnapshotCarrier(p.carrier),
-          issue_date: p.issue_date  ?? '',
-          apv:        p.issued_apv  ?? 0,
-        })
-      }
-    }
-  }
-  return dupes
 }
 
 export default async function handler(req, res) {
@@ -110,12 +73,6 @@ export default async function handler(req, res) {
 
   if (!month || !snapshot_window?.from || !snapshot_window?.to) {
     return res.status(400).json({ error: 'month, snapshot_window.from, and snapshot_window.to are required' })
-  }
-
-  const fromDate = parseIsoDate(snapshot_window.from)
-  const toDate   = parseIsoDate(snapshot_window.to)
-  if (!fromDate || !toDate) {
-    return res.status(400).json({ error: 'Invalid snapshot_window dates' })
   }
 
   try {
@@ -145,201 +102,152 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 2. Load all policies joined to personnel ──────────────────────────────
-    const PAGE = 10000
-    const allPolicies = []
-    let from = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('policies')
-        .select(`
-          id, policy_number, applicant, carrier,
-          issue_date, issued_apv, status,
-          conservation_status, conservation_date,
-          snapshot_chargeback_month, snapshot_chargeback_apv,
-          split_reset, policy_notes, sfg_id,
-          personnel!inner(opt_name)
-        `)
-        .range(from, from + PAGE - 1)
-      if (error) throw error
-      const rows = (data ?? []).map(p => ({
-        ...p,
-        agent_name: p.personnel?.opt_name ?? '',
-      }))
-      allPolicies.push(...rows)
-      if (!data || data.length < PAGE) break
-      from += PAGE
-    }
-
-    // ── 3. Load personnel for name → sfg_id crosswalk ────────────────────────
+    // ── 2. Build name crosswalk from personnel ───────────────────────────────
     const { data: people } = await supabase
       .from('personnel')
       .select('sfg_id, opt_name')
-    const nameCrosswalk = {}
+
+    const nameCrosswalk = {}  // opt_name.toLowerCase() → sfg_id
+    const nameFromSfgId = {}  // sfg_id.toUpperCase()  → opt_name
     for (const p of people ?? []) {
       if (p.opt_name) nameCrosswalk[p.opt_name.trim().toLowerCase()] = p.sfg_id
+      if (p.sfg_id)  nameFromSfgId[p.sfg_id.trim().toUpperCase()]  = p.opt_name ?? ''
     }
 
-    // ── 4. Match snapshot agents → sfg_ids ───────────────────────────────────
+    // ── 3. Match snapshot agents → sfg_ids (skip $0 entries) ────────────────
     const warnings = []
-    const snapshotBySfgCarrier = {} // key: `${sfg_id}||${carrier}`
+    const snapshotBySfgCarrier = {}  // `${sfg_id}||${carrier}` → APV
 
     for (const row of snapshot_agents) {
+      if (!row.snapshot_apv || Number(row.snapshot_apv) === 0) continue
       const carrier = normalizeSnapshotCarrier(row.carrier)
       const sfgId   = nameCrosswalk[row.agent_name?.trim().toLowerCase()]
       if (!sfgId) {
-        warnings.push({ agent_name: row.agent_name, carrier })
+        warnings.push({ agent_name: row.agent_name, carrier, snapshot_apv: row.snapshot_apv })
         continue
       }
       const key = `${sfgId}||${carrier}`
       snapshotBySfgCarrier[key] = (snapshotBySfgCarrier[key] ?? 0) + (Number(row.snapshot_apv) || 0)
     }
 
-    // ── 5. Filter policies into buckets for each agent+carrier ───────────────
-    const policyBuckets = {} // sfg_id → carrier → { issued, non_issued, cb_candidates, prior }
+    // ── 4. Query issued policies in window ───────────────────────────────────
+    const { data: windowPolicies, error: polErr } = await supabase
+      .from('policies')
+      .select('id, policy_number, applicant, carrier, issue_date, issued_apv, split_reset, policy_notes, sfg_id')
+      .ilike('status', 'issued')
+      .gte('issue_date', snapshot_window.from)
+      .lte('issue_date', snapshot_window.to)
+    if (polErr) throw polErr
 
-    for (const p of allPolicies) {
-      const sfgId  = p.sfg_id?.trim()
-      if (!sfgId) continue
+    // Group by sfg_id + carrier; skip orphaned sfg_ids not in personnel
+    const knownSfgIds = new Set(Object.keys(nameFromSfgId))
+    const policyBuckets = {}  // `${sfg_id}||${carrier}` → [policies]
+
+    for (const p of windowPolicies ?? []) {
+      const sfgId = p.sfg_id?.trim().toUpperCase()
+      if (!sfgId || !knownSfgIds.has(sfgId)) continue
       const carrier = normalizeSnapshotCarrier(p.carrier)
-      const key     = `${sfgId}||${carrier}`
-
-      if (!policyBuckets[sfgId]) policyBuckets[sfgId] = {}
-      if (!policyBuckets[sfgId][carrier]) {
-        policyBuckets[sfgId][carrier] = {
-          issued:         [],
-          non_issued:     [],
-          cb_candidates:  [],
-          prior_in_window: [],
-        }
-      }
-      const b = policyBuckets[sfgId][carrier]
-      const issueInWindow  = inWindow(p.issue_date, fromDate, toDate)
-      const issuedStatus   = (p.status ?? '').toLowerCase() === 'issued'
-      const activeStatus   = ['pending', 'incomplete'].includes((p.status ?? '').toLowerCase())
-      const hasConsvStatus = !!p.conservation_status?.trim()
-
-      if (issuedStatus && issueInWindow) {
-        b.issued.push(p)
-        if (hasConsvStatus) b.cb_candidates.push(p)
-      } else if (activeStatus) {
-        // Non-issued policies in the window (still pending/incomplete)
-        b.non_issued.push(p)
-      } else if (issuedStatus && p.issue_date && !issueInWindow) {
-        // Issued before or after window — prior_in_window if still in same carrier scope
-        // Only flag if the policy might affect snapshot (issued prior to window but not beyond toDate + ~30d)
-        const issueD = parseIsoDate(p.issue_date)
-        if (issueD && issueD >= new Date(fromDate.getTime() - 90 * 86400000) && issueD < fromDate) {
-          b.prior_in_window.push(p)
-        }
-      }
+      const key = `${sfgId}||${carrier}`
+      ;(policyBuckets[key] ??= []).push(p)
     }
 
-    // ── 6. Find duplicate policy numbers ─────────────────────────────────────
-    const duplicate_policies = findDuplicatePolicies(allPolicies)
+    // ── 5. Find duplicate policy numbers among in-window issued policies ──────
+    const byPolicyNum = {}
+    for (const policies of Object.values(policyBuckets)) {
+      for (const p of policies) {
+        const num = p.policy_number?.trim()
+        if (num) (byPolicyNum[num] ??= []).push(p)
+      }
+    }
+    const duplicateNums = new Set(
+      Object.entries(byPolicyNum).filter(([, g]) => g.length > 1).map(([num]) => num)
+    )
+    const duplicate_policies = [...duplicateNums].flatMap(num =>
+      byPolicyNum[num].map(p => ({
+        policy_no:  p.policy_number,
+        applicant:  p.applicant ?? '',
+        agent:      nameFromSfgId[p.sfg_id?.trim().toUpperCase()] ?? p.sfg_id ?? '',
+        carrier:    normalizeSnapshotCarrier(p.carrier),
+        issue_date: p.issue_date ?? '',
+        apv:        p.issued_apv ?? 0,
+      }))
+    )
 
-    // ── 7. Build reconciliation rows ──────────────────────────────────────────
-    // Collect all (sfg_id, carrier) pairs from both snapshot and DB
+    // ── 6. Compare and build discrepancy rows ────────────────────────────────
     const allKeys = new Set([
       ...Object.keys(snapshotBySfgCarrier),
-      ...Object.entries(policyBuckets).flatMap(([sfgId, carriers]) =>
-        Object.keys(carriers).map(c => `${sfgId}||${c}`)
-      ),
+      ...Object.keys(policyBuckets),
     ])
 
-    const discrepancies   = []
-    const cleanAgents     = new Set()
+    const discrepancies    = []
+    const cleanAgents      = new Set()
     const discrepantAgents = new Set()
-
-    const upsertRows = []
+    const upsertRows       = []
 
     for (const key of allKeys) {
       const [sfgId, carrier] = key.split('||')
-      const buckets     = policyBuckets[sfgId]?.[carrier] ?? { issued: [], non_issued: [], cb_candidates: [], prior_in_window: [] }
-      const snapshotApv = snapshotBySfgCarrier[key] ?? 0
-      const dbApv       = sumApv(buckets.issued)
-      const delta       = snapshotApv - dbApv
+      const policies     = policyBuckets[key] ?? []
+      const snapshotApv  = snapshotBySfgCarrier[key] ?? 0
+      const dbApv        = sumApv(policies)
+      const delta        = snapshotApv - dbApv
+      const absDelta     = Math.abs(delta)
 
-      // Build mechanical flags
       const mechanical_flags = []
-      if (buckets.issued.some(p => p.split_reset))     mechanical_flags.push('Split/Reset policy')
-      if (buckets.cb_candidates.length > 0)            mechanical_flags.push(`${buckets.cb_candidates.length} chargeback candidate${buckets.cb_candidates.length > 1 ? 's' : ''}`)
-      if (buckets.prior_in_window.length > 0)          mechanical_flags.push(`${buckets.prior_in_window.length} prior-month policy in window`)
-      if (duplicate_policies.some(d => buckets.issued.some(p => p.policy_number === d.policy_no))) {
-        mechanical_flags.push('Duplicate policy number')
-      }
+      if (policies.some(p => p.split_reset))                       mechanical_flags.push('Split/Reset policy')
+      if (policies.some(p => duplicateNums.has(p.policy_number)))  mechanical_flags.push('Duplicate policy number')
 
-      const hasFlags  = mechanical_flags.length > 0
-      const absDelta  = Math.abs(delta)
+      const hasHardFlag = mechanical_flags.length > 0
 
-      // Skip clean rows with no flags and delta below threshold
-      if (absDelta < min_diff && !hasFlags) {
+      if (absDelta < min_diff && !hasHardFlag) {
         cleanAgents.add(sfgId)
         continue
       }
 
       discrepantAgents.add(sfgId)
 
-      const toJson = arr => JSON.stringify(arr.map(p => ({
-        id:                  p.id,
-        policy_number:       p.policy_number      ?? '',
-        applicant:           p.applicant          ?? '',
-        carrier:             normalizeSnapshotCarrier(p.carrier),
-        issue_date:          p.issue_date         ?? '',
-        issued_apv:          p.issued_apv         ?? null,
-        status:              p.status             ?? '',
-        conservation_status: p.conservation_status ?? '',
-        conservation_date:   p.conservation_date  ?? '',
-        snapshot_chargeback_month: p.snapshot_chargeback_month ?? '',
-        snapshot_chargeback_apv:   p.snapshot_chargeback_apv   ?? null,
-        split_reset:         p.split_reset        ?? false,
-        policy_notes:        p.policy_notes       ?? '',
-        agent_name:          p.agent_name         ?? '',
+      const agentName = nameFromSfgId[sfgId?.toUpperCase()] ?? sfgId
+
+      const issuedJson = JSON.stringify(policies.map(p => ({
+        id:            p.id,
+        policy_number: p.policy_number  ?? '',
+        applicant:     p.applicant      ?? '',
+        carrier:       normalizeSnapshotCarrier(p.carrier),
+        issue_date:    p.issue_date     ?? '',
+        issued_apv:    p.issued_apv     ?? null,
+        split_reset:   p.split_reset    ?? false,
+        policy_notes:  p.policy_notes   ?? '',
+        agent_name:    agentName,
       })))
 
       upsertRows.push({
-        cycle_id:            cycleId,
-        sfg_id:              sfgId,
+        cycle_id:       cycleId,
+        sfg_id:         sfgId,
         carrier,
-        snapshot_apv:        snapshotApv,
-        db_apv:              dbApv,
+        snapshot_apv:   snapshotApv,
+        db_apv:         dbApv,
         delta,
-        policy_count:        buckets.issued.length,
+        policy_count:   policies.length,
         mechanical_flags,
-        issued_policies:     toJson(buckets.issued),
-        non_issued_policies: toJson(buckets.non_issued),
-        chargeback_candidates: toJson(buckets.cb_candidates),
-        prior_in_window:     toJson(buckets.prior_in_window),
+        issued_policies: issuedJson,
+        // non_issued_policies / chargeback_candidates / prior_in_window
+        // are fetched on-demand by analyze.js, not stored here
+        non_issued_policies:    '[]',
+        chargeback_candidates:  '[]',
+        prior_in_window:        '[]',
       })
 
-      discrepancies.push({
-        sfg_id:           sfgId,
-        carrier,
-        snapshot_apv:     snapshotApv,
-        db_apv:           dbApv,
-        delta,
-        mechanical_flags,
-        policy_count:     buckets.issued.length,
-      })
+      discrepancies.push({ sfg_id: sfgId, agent_name: agentName, carrier, snapshot_apv: snapshotApv, db_apv: dbApv, delta, mechanical_flags, policy_count: policies.length })
     }
 
-    // ── 8. Upsert reconciliations ────────────────────────────────────────────
+    // ── 7. Replace reconciliations for this cycle ────────────────────────────
+    // Delete all existing rows first (re-run = full replacement)
+    await supabase.from('snapshot_reconciliations').delete().eq('cycle_id', cycleId)
+
     if (upsertRows.length > 0) {
       const { error } = await supabase
         .from('snapshot_reconciliations')
-        .upsert(upsertRows, { onConflict: 'cycle_id,sfg_id,carrier' })
+        .insert(upsertRows)
       if (error) throw error
-    }
-
-    // ── 9. Load agent names for response ────────────────────────────────────
-    const sfgIds = [...new Set([...discrepantAgents, ...cleanAgents])]
-    const nameLookup = {}
-    if (sfgIds.length) {
-      const { data: nameData } = await supabase
-        .from('personnel')
-        .select('sfg_id, opt_name')
-        .in('sfg_id', sfgIds)
-      for (const p of nameData ?? []) nameLookup[p.sfg_id] = p.opt_name ?? p.sfg_id
     }
 
     return res.status(200).json({
@@ -347,15 +255,13 @@ export default async function handler(req, res) {
       month,
       snapshot_window,
       duplicate_policies,
-      discrepancies: discrepancies.map(d => ({
-        ...d,
-        agent_name: nameLookup[d.sfg_id] ?? d.sfg_id,
-      })),
+      discrepancies,
       unmatched_agents: warnings,
       summary: {
-        total_agents:      discrepantAgents.size + cleanAgents.size,
-        discrepant_agents: discrepantAgents.size,
-        clean_agents:      cleanAgents.size,
+        total_snapshot_agents: snapshot_agents.length,
+        discrepant_agents:     discrepantAgents.size,
+        clean_agents:          cleanAgents.size,
+        unmatched:             warnings.length,
       },
     })
   } catch (err) {
