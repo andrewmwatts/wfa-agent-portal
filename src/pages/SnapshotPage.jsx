@@ -118,13 +118,45 @@ export default function SnapshotPage() {
     }
   }
 
-  // ── Extract policies from reconciliation JSON for Step2 ──────────────────────
+  // ── Extract policies from reconciliation JSON for Step2 policyMap ────────────
   const reconPolicies = useMemo(() => {
     if (!cycleData?.reconciliations) return []
     const all = []
+    const seen = new Set()
     for (const rec of cycleData.reconciliations) {
-      all.push(...safeJson(rec.issued_policies))
-      all.push(...safeJson(rec.non_issued_policies))
+      for (const p of safeJson(rec.issued_policies)) {
+        if (p.id && !seen.has(p.id)) {
+          seen.add(p.id)
+          all.push({ ...p, sfg_id: rec.sfg_id, status: p.status ?? 'issued', carrier: p.carrier ?? rec.carrier })
+        }
+      }
+      for (const p of safeJson(rec.non_issued_policies)) {
+        if (p.id && !seen.has(p.id)) {
+          seen.add(p.id)
+          all.push({ ...p, sfg_id: rec.sfg_id, carrier: p.carrier ?? rec.carrier })
+        }
+      }
+      // Include candidate policies so policyMap covers chargebacks / straddles
+      let hyp = null
+      try { hyp = rec.claude_hypothesis ? JSON.parse(rec.claude_hypothesis) : null } catch {}
+      for (const c of hyp?.candidates ?? []) {
+        if (c.policy_id && !seen.has(c.policy_id)) {
+          seen.add(c.policy_id)
+          all.push({
+            id:                  c.policy_id,
+            policy_no:           c.policy_number,
+            policy_number:       c.policy_number,
+            applicant:           c.applicant,
+            carrier:             rec.carrier,
+            issued_apv:          c.issued_apv,
+            issue_date:          c.issue_date,
+            sfg_id:              rec.sfg_id,
+            status:              'issued',
+            conservation_status: c.conservation_status,
+            conservation_date:   c.conservation_date,
+          })
+        }
+      }
     }
     return all
   }, [cycleData])
@@ -270,6 +302,7 @@ export default function SnapshotPage() {
               disputes={cycleData.disputes ?? []}
               personnel={context?.personnel ?? []}
               policies={reconPolicies}
+              monthPolicies={context?.monthPolicies ?? []}
               canWrite={canWrite && !completed}
               onStepComplete={() => advanceToStep(3)}
               onRefresh={refresh}

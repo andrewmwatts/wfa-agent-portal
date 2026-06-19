@@ -251,11 +251,6 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
           notes:             candidateDisputeNote || null,
         }),
       })
-      await fetch('/api/snapshot?type=resolution', {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: rec.id, resolution: 'disputed', resolution_note: null }),
-      })
       setDisputingCandidate(null)
       setCandidateDisputeNote('')
       await onRefresh()

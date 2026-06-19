@@ -7,20 +7,37 @@ const DISPUTE_TYPES = [
   'Split/Reset', 'Prior month carryover', 'Other',
 ]
 
-function CopyBlock({ lines, className = '' }) {
-  const [copied, setCopied] = useState(false)
+function CopyBlock({ lines, notes, className = '' }) {
+  const [copied,          setCopied]          = useState(false)
+  const [copiedWithNotes, setCopiedWithNotes] = useState(false)
+
   function copy() {
     navigator.clipboard.writeText(lines.join('\n'))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  function copyWithNotes() {
+    const all = notes ? [...lines, notes] : lines
+    navigator.clipboard.writeText(all.join('\n'))
+    setCopiedWithNotes(true)
+    setTimeout(() => setCopiedWithNotes(false), 2000)
+  }
+
   return (
     <div className={`rounded-xl border border-gray-200 dark:border-white/15 overflow-hidden ${className}`}>
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
         <span className="text-xs font-semibold text-gray-400 dark:text-white/40 uppercase tracking-wider">Jotform Copy Block</span>
-        <button onClick={copy} className="text-xs text-accent hover:text-accent/80 transition-colors font-medium">
-          {copied ? '✓ Copied' : 'Copy All'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={copy} className="text-xs text-accent hover:text-accent/80 transition-colors font-medium">
+            {copied ? '✓ Copied' : 'Copy'}
+          </button>
+          {notes && (
+            <button onClick={copyWithNotes} className="text-xs text-accent hover:text-accent/80 transition-colors font-medium">
+              {copiedWithNotes ? '✓ Copied' : 'Copy with Notes'}
+            </button>
+          )}
+        </div>
       </div>
       <div className="px-3 py-3 space-y-0.5 font-mono text-xs text-gray-700 dark:text-white/70">
         {lines.map((line, i) => (
@@ -60,7 +77,7 @@ function getHierarchyChain(sfgId, personnelMap) {
   return chain
 }
 
-export default function Step2Disputes({ cycle, disputes, personnel, policies, canWrite, onStepComplete, onRefresh }) {
+export default function Step2Disputes({ cycle, disputes, personnel, policies, monthPolicies = [], canWrite, onStepComplete, onRefresh }) {
   const [qualifications, setQualifications] = useState({})
   const [notes,          setNotes]          = useState({})   // dispute id → local note draft
   const [savingId,       setSavingId]       = useState(null)
@@ -112,7 +129,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ca
     // Base APV = sum of issued policies for the month for each agent
     const base = {}
     for (const sfgId of withUplines) {
-      base[sfgId] = policies
+      base[sfgId] = monthPolicies
         .filter(p => p.sfg_id?.toUpperCase() === sfgId && p.status?.toLowerCase() === 'issued')
         .reduce((s, p) => s + (Number(p.issued_apv) || 0), 0)
     }
@@ -216,10 +233,12 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ca
 
       {disputes.map(d => {
         const policy    = policyMap[d.policy_id]
-        const jotLines  = buildJotformLines({ ...d, agent_name: personnelMap[d.sfg_id?.toUpperCase()]?.opt_name }, policy)
+        const upper     = d.sfg_id?.toUpperCase()
+        const pEntry    = personnelMap[upper]
+        const agentName = pEntry?.opt_name || pEntry?.preferred_name || d.sfg_id
+        const jotLines  = buildJotformLines({ ...d, agent_name: agentName }, policy)
         const isIncluded = d.included !== false
         const noteVal   = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
-        const agentName = personnelMap[d.sfg_id?.toUpperCase()]?.opt_name ?? d.sfg_id
 
         return (
           <div key={d.id} className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/15 rounded-2xl overflow-hidden">
@@ -251,11 +270,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ca
             </div>
 
             <div className="px-6 py-4 space-y-4">
-              {/* Dispute type */}
-              {d.dispute_type && (
-                <p className="text-xs text-gray-500 dark:text-white/50">Type: <strong className="text-gray-700 dark:text-white/80">{d.dispute_type}</strong></p>
-              )}
-
               {/* Notes */}
               {d.notes && !readOnly && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
@@ -284,7 +298,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ca
               )}
 
               {/* Jotform copy block */}
-              {jotLines.length > 0 && <CopyBlock lines={jotLines} />}
+              {jotLines.length > 0 && <CopyBlock lines={jotLines} notes={noteVal || null} />}
 
               {/* Status workflow */}
               {!readOnly && (
