@@ -1,11 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import PolicyModal, { PolicyModalErrorBoundary } from '../PolicyEditModal'
 import { fmtDate, fmtCurrency as fmtAmt } from '../../utils/format'
-
-const DISPUTE_TYPES = [
-  'Missing policy', 'APV mismatch', 'Chargeback', 'Timing difference',
-  'Split/Reset', 'Prior month carryover', 'Other',
-]
 
 function CopyBlock({ lines, notes, className = '' }) {
   const [copied,          setCopied]          = useState(false)
@@ -50,53 +45,71 @@ function CopyBlock({ lines, notes, className = '' }) {
   )
 }
 
-function buildJotformLines(dispute, policy) {
-  // Format: Carrier / Agent opt_name / Policy # / APV / Issue Date
-  const carrier   = policy?.carrier ?? ''
-  const agent     = dispute.agent_name ?? dispute.sfg_id
+function buildJotformLines(agentName, dispute, policy) {
+  const carrier   = policy?.carrier ?? dispute.carrier ?? ''
   const policyNo  = policy?.policy_no ?? policy?.policy_number ?? ''
-  const apv       = policy?.issued_apv != null ? `$${Number(policy.issued_apv).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+  const apv       = (policy?.issued_apv ?? dispute.disputed_amount) != null
+    ? `$${Number(policy?.issued_apv ?? dispute.disputed_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : ''
   const issueDate = policy?.issue_date
     ? new Date(policy.issue_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
     : ''
-  return [carrier, agent, policyNo, apv, issueDate].filter(Boolean)
-}
-
-// Build hierarchy chain for an sfg_id from personnel list
-function getHierarchyChain(sfgId, personnelMap) {
-  const chain = []
-  let current = sfgId?.toUpperCase()
-  const visited = new Set()
-  while (current && !visited.has(current)) {
-    visited.add(current)
-    const p = personnelMap[current]
-    if (!p) break
-    chain.push(p)
-    current = p.upline_sfg_id?.toUpperCase()
-  }
-  return chain
+  return [carrier, agentName, policyNo, apv, issueDate].filter(Boolean)
 }
 
 export default function Step2Disputes({ cycle, disputes, personnel, policies, monthPolicies = [], canWrite, onStepComplete, onRefresh }) {
-  const [qualifications, setQualifications] = useState({})
-  const [notes,          setNotes]          = useState({})   // dispute id → local note draft
-  const [savingId,       setSavingId]       = useState(null)
-  const [editPolicy,     setEditPolicy]     = useState(null)
-  const [outcomePrompt,  setOutcomePrompt]  = useState(null) // dispute being approved
+  const [qualifications,   setQualifications]   = useState({})
+  const [notes,            setNotes]            = useState({})         // id → local draft
+  const [includedOverride, setIncludedOverride] = useState({})         // id → bool (optimistic)
+  const [savingId,         setSavingId]         = useState(null)
+  const [editPolicy,       setEditPolicy]       = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
+
+  // Clear include overrides when disputes prop updates (after a real refresh)
+  const prevDisputeIds = useRef(null)
+  useEffect(() => {
+    const ids = disputes.map(d => d.id).join(',')
+    if (prevDisputeIds.current !== null && prevDisputeIds.current !== ids) {
+      setIncludedOverride({})
+    }
+    prevDisputeIds.current = ids
+  }, [disputes])
+
+  // Determine effective included state (local override > prop)
+  function isIncluded(d) {
+    return includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
+  }
 
   // Personnel lookup map
   const personnelMap = useMemo(() => {
     const m = {}
-    for (const p of personnel) m[p.sfg_id?.toUpperCase()] = p
+    for (const p of personnel) if (p.sfg_id) m[p.sfg_id.toUpperCase()] = p
     return m
   }, [personnel])
+
+  // Name map from dispute rows (server-resolved, reliable even if context failed)
+  const disputeNameMap = useMemo(() => {
+    const m = {}
+    for (const d of disputes) {
+      if (d.sfg_id && d.agent_name) m[d.sfg_id.toUpperCase()] = d.agent_name
+    }
+    return m
+  }, [disputes])
+
+  // Resolve display name: prefer server-resolved agent_name on the dispute/reconciliation row,
+  // fall back to personnelMap, then raw sfg_id
+  function resolveName(sfgId) {
+    const upper = sfgId?.toUpperCase()
+    if (!upper) return sfgId
+    const p = personnelMap[upper]
+    return disputeNameMap[upper] || p?.opt_name || p?.preferred_name || sfgId
+  }
 
   // Policy lookup by id
   const policyMap = useMemo(() => {
     const m = {}
-    for (const p of policies) m[p.id] = p
+    for (const p of policies) if (p.id) m[p.id] = p
     return m
   }, [policies])
 
@@ -109,12 +122,10 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
   }, [])
 
   // ── Hierarchy Totalizer ──────────────────────────────────────────────────────
-  // Collect all unique agents affected by disputes + their full hierarchy
   const { affectedAgents, baseApvByAgent } = useMemo(() => {
     const affected = new Set()
     for (const d of disputes) if (d.sfg_id) affected.add(d.sfg_id.toUpperCase())
 
-    // Also include uplines
     const withUplines = new Set(affected)
     for (const sfgId of affected) {
       let cur = personnelMap[sfgId]?.upline_sfg_id?.toUpperCase()
@@ -126,7 +137,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
       }
     }
 
-    // Base APV = sum of issued policies for the month for each agent
     const base = {}
     for (const sfgId of withUplines) {
       base[sfgId] = monthPolicies
@@ -135,14 +145,14 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
     }
 
     return { affectedAgents: [...withUplines], baseApvByAgent: base }
-  }, [disputes, personnelMap, policies])
+  }, [disputes, personnelMap, monthPolicies])
 
-  // Compute net APV (base minus excluded disputes affecting this agent)
+  // Net APV respects local include overrides for real-time feedback
   function getNetApv(sfgId) {
     const upper = sfgId.toUpperCase()
     let deduction = 0
     for (const d of disputes) {
-      if (!d.included && d.sfg_id?.toUpperCase() === upper) {
+      if (!isIncluded(d) && d.sfg_id?.toUpperCase() === upper) {
         deduction += Number(d.disputed_amount) || 0
       }
     }
@@ -158,12 +168,21 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
   function thresholdColor(sfgId) {
     const base = baseApvByAgent[sfgId] ?? 0
     const net  = getNetApv(sfgId)
-    const thresholds = getThresholds(sfgId)
-    for (const t of thresholds) {
-      if (base >= t && net < t) return 'red'   // crosses below
-      if (base < t && net >= t) return 'green'  // crosses above
+    for (const t of getThresholds(sfgId)) {
+      if (base >= t && net < t) return 'red'
+      if (base < t && net >= t) return 'green'
     }
     return null
+  }
+
+  // Include/exclude: optimistic local update, fire-and-forget to server (no page refresh)
+  function toggleIncluded(id, value) {
+    setIncludedOverride(s => ({ ...s, [id]: value }))
+    fetch('/api/snapshot?type=dispute', {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id, included: value }),
+    }).catch(err => console.error('include toggle error', err))
   }
 
   async function updateDispute(id, patch) {
@@ -172,7 +191,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
       await fetch('/api/snapshot?type=dispute', {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...patch }),
+        body:    JSON.stringify({ id, ...patch }),
       })
       await onRefresh()
     } catch (err) {
@@ -200,16 +219,16 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
           <h4 className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Hierarchy Totalizer</h4>
           <div className="space-y-2">
             {affectedAgents.map(sfgId => {
-              const p     = personnelMap[sfgId]
-              if (!p) return null
               const base  = baseApvByAgent[sfgId] ?? 0
               const net   = getNetApv(sfgId)
               const color = thresholdColor(sfgId)
+              const p     = personnelMap[sfgId]
+              const name  = p?.opt_name || p?.preferred_name || disputeNameMap[sfgId] || sfgId
               return (
                 <div key={sfgId} className="flex items-center gap-4 flex-wrap text-sm">
                   <span className="font-medium text-gray-800 dark:text-white/90 min-w-[160px]">
-                    {p.opt_name ?? p.preferred_name ?? sfgId}
-                    {p.role && <span className="ml-1.5 text-xs text-gray-400 dark:text-white/40">({p.role})</span>}
+                    {name}
+                    {p?.role && <span className="ml-1.5 text-xs text-gray-400 dark:text-white/40">({p.role})</span>}
                   </span>
                   <span className="text-xs text-gray-500 dark:text-white/50">Base: <strong>{fmtAmt(base)}</strong></span>
                   <span className={`text-xs font-medium ${color === 'red' ? 'text-red-500' : color === 'green' ? 'text-green-500' : 'text-gray-600 dark:text-white/60'}`}>
@@ -233,47 +252,47 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
 
       {disputes.map(d => {
         const policy    = policyMap[d.policy_id]
-        const upper     = d.sfg_id?.toUpperCase()
-        const pEntry    = personnelMap[upper]
-        const agentName = pEntry?.opt_name || pEntry?.preferred_name || d.sfg_id
-        const jotLines  = buildJotformLines({ ...d, agent_name: agentName }, policy)
-        const isIncluded = d.included !== false
+        const agentName = resolveName(d.sfg_id)
+        const included  = isIncluded(d)
+        const jotLines  = buildJotformLines(agentName, d, policy)
         const noteVal   = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
 
         return (
-          <div key={d.id} className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/15 rounded-2xl overflow-hidden">
+          <div key={d.id} className={`bg-white dark:bg-primary/30 border rounded-2xl overflow-hidden transition-colors ${included ? 'border-gray-200 dark:border-white/15' : 'border-red-200 dark:border-red-500/20 opacity-80'}`}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10 flex-wrap gap-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{agentName}</span>
-                {policy && (
+                {policy ? (
                   <>
                     <span className="text-xs text-gray-400 dark:text-white/40">{policy.policy_no ?? policy.policy_number ?? '—'}</span>
                     <span className="text-xs text-gray-500 dark:text-white/50">{policy.applicant}</span>
                     <span className="text-xs text-gray-500 dark:text-white/50">{policy.carrier}</span>
                   </>
-                )}
+                ) : d.dispute_type ? (
+                  <span className="text-xs text-gray-400 dark:text-white/40">{d.dispute_type}</span>
+                ) : null}
                 {d.disputed_amount && <span className="text-sm font-bold text-accent">{fmtAmt(d.disputed_amount)}</span>}
               </div>
               {!readOnly && (
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => updateDispute(d.id, { included: true })}
-                    className={`text-xs px-3 py-1 rounded-l-lg border transition-colors ${isIncluded ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    onClick={() => toggleIncluded(d.id, true)}
+                    className={`text-xs px-3 py-1 rounded-l-lg border transition-colors ${included ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                   >Include</button>
                   <button
-                    onClick={() => updateDispute(d.id, { included: false })}
-                    className={`text-xs px-3 py-1 rounded-r-lg border border-l-0 transition-colors ${!isIncluded ? 'bg-red-500/20 border-red-500/40 text-red-600 dark:text-red-400 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    onClick={() => toggleIncluded(d.id, false)}
+                    className={`text-xs px-3 py-1 rounded-r-lg border border-l-0 transition-colors ${!included ? 'bg-red-500/20 border-red-500/40 text-red-600 dark:text-red-400 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                   >Exclude</button>
                 </div>
               )}
             </div>
 
             <div className="px-6 py-4 space-y-4">
-              {/* Notes */}
-              {d.notes && !readOnly && (
+              {/* Saved note reference block */}
+              {d.notes && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
-                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-300 mb-0.5">Reference note (shown above Jotform — paste manually if needed):</p>
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-300 mb-0.5">Note (paste above Jotform if needed):</p>
                   <p className="text-xs text-gray-700 dark:text-white/70">{d.notes}</p>
                 </div>
               )}
@@ -307,8 +326,9 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
                   {!d.submitted_at ? (
                     <button
                       onClick={() => updateDispute(d.id, { submitted_at: new Date().toISOString() })}
-                      disabled={savingId === d.id}
-                      className="text-xs px-3 py-1 rounded-lg bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25 transition-colors font-medium disabled:opacity-60"
+                      disabled={savingId === d.id || !included}
+                      title={!included ? 'Cannot submit an excluded dispute' : undefined}
+                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${included ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25' : 'bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-white/25 cursor-not-allowed'} disabled:opacity-60`}
                     >Mark Submitted</button>
                   ) : !d.outcome ? (
                     <>

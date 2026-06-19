@@ -89,21 +89,25 @@ export default async function handler(req, res) {
       const [cycleRes, reconRes, disputeRes, promoRes] = await Promise.all([
         supabase.from('snapshot_cycles').select('*').eq('id', id).single(),
         supabase.from('snapshot_reconciliations').select('*').eq('cycle_id', id).order('delta'),
-        supabase.from('snapshot_disputes').select('*').eq('cycle_id', id),
+        supabase.from('snapshot_disputes').select('*').eq('cycle_id', id).order('created_at'),
         supabase.from('snapshot_promotion_actions').select('*').eq('cycle_id', id),
       ])
       if (cycleRes.error) throw cycleRes.error
 
-      // Resolve agent names server-side so cards display correctly even when
-      // issued_policies is empty (chargeback-only entries, $0-DB agents, etc.)
-      const recs = reconRes.data ?? []
+      // Resolve agent names server-side for both reconciliations and disputes
+      const recs     = reconRes.data  ?? []
+      const dispRows = disputeRes.data ?? []
+      const allSfgIds = [...new Set(
+        [...recs.map(r => r.sfg_id), ...dispRows.map(d => d.sfg_id)].filter(Boolean)
+      )]
+
       let reconciliations = recs
-      if (recs.length > 0) {
-        const sfgIds = [...new Set(recs.map(r => r.sfg_id).filter(Boolean))]
+      let disputes        = dispRows
+      if (allSfgIds.length > 0) {
         const { data: people } = await supabase
           .from('personnel')
           .select('sfg_id, opt_name, preferred_name')
-          .in('sfg_id', sfgIds)
+          .in('sfg_id', allSfgIds)
         const nameMap = {}
         for (const p of people ?? []) {
           if (p.sfg_id) {
@@ -115,13 +119,17 @@ export default async function handler(req, res) {
           ...r,
           agent_name: nameMap[r.sfg_id?.trim().toUpperCase()] || r.sfg_id,
         }))
+        disputes = dispRows.map(d => ({
+          ...d,
+          agent_name: nameMap[d.sfg_id?.trim().toUpperCase()] || d.sfg_id,
+        }))
       }
 
       return res.status(200).json({
-        cycle:           cycleRes.data,
+        cycle: cycleRes.data,
         reconciliations,
-        disputes:        disputeRes.data ?? [],
-        promotions:      promoRes.data  ?? [],
+        disputes,
+        promotions: promoRes.data ?? [],
       })
     } catch (err) {
       console.error('[snapshot/cycle GET]', err)
@@ -403,7 +411,7 @@ export default async function handler(req, res) {
           .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
           .gte('issue_date', monthStart)
           .lt('issue_date', nextMonth)
-          .eq('status', 'issued')
+          .ilike('status', 'issued')
         monthPolicies = polData ?? []
       }
 
