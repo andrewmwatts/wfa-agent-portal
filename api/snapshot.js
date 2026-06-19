@@ -93,9 +93,33 @@ export default async function handler(req, res) {
         supabase.from('snapshot_promotion_actions').select('*').eq('cycle_id', id),
       ])
       if (cycleRes.error) throw cycleRes.error
+
+      // Resolve agent names server-side so cards display correctly even when
+      // issued_policies is empty (chargeback-only entries, $0-DB agents, etc.)
+      const recs = reconRes.data ?? []
+      let reconciliations = recs
+      if (recs.length > 0) {
+        const sfgIds = [...new Set(recs.map(r => r.sfg_id).filter(Boolean))]
+        const { data: people } = await supabase
+          .from('personnel')
+          .select('sfg_id, opt_name, preferred_name')
+          .in('sfg_id', sfgIds)
+        const nameMap = {}
+        for (const p of people ?? []) {
+          if (p.sfg_id) {
+            nameMap[p.sfg_id.trim().toUpperCase()] =
+              p.preferred_name?.trim() || p.opt_name?.trim() || null
+          }
+        }
+        reconciliations = recs.map(r => ({
+          ...r,
+          agent_name: nameMap[r.sfg_id?.trim().toUpperCase()] || r.sfg_id,
+        }))
+      }
+
       return res.status(200).json({
         cycle:           cycleRes.data,
-        reconciliations: reconRes.data  ?? [],
+        reconciliations,
         disputes:        disputeRes.data ?? [],
         promotions:      promoRes.data  ?? [],
       })

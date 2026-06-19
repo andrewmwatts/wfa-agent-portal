@@ -411,7 +411,8 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
         const mechanicalFlags = rec.mechanical_flags          ?? []
 
         const recSfgUpper = rec.sfg_id?.toUpperCase()
-        const agentName = issuedPolicies[0]?.agent_name
+        const agentName = rec.agent_name
+          || issuedPolicies[0]?.agent_name
           || personnel.find(p => p.sfg_id?.toUpperCase() === recSfgUpper)?.opt_name
           || rec.sfg_id
 
