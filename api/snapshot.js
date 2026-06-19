@@ -387,8 +387,7 @@ export default async function handler(req, res) {
     try {
       const [personRes, qualRes, promoRes] = await Promise.all([
         supabase.from('personnel').select(
-          'sfg_id, opt_name, preferred_name, upline_sfg_id, role, commission_level, ' +
-          'hire_date, owner_since'
+          'sfg_id, opt_name, preferred_name, upline_sfg_id, hire_date'
         ).order('opt_name'),
         supabase.from('qualifications').select('level, regular, slingshot, writers'),
         supabase.from('agent_promotions').select(
