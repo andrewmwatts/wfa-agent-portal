@@ -89,7 +89,7 @@ export default async function handler(req, res) {
       const [cycleRes, reconRes, disputeRes, promoRes] = await Promise.all([
         supabase.from('snapshot_cycles').select('*').eq('id', id).single(),
         supabase.from('snapshot_reconciliations').select('*').eq('cycle_id', id).order('delta'),
-        supabase.from('snapshot_disputes').select('*').eq('cycle_id', id).order('created_at'),
+        supabase.from('snapshot_disputes').select('*').eq('cycle_id', id),
         supabase.from('snapshot_promotion_actions').select('*').eq('cycle_id', id),
       ])
       if (cycleRes.error) throw cycleRes.error
