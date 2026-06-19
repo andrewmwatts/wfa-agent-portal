@@ -2,7 +2,6 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
 import { requireSuperAdmin } from '../_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -13,9 +12,34 @@ loadEnv({ path: resolve(__dirname, '../../.env.local') })
  * POST /api/snapshot/analyze
  * Body: { reconciliation_id: "uuid" }
  *
- * Fetches broader context for the discrepant agent+carrier (non-issued policies,
- * prior-month policies, chargebacks) then asks Claude to hypothesize the cause.
+ * Runs deterministic candidate matching to identify the most likely cause of a
+ * discrepancy. Checks, in order: chargebacks, non-issued policies in snapshot,
+ * effective-date straddles, not-taken chargebacks, missing-from-snapshot policies.
+ * Stores result as JSON in claude_hypothesis.
  */
+
+const CARRIER_ALIASES = {
+  'American General': ['American General', 'Corebridge'],
+  'TransAmerica':     ['TransAmerica', 'Transamerica Group'],
+  'Banner':           ['Banner', 'LGA'],
+}
+
+// Carriers that round to the nearest dollar (vs. exact cents)
+const DOLLAR_ROUND_CARRIERS = new Set(['Americo', 'Mutual of Omaha'])
+
+function tolerance(carrier) {
+  return DOLLAR_ROUND_CARRIERS.has(carrier) ? 1.00 : 0.02
+}
+
+function near(a, b, tol) {
+  return Math.abs(a - b) <= tol
+}
+
+function safeJson(val) {
+  if (!val) return null
+  if (typeof val === 'object') return val
+  try { return JSON.parse(val) } catch { return null }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -38,174 +62,203 @@ export default async function handler(req, res) {
       .single()
     if (recErr || !rec) return res.status(404).json({ error: 'Reconciliation not found' })
 
-    const cycle       = rec.snapshot_cycles
-    const windowFrom  = cycle?.snapshot_date_from
-    const windowTo    = cycle?.snapshot_date_to
-    const sfgId       = rec.sfg_id
-    const carrier     = rec.carrier
+    const cycle      = rec.snapshot_cycles
+    const windowFrom = cycle?.snapshot_date_from
+    const windowTo   = cycle?.snapshot_date_to
+    const sfgId      = rec.sfg_id
+    const carrier    = rec.carrier
+    const delta      = rec.delta          // snapshot_apv - db_apv (negative = tracker > snapshot)
+    const absDelta   = Math.abs(delta)
+    const tol        = tolerance(carrier)
 
-    // Agent name
-    const { data: person } = await supabase
-      .from('personnel')
-      .select('opt_name')
-      .ilike('sfg_id', sfgId)
-      .maybeSingle()
-    const agentName = person?.opt_name ?? sfgId
-
-    // Normalize carrier for DB queries (the stored carrier is already normalized)
-    const CARRIER_ALIASES = {
-      'American General': ['American General', 'Corebridge'],
-      'TransAmerica':     ['TransAmerica', 'Transamerica Group'],
-      'Banner':           ['Banner', 'LGA'],
-    }
+    const issuedPolicies  = safeJson(rec.issued_policies) ?? []
     const carrierVariants = CARRIER_ALIASES[carrier] ?? [carrier]
 
-    // Fetch broader context for this agent+carrier (90-day window around the snapshot)
-    const broadFrom = windowFrom
-      ? new Date(new Date(windowFrom).getTime() - 90 * 86400000).toISOString().slice(0, 10)
+    // Date bounds for straddle check: issued 1–31 days after the window
+    const dayAfterWindow = windowTo
+      ? new Date(new Date(windowTo).getTime() + 86400000).toISOString().slice(0, 10)
+      : null
+    const straddleEnd = windowTo
+      ? new Date(new Date(windowTo).getTime() + 31 * 86400000).toISOString().slice(0, 10)
       : null
 
-    const [nonIssuedRes, priorIssuedRes] = await Promise.all([
-      // Non-issued (pending/incomplete) policies — any date
+    // Fetch all candidate pools in parallel
+    const [cbRes, nonIssuedRes, straddleRes, notTakenRes] = await Promise.all([
+      // Chargebacks: any issued policy for this agent/carrier with a conservation_date set.
+      // No strict window filter — carriers sometimes charge 1–2 months after conservation.
       supabase
         .from('policies')
-        .select('policy_number, applicant, carrier, issue_date, issued_apv, status, submit_date')
+        .select('id, policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date')
         .eq('sfg_id', sfgId)
-        .in('status', ['Pending', 'Incomplete', 'pending', 'incomplete'])
-        .in('carrier', carrierVariants),
+        .in('carrier', carrierVariants)
+        .ilike('status', 'issued')
+        .not('conservation_date', 'is', null),
 
-      // Issued policies in the 90 days BEFORE the window (possible timing issues)
-      broadFrom && windowFrom
+      // Non-issued (Pending/Incomplete): carrier may be reporting these positively
+      supabase
+        .from('policies')
+        .select('id, policy_number, applicant, carrier, issued_apv, status, submit_date')
+        .eq('sfg_id', sfgId)
+        .in('carrier', carrierVariants)
+        .in('status', ['Pending', 'Incomplete', 'pending', 'incomplete']),
+
+      // Effective-date straddle: issued just after the window — carrier credits in their date
+      dayAfterWindow && straddleEnd
         ? supabase
-          .from('policies')
-          .select('policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, snapshot_chargeback_month, snapshot_chargeback_apv')
-          .eq('sfg_id', sfgId)
-          .ilike('status', 'issued')
-          .in('carrier', carrierVariants)
-          .gte('issue_date', broadFrom)
-          .lt('issue_date', windowFrom)
+            .from('policies')
+            .select('id, policy_number, applicant, carrier, issue_date, issued_apv')
+            .eq('sfg_id', sfgId)
+            .in('carrier', carrierVariants)
+            .ilike('status', 'issued')
+            .gte('issue_date', dayAfterWindow)
+            .lte('issue_date', straddleEnd)
         : Promise.resolve({ data: [] }),
+
+      // Not taken: may be treated as a chargeback by the carrier
+      supabase
+        .from('policies')
+        .select('id, policy_number, applicant, carrier, issued_apv, status')
+        .eq('sfg_id', sfgId)
+        .in('carrier', carrierVariants)
+        .ilike('status', 'not taken'),
     ])
 
-    // Chargebacks: issued policies with conservation_status set, in broader window
-    const chargebackRes = await supabase
-      .from('policies')
-      .select('policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date, snapshot_chargeback_month, snapshot_chargeback_apv')
-      .eq('sfg_id', sfgId)
-      .in('carrier', carrierVariants)
-      .ilike('status', 'issued')
-      .not('conservation_status', 'is', null)
+    const candidates = []
 
-    const issuedPolicies    = safeJson(rec.issued_policies) ?? []
-    const nonIssuedPolicies = nonIssuedRes.data            ?? []
-    const priorInWindow     = priorIssuedRes.data          ?? []
-    const cbCandidates      = (chargebackRes.data ?? []).filter(p => p.conservation_status?.trim())
+    // ── Chargebacks (snapshot < tracker, delta < 0) ──────────────────────────
+    for (const p of cbRes.data ?? []) {
+      const apv = Number(p.issued_apv) || 0
+      if (!apv) continue
 
-    const prompt = buildPrompt({
-      agentName,
-      carrier,
-      month:          cycle?.month,
-      windowFrom,
-      windowTo,
-      snapshotApv:    rec.snapshot_apv,
-      dbApv:          rec.db_apv,
-      delta:          rec.delta,
-      mechanicalFlags: rec.mechanical_flags ?? [],
-      issuedPolicies,
-      nonIssuedPolicies,
-      priorInWindow,
-      cbCandidates,
-    })
+      if (near(apv, absDelta, tol)) {
+        candidates.push({
+          type:                'chargeback',
+          flag:                'Log chargeback',
+          match:               'full',
+          policy_id:           p.id,
+          policy_number:       p.policy_number,
+          applicant:           p.applicant,
+          issued_apv:          apv,
+          conservation_date:   p.conservation_date,
+          conservation_status: p.conservation_status,
+          delta_contribution:  apv,
+        })
+        continue
+      }
 
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const message = await anthropic.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 1000,
-      messages:   [{ role: 'user', content: prompt }],
-    })
+      // Prorated chargeback (n/12 of issued APV)
+      for (let n = 1; n <= 11; n++) {
+        const prorated = Math.round(apv * n / 12 * 100) / 100
+        if (near(prorated, absDelta, tol)) {
+          candidates.push({
+            type:                'chargeback',
+            flag:                'Log chargeback',
+            match:               `${n}/12`,
+            policy_id:           p.id,
+            policy_number:       p.policy_number,
+            applicant:           p.applicant,
+            issued_apv:          apv,
+            conservation_date:   p.conservation_date,
+            conservation_status: p.conservation_status,
+            delta_contribution:  prorated,
+          })
+          break
+        }
+      }
+    }
 
-    const hypothesis = message.content?.[0]?.text ?? ''
+    // ── Non-issued in snapshot (snapshot > tracker, delta > 0) ───────────────
+    if (delta > 0) {
+      for (const p of nonIssuedRes.data ?? []) {
+        const apv = Number(p.issued_apv) || 0
+        if (apv && near(apv, delta, tol)) {
+          candidates.push({
+            type:               'non_issued',
+            flag:               'Flag for review',
+            match:              'full',
+            policy_id:          p.id,
+            policy_number:      p.policy_number,
+            applicant:          p.applicant,
+            issued_apv:         apv,
+            status:             p.status,
+            submit_date:        p.submit_date,
+            delta_contribution: apv,
+          })
+        }
+      }
+    }
+
+    // ── Effective-date straddle (delta < 0) ───────────────────────────────────
+    if (delta < 0) {
+      for (const p of straddleRes.data ?? []) {
+        const apv = Number(p.issued_apv) || 0
+        if (apv && near(apv, absDelta, tol)) {
+          candidates.push({
+            type:               'straddle',
+            flag:               'Confirm issue/effective date',
+            match:              'full',
+            policy_id:          p.id,
+            policy_number:      p.policy_number,
+            applicant:          p.applicant,
+            issued_apv:         apv,
+            issue_date:         p.issue_date,
+            delta_contribution: apv,
+          })
+        }
+      }
+    }
+
+    // ── Not taken (delta < 0) ─────────────────────────────────────────────────
+    if (delta < 0) {
+      for (const p of notTakenRes.data ?? []) {
+        const apv = Number(p.issued_apv) || 0
+        if (apv && near(apv, absDelta, tol)) {
+          candidates.push({
+            type:               'not_taken',
+            flag:               'Remove chargeback',
+            match:              'full',
+            policy_id:          p.id,
+            policy_number:      p.policy_number,
+            applicant:          p.applicant,
+            issued_apv:         apv,
+            delta_contribution: apv,
+          })
+        }
+      }
+    }
+
+    // ── Missing from snapshot (fallback, delta < 0) ───────────────────────────
+    // If no other candidate accounts for the delta, check whether any individual
+    // issued policy in the window matches — it may simply not appear in the snapshot.
+    if (candidates.length === 0 && delta < 0 && issuedPolicies.length > 0) {
+      for (const p of issuedPolicies) {
+        const apv = Number(p.issued_apv) || 0
+        if (apv && near(apv, absDelta, tol)) {
+          candidates.push({
+            type:               'missing',
+            flag:               'Missing from snapshot',
+            match:              'full',
+            policy_id:          p.id,
+            policy_number:      p.policy_number,
+            applicant:          p.applicant,
+            issued_apv:         apv,
+            issue_date:         p.issue_date,
+            delta_contribution: apv,
+          })
+        }
+      }
+    }
+
+    const result = { candidates, unmatched: candidates.length === 0 }
 
     await supabase
       .from('snapshot_reconciliations')
-      .update({ claude_hypothesis: hypothesis })
+      .update({ claude_hypothesis: JSON.stringify(result) })
       .eq('id', reconciliation_id)
 
-    return res.status(200).json({ hypothesis })
+    return res.status(200).json(result)
   } catch (err) {
     console.error('[snapshot/analyze]', err)
     return res.status(500).json({ error: err?.message ?? 'Failed to analyze reconciliation' })
   }
-}
-
-function safeJson(val) {
-  if (!val) return null
-  if (typeof val === 'object') return val
-  try { return JSON.parse(val) } catch { return null }
-}
-
-function fmtApv(n) {
-  if (typeof n !== 'number') return '—'
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function buildPrompt({ agentName, carrier, month, windowFrom, windowTo,
-                       snapshotApv, dbApv, delta, mechanicalFlags,
-                       issuedPolicies, nonIssuedPolicies, priorInWindow, cbCandidates }) {
-  const dir = delta > 0 ? 'Snapshot higher than tracker' : 'Tracker higher than snapshot'
-  const lines = [
-    `You are reviewing a monthly Snapshot reconciliation for a life insurance agency.`,
-    ``,
-    `Agent: ${agentName}`,
-    `Carrier: ${carrier}`,
-    `Month: ${month ?? 'unknown'} (window ${windowFrom} – ${windowTo})`,
-    `Snapshot APV (carrier HQ report): ${fmtApv(snapshotApv)}`,
-    `Tracker APV (internal DB, issued in window): ${fmtApv(dbApv)}`,
-    `Delta: ${fmtApv(delta)} (${dir})`,
-    ``,
-  ]
-
-  if (mechanicalFlags.length) {
-    lines.push(`Mechanical flags: ${mechanicalFlags.join(', ')}`, '')
-  }
-
-  if (issuedPolicies.length) {
-    lines.push(`Issued policies recorded in window (${issuedPolicies.length}):`)
-    for (const p of issuedPolicies) {
-      lines.push(`  - ${p.applicant} | #${p.policy_number} | ${p.issue_date} | ${fmtApv(p.issued_apv)}${p.split_reset ? ' | SPLIT/RESET' : ''}`)
-    }
-    lines.push('')
-  } else {
-    lines.push(`No issued policies recorded in our tracker for this agent+carrier in the window.`, '')
-  }
-
-  if (priorInWindow.length) {
-    lines.push(`Issued policies in the 90 days BEFORE the window (may be flowing into snapshot):`)
-    for (const p of priorInWindow) {
-      lines.push(`  - ${p.applicant} | #${p.policy_number} | issued ${p.issue_date} | ${fmtApv(p.issued_apv)}${p.conservation_status ? ` | Conservation: ${p.conservation_status}` : ''}`)
-    }
-    lines.push('')
-  }
-
-  if (cbCandidates.length) {
-    lines.push(`Chargeback candidates (issued policies with conservation status):`)
-    for (const p of cbCandidates) {
-      lines.push(`  - ${p.applicant} | #${p.policy_number} | ${fmtApv(p.issued_apv)} | ${p.conservation_status}${p.snapshot_chargeback_apv ? ` | CB APV: ${fmtApv(p.snapshot_chargeback_apv)}` : ''}`)
-    }
-    lines.push('')
-  }
-
-  if (nonIssuedPolicies.length) {
-    lines.push(`Pending/incomplete policies for this agent+carrier (not yet issued):`)
-    for (const p of nonIssuedPolicies) {
-      lines.push(`  - ${p.applicant} | #${p.policy_number} | submitted ${p.submit_date ?? 'unknown'} | status: ${p.status}`)
-    }
-    lines.push('')
-  }
-
-  lines.push(
-    `Based on this information, provide a concise hypothesis (2–4 sentences) explaining the most likely reason for the discrepancy. Focus on: what might account for the delta, what to verify when resolving, and whether this appears legitimate or worth disputing.`
-  )
-
-  return lines.join('\n')
 }

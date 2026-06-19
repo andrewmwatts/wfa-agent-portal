@@ -141,10 +141,6 @@ function ResolutionBadge({ resolution }) {
   return <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${cls}`}>{label}</span>
 }
 
-const DISPUTE_TYPES = [
-  'Missing policy', 'APV mismatch', 'Chargeback', 'Timing difference',
-  'Split/Reset', 'Prior month carryover', 'Other',
-]
 
 export default function Step1Reconciliation({ cycle, reconciliations, personnel, canWrite, onStepComplete, onRefresh }) {
   const fileRef = useRef(null)
@@ -156,24 +152,27 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
   const [runResult,     setRunResult]     = useState(null)
   const [runError,      setRunError]      = useState(null)
 
-  const [expanded,      setExpanded]      = useState({})         // reconciliation id → bool
-  const [resolvingId,   setResolvingId]   = useState(null)       // which card is in resolve flow
-  const [resolveMode,   setResolveMode]   = useState(null)       // 'legitimate' | 'dispute'
-  const [resolveNote,   setResolveNote]   = useState('')
-  const [disputeForm,   setDisputeForm]   = useState({ type: '', amount: '', notes: '' })
-  const [savingId,      setSavingId]      = useState(null)
+  const [expanded,             setExpanded]             = useState({})
+  const [resolvingId,          setResolvingId]          = useState(null)  // card in "Mark Legitimate" flow
+  const [resolveNote,          setResolveNote]          = useState('')
+  const [savingId,             setSavingId]             = useState(null)
 
-  const [analyzingId,   setAnalyzingId]   = useState(null)
-  const [hypotheses,    setHypotheses]    = useState({})         // id → text (local cache)
+  const [analyzingId,          setAnalyzingId]          = useState(null)
+  const [analyses,             setAnalyses]             = useState({})    // id → { candidates, unmatched }
+
+  const [disputingCandidate,   setDisputingCandidate]   = useState(null)  // { recId, candidate }
+  const [candidateDisputeNote, setCandidateDisputeNote] = useState('')
 
   const [editPolicy,    setEditPolicy]    = useState(null)
   const [dupeOpen,      setDupeOpen]      = useState(false)
 
-  // Sort by abs(delta) desc; resolved go to bottom
+  // Sort by carrier A-Z, then agent name A-Z; resolved go to bottom
   const sorted = [...reconciliations].sort((a, b) => {
     const aRes = !!a.resolution, bRes = !!b.resolution
     if (aRes !== bRes) return aRes ? 1 : -1
-    return Math.abs(b.delta) - Math.abs(a.delta)
+    const cc = (a.carrier ?? '').localeCompare(b.carrier ?? '')
+    if (cc !== 0) return cc
+    return (a.agent_name ?? a.sfg_id ?? '').localeCompare(b.agent_name ?? b.sfg_id ?? '')
   })
 
   const allResolved = reconciliations.length > 0 && reconciliations.every(r => r.resolution)
@@ -228,12 +227,44 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Analysis failed')
-      setHypotheses(h => ({ ...h, [rec.id]: data.hypothesis }))
+      // data is { candidates: [...], unmatched: bool }
+      setAnalyses(a => ({ ...a, [rec.id]: data }))
       await onRefresh()
     } catch (err) {
       console.error('analyze error', err)
     } finally {
       setAnalyzingId(null)
+    }
+  }
+
+  async function handleCandidateDispute(rec, candidate) {
+    setSavingId(rec.id)
+    try {
+      await fetch('/api/snapshot?type=disputes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cycle_id:          cycle.id,
+          reconciliation_id: rec.id,
+          sfg_id:            rec.sfg_id,
+          policy_id:         candidate.policy_id,
+          disputed_amount:   candidate.delta_contribution,
+          dispute_type:      candidate.flag,
+          notes:             candidateDisputeNote || null,
+        }),
+      })
+      await fetch('/api/snapshot?type=resolution', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: rec.id, resolution: 'disputed', resolution_note: null }),
+      })
+      setDisputingCandidate(null)
+      setCandidateDisputeNote('')
+      await onRefresh()
+    } catch (err) {
+      console.error('dispute error', err)
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -243,47 +274,17 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       const res = await fetch('/api/snapshot?type=resolution', {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id:              rec.id,
-          resolution,
-          resolution_note: resolveNote || null,
-        }),
+        body: JSON.stringify({ id: rec.id, resolution, resolution_note: resolveNote || null }),
       })
       if (!res.ok) throw new Error('Failed to save resolution')
-
-      if (resolution === 'disputed') {
-        // Also create a dispute row
-        await fetch('/api/snapshot?type=disputes', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cycle_id:          cycle.id,
-            reconciliation_id: rec.id,
-            sfg_id:            rec.sfg_id,
-            disputed_amount:   parseFloat(disputeForm.amount) || null,
-            dispute_type:      disputeForm.type || null,
-            notes:             disputeForm.notes || null,
-          }),
-        })
-      }
-
       setResolvingId(null)
-      setResolveMode(null)
       setResolveNote('')
-      setDisputeForm({ type: '', amount: '', notes: '' })
       await onRefresh()
     } catch (err) {
       console.error('resolve error', err)
     } finally {
       setSavingId(null)
     }
-  }
-
-  function openResolve(id, mode) {
-    setResolvingId(id)
-    setResolveMode(mode)
-    setResolveNote('')
-    setDisputeForm({ type: '', amount: '', notes: '' })
   }
 
   const INPUT = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
@@ -402,17 +403,25 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       )}
 
       {sorted.map(rec => {
-        const isExpanded  = expanded[rec.id] ?? !rec.resolution
-        const isResolving = resolvingId === rec.id
-        const isAnalyzing = analyzingId === rec.id
-        const hypothesis  = hypotheses[rec.id] ?? rec.claude_hypothesis
+        const isExpanded   = expanded[rec.id] ?? !rec.resolution
+        const isResolving  = resolvingId === rec.id
+        const isAnalyzing  = analyzingId === rec.id
+        const isDisputing  = disputingCandidate?.recId === rec.id
 
-        const issuedPolicies  = safeJson(rec.issued_policies) ?? []
-        const mechanicalFlags = rec.mechanical_flags          ?? []
+        // Parse stored analysis (new JSON format) or fall back to local cache
+        const storedRaw = rec.claude_hypothesis
+        let analysis = analyses[rec.id] ?? null
+        if (!analysis && storedRaw) {
+          try {
+            const p = JSON.parse(storedRaw)
+            if (p && 'candidates' in p) analysis = p
+          } catch {}
+        }
+
+        const mechanicalFlags = rec.mechanical_flags ?? []
 
         const recSfgUpper = rec.sfg_id?.toUpperCase()
         const agentName = rec.agent_name
-          || issuedPolicies[0]?.agent_name
           || personnel.find(p => p.sfg_id?.toUpperCase() === recSfgUpper)?.opt_name
           || rec.sfg_id
 
@@ -448,26 +457,70 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   </div>
                 )}
 
-                {/* Claude hypothesis */}
-                {hypothesis ? (
-                  <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-blue-600 dark:text-blue-300 mb-1">AI Analysis</p>
-                    <p className="text-sm text-gray-700 dark:text-white/80 leading-relaxed">{hypothesis}</p>
-                  </div>
-                ) : !readOnly && (
-                  <button
-                    onClick={() => handleRunAnalysis(rec)}
-                    disabled={isAnalyzing}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5"
-                  >
-                    {isAnalyzing && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
-                    {isAnalyzing ? 'Analyzing…' : 'Run Analysis'}
-                  </button>
-                )}
+                {/* Analysis candidates */}
+                {analysis ? (
+                  <div className="space-y-2">
+                    {analysis.candidates.length > 0 ? (
+                      analysis.candidates.map((c, i) => (
+                        <CandidateRow
+                          key={i}
+                          candidate={c}
+                          isActive={isDisputing && disputingCandidate?.candidate === c}
+                          onDispute={() => {
+                            setDisputingCandidate({ recId: rec.id, candidate: c })
+                            setCandidateDisputeNote('')
+                          }}
+                          canWrite={!readOnly && !rec.resolution}
+                        />
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-400 dark:text-white/40 italic">
+                        No clear match found for Δ {fmtAmt(rec.delta)} — manual investigation needed.
+                      </p>
+                    )}
 
-                {/* Issued policies table */}
-                {issuedPolicies.length > 0 && (
-                  <PolicyTable policies={issuedPolicies} title={`Issued policies in window (${issuedPolicies.length})`} onEdit={canWrite ? setEditPolicy : null} />
+                    {/* Per-candidate dispute inline form */}
+                    {isDisputing && (
+                      <div className="rounded-xl border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-500/5 px-4 py-3 space-y-2">
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          Dispute: {disputingCandidate.candidate.applicant} — {fmtAmt(disputingCandidate.candidate.delta_contribution)}
+                        </p>
+                        <textarea
+                          rows={2}
+                          value={candidateDisputeNote}
+                          onChange={e => setCandidateDisputeNote(e.target.value)}
+                          placeholder="Notes (optional)…"
+                          className={INPUT + ' resize-none'}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleCandidateDispute(rec, disputingCandidate.candidate)}
+                            disabled={savingId === rec.id}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60"
+                          >
+                            Send to Disputes
+                          </button>
+                          <button
+                            onClick={() => setDisputingCandidate(null)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  !readOnly && (
+                    <button
+                      onClick={() => handleRunAnalysis(rec)}
+                      disabled={isAnalyzing}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5"
+                    >
+                      {isAnalyzing && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
+                      {isAnalyzing ? 'Analyzing…' : 'Run Analysis'}
+                    </button>
+                  )
                 )}
 
                 {/* Resolution controls */}
@@ -475,41 +528,15 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
                     {!isResolving ? (
                       <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => openResolve(rec.id, 'legitimate')} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-500/25 transition-colors font-medium">Mark Legitimate</button>
-                        <button onClick={() => openResolve(rec.id, 'dispute')}    className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium">Send to Disputes</button>
-                        <button onClick={() => handleResolve(rec, 'no_action')}   className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Skip / No Action</button>
+                        <button onClick={() => { setResolvingId(rec.id); setResolveNote('') }} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-500/25 transition-colors font-medium">Mark Legitimate</button>
+                        <button onClick={() => handleResolve(rec, 'no_action')} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Skip / No Action</button>
                       </div>
-                    ) : resolveMode === 'legitimate' ? (
+                    ) : (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-gray-600 dark:text-white/60">Note (optional):</p>
                         <textarea rows={2} value={resolveNote} onChange={e => setResolveNote(e.target.value)} className={INPUT + ' resize-none'} placeholder="Reason this is legitimate…" />
                         <div className="flex gap-2">
                           <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm Legitimate</button>
-                          <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-gray-600 dark:text-white/60">Dispute details:</p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Dispute type</p>
-                            <select value={disputeForm.type} onChange={e => setDisputeForm(f => ({ ...f, type: e.target.value }))} className={INPUT}>
-                              <option value="">— select —</option>
-                              {DISPUTE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Disputed amount</p>
-                            <input type="number" value={disputeForm.amount} onChange={e => setDisputeForm(f => ({ ...f, amount: e.target.value }))} placeholder={Math.abs(rec.delta).toFixed(2)} className={INPUT} />
-                          </div>
-                          <div className="col-span-2">
-                            <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Notes</p>
-                            <textarea rows={2} value={disputeForm.notes} onChange={e => setDisputeForm(f => ({ ...f, notes: e.target.value }))} className={INPUT + ' resize-none'} />
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleResolve(rec, 'disputed')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60">Send to Disputes</button>
                           <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
                         </div>
                       </div>
@@ -561,6 +588,52 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
   )
 }
 
+// ─── Candidate Row ────────────────────────────────────────────────────────────
+
+const CANDIDATE_STYLES = {
+  chargeback: { border: 'border-amber-200 dark:border-amber-600/30',  bg: 'bg-amber-50 dark:bg-amber-500/5',   badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
+  non_issued: { border: 'border-blue-200 dark:border-blue-600/30',    bg: 'bg-blue-50 dark:bg-blue-500/5',     badge: 'bg-blue-500/15 text-blue-600 dark:text-blue-300'   },
+  straddle:   { border: 'border-purple-200 dark:border-purple-600/30',bg: 'bg-purple-50 dark:bg-purple-500/5', badge: 'bg-purple-500/15 text-purple-700 dark:text-purple-300' },
+  not_taken:  { border: 'border-orange-200 dark:border-orange-600/30',bg: 'bg-orange-50 dark:bg-orange-500/5', badge: 'bg-orange-500/15 text-orange-700 dark:text-orange-300' },
+  missing:    { border: 'border-red-200 dark:border-red-600/30',      bg: 'bg-red-50 dark:bg-red-500/5',       badge: 'bg-red-500/15 text-red-600 dark:text-red-400'       },
+}
+
+function CandidateRow({ candidate: c, onDispute, canWrite }) {
+  const s = CANDIDATE_STYLES[c.type] ?? CANDIDATE_STYLES.missing
+  const matchLabel = c.match !== 'full' ? ` (${c.match} proration)` : ''
+
+  return (
+    <div className={`flex items-start justify-between gap-4 rounded-xl border ${s.border} ${s.bg} px-4 py-3`}>
+      <div className="space-y-0.5 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>{c.flag}</span>
+          {c.match !== 'full' && <span className="text-xs text-gray-400 dark:text-white/40">{c.match} of APV</span>}
+        </div>
+        <p className="text-sm font-medium text-gray-800 dark:text-white/80">
+          {c.applicant} <span className="text-gray-400 dark:text-white/40 font-normal">#{c.policy_number}</span>
+        </p>
+        <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 dark:text-white/50">
+          <span>Full APV: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.issued_apv)}</strong></span>
+          {c.match !== 'full' && <span>Contribution: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.delta_contribution)}{matchLabel}</strong></span>}
+          {c.conservation_date && <span>CB date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.conservation_date)}</strong></span>}
+          {c.conservation_status && <span>{c.conservation_status}</span>}
+          {c.issue_date && c.type === 'straddle' && <span>Issue date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.issue_date)}</strong></span>}
+          {c.submit_date && c.type === 'non_issued' && <span>Submitted: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.submit_date)}</strong></span>}
+          {c.status && c.type === 'non_issued' && <span>Status: {c.status}</span>}
+        </div>
+      </div>
+      {canWrite && (
+        <button
+          onClick={onDispute}
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap"
+        >
+          Send to Disputes
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 
 function PolicyTable({ policies, title, onEdit }) {
@@ -603,18 +676,6 @@ function PolicyTable({ policies, title, onEdit }) {
   )
 }
 
-function CollapsiblePolicyTable({ policies, title, onEdit }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div>
-      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2 text-xs text-gray-500 dark:text-white/40 hover:text-gray-700 dark:hover:text-white/60 transition-colors mb-2">
-        <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-        <span className="font-semibold uppercase tracking-wider">{title}</span>
-      </button>
-      {open && <PolicyTable policies={policies} title="" onEdit={onEdit} />}
-    </div>
-  )
-}
 
 function SummaryChip({ label, value, color }) {
   const colorCls = color === 'green'
