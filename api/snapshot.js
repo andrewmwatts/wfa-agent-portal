@@ -398,21 +398,42 @@ export default async function handler(req, res) {
       ])
       if (personRes.error) throw personRes.error
 
-      // Build policies for the month if month is provided (for APV computation)
-      let monthPolicies = []
+      // Build per-agent APV map for the month (issued minus chargebacks that occurred this month)
+      let monthPolicies  = []
+      let agentMonthApv  = {}   // uppercase sfg_id → net APV
       if (month) {
         const [yr, mo] = month.split('-').map(Number)
         const monthStart = `${month}-01`
         const nextMonth  = mo === 12
           ? `${yr + 1}-01-01`
           : `${yr}-${String(mo + 1).padStart(2, '0')}-01`
-        const { data: polData } = await supabase
-          .from('policies')
-          .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
-          .gte('issue_date', monthStart)
-          .lt('issue_date', nextMonth)
-          .ilike('status', 'issued')
-        monthPolicies = polData ?? []
+
+        const [issuedRes, cbRes] = await Promise.all([
+          supabase
+            .from('policies')
+            .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
+            .gte('issue_date', monthStart)
+            .lt('issue_date', nextMonth)
+            .ilike('status', 'issued'),
+          // Chargebacks: policies where the carrier's chargeback date falls this month
+          supabase
+            .from('policies')
+            .select('sfg_id, issued_apv')
+            .gte('conservation_date', monthStart)
+            .lt('conservation_date', nextMonth)
+            .ilike('status', 'issued')
+            .not('conservation_date', 'is', null),
+        ])
+        monthPolicies = issuedRes.data ?? []
+
+        for (const p of monthPolicies) {
+          const key = p.sfg_id?.trim().toUpperCase()
+          if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) + (Number(p.issued_apv) || 0)
+        }
+        for (const p of cbRes.data ?? []) {
+          const key = p.sfg_id?.trim().toUpperCase()
+          if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - (Number(p.issued_apv) || 0)
+        }
       }
 
       const levelMap = buildLevelMap(promoRes.data ?? [])
@@ -426,6 +447,7 @@ export default async function handler(req, res) {
         qualifications: qualRes.data ?? [],
         promotions:     promoRes.data ?? [],
         monthPolicies,
+        agentMonthApv,
       })
     } catch (err) {
       console.error('[snapshot/context GET]', err)

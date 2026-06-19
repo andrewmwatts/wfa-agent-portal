@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import PolicyModal, { PolicyModalErrorBoundary } from '../PolicyEditModal'
 import { fmtDate, fmtCurrency as fmtAmt } from '../../utils/format'
 
+// ── CopyBlock ─────────────────────────────────────────────────────────────────
+
 function CopyBlock({ lines, notes, className = '' }) {
   const [copied,          setCopied]          = useState(false)
   const [copiedWithNotes, setCopiedWithNotes] = useState(false)
@@ -36,20 +38,21 @@ function CopyBlock({ lines, notes, className = '' }) {
       </div>
       <div className="px-3 py-3 space-y-0.5 font-mono text-xs text-gray-700 dark:text-white/70">
         {lines.map((line, i) => (
-          <div key={i} className="flex items-start gap-2">
-            <span className="select-all">{line}</span>
-          </div>
+          <div key={i}><span className="select-all">{line}</span></div>
         ))}
       </div>
     </div>
   )
 }
 
+// ── Jotform line builder ───────────────────────────────────────────────────────
+
 function buildJotformLines(agentName, dispute, policy) {
   const carrier   = policy?.carrier ?? dispute.carrier ?? ''
   const policyNo  = policy?.policy_no ?? policy?.policy_number ?? ''
-  const apv       = (policy?.issued_apv ?? dispute.disputed_amount) != null
-    ? `$${Number(policy?.issued_apv ?? dispute.disputed_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const rawApv    = policy?.issued_apv ?? dispute.disputed_amount
+  const apv       = rawApv != null
+    ? `$${Number(rawApv).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : ''
   const issueDate = policy?.issue_date
     ? new Date(policy.issue_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
@@ -57,16 +60,115 @@ function buildJotformLines(agentName, dispute, policy) {
   return [carrier, agentName, policyNo, apv, issueDate].filter(Boolean)
 }
 
-export default function Step2Disputes({ cycle, disputes, personnel, policies, monthPolicies = [], canWrite, onStepComplete, onRefresh }) {
+// ── HierarchyChain ────────────────────────────────────────────────────────────
+// Shows APV + promotion targets for the writing agent and all uplines.
+
+function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, personnelMap, disputeNameMap, qualifications }) {
+  // Walk up the hierarchy
+  const chain = []
+  let current = sfgId?.toUpperCase()
+  const visited = new Set()
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    chain.push(current)
+    const p = personnelMap[current]
+    if (!p?.upline_sfg_id) break
+    current = p.upline_sfg_id.toUpperCase()
+  }
+
+  // Sorted thresholds: [ { level, regular, slingshot, writers }, ... ]
+  const thresholds = useMemo(() => {
+    return Object.entries(qualifications)
+      .map(([level, q]) => ({
+        level,
+        regular:   Number(q.regular)   || 0,
+        slingshot: q.slingshot != null ? Number(q.slingshot) : null,
+        writers:   q.writers   ?? null,
+      }))
+      .filter(t => t.regular > 0)
+      .sort((a, b) => a.regular - b.regular)
+  }, [qualifications])
+
+  if (chain.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-gray-100 dark:border-white/10 overflow-hidden text-xs">
+      <div className="px-3 py-1.5 bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/10">
+        <span className="font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Hierarchy</span>
+      </div>
+      <div className="divide-y divide-gray-100 dark:divide-white/5">
+        {chain.map((id, idx) => {
+          const p      = personnelMap[id]
+          const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
+
+          // Net APV: base minus all excluded disputes for this agent
+          const base = agentMonthApv[id] ?? 0
+          let deduction = 0
+          for (const d of disputes) {
+            const inc = includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
+            if (!inc && d.sfg_id?.trim().toUpperCase() === id) {
+              deduction += Number(d.disputed_amount) || 0
+            }
+          }
+          const net = base - deduction
+
+          // Next unmet promote threshold
+          const nextT = thresholds.find(t => t.regular > net)
+
+          return (
+            <div key={id} className="px-3 py-2.5 flex flex-wrap gap-x-4 gap-y-1 items-baseline">
+              {/* Name + role */}
+              <div className="min-w-[150px]">
+                <span className={`font-medium ${idx === 0 ? 'text-gray-800 dark:text-white/90' : 'text-gray-600 dark:text-white/60'}`}>{name}</span>
+                {p?.role && <span className="ml-1 text-gray-400 dark:text-white/30">({p.role})</span>}
+              </div>
+
+              {/* Net APV */}
+              <span className={`font-bold tabular-nums ${deduction > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-700 dark:text-white/80'}`}>
+                {fmtAmt(net)}
+                {deduction > 0 && <span className="font-normal text-gray-400 dark:text-white/30 ml-1">−{fmtAmt(deduction)} adj</span>}
+              </span>
+
+              {/* Promote target */}
+              {nextT ? (
+                <span className="text-red-500 dark:text-red-400">
+                  Promote {nextT.level}: {fmtAmt(nextT.regular)} (need {fmtAmt(nextT.regular - net)})
+                </span>
+              ) : thresholds.length > 0 ? (
+                <span className="text-green-600 dark:text-green-400">All targets met</span>
+              ) : null}
+
+              {/* Slingshot target */}
+              {nextT?.slingshot != null && nextT.slingshot > 0 && (
+                net >= nextT.slingshot
+                  ? <span className="text-green-600 dark:text-green-400">Slingshot ✓ ({fmtAmt(nextT.slingshot)})</span>
+                  : <span className="text-amber-600 dark:text-amber-300">Slingshot {nextT.level}: {fmtAmt(nextT.slingshot)} (need {fmtAmt(nextT.slingshot - net)})</span>
+              )}
+
+              {/* Writers / leadership threshold */}
+              {nextT?.writers && (
+                <span className="text-purple-600 dark:text-purple-300">Writers: {nextT.writers} req.</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function Step2Disputes({ cycle, disputes, personnel, policies, agentMonthApv = {}, canWrite, onStepComplete, onRefresh }) {
   const [qualifications,   setQualifications]   = useState({})
-  const [notes,            setNotes]            = useState({})         // id → local draft
-  const [includedOverride, setIncludedOverride] = useState({})         // id → bool (optimistic)
+  const [notes,            setNotes]            = useState({})
+  const [includedOverride, setIncludedOverride] = useState({})
   const [savingId,         setSavingId]         = useState(null)
   const [editPolicy,       setEditPolicy]       = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
 
-  // Clear include overrides when disputes prop updates (after a real refresh)
+  // Clear include overrides when the disputes list itself changes (set membership)
   const prevDisputeIds = useRef(null)
   useEffect(() => {
     const ids = disputes.map(d => d.id).join(',')
@@ -76,31 +178,28 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
     prevDisputeIds.current = ids
   }, [disputes])
 
-  // Determine effective included state (local override > prop)
   function isIncluded(d) {
     return includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
   }
 
-  // Personnel lookup map
+  // Personnel lookup
   const personnelMap = useMemo(() => {
     const m = {}
-    for (const p of personnel) if (p.sfg_id) m[p.sfg_id.toUpperCase()] = p
+    for (const p of personnel) if (p.sfg_id) m[p.sfg_id.trim().toUpperCase()] = p
     return m
   }, [personnel])
 
-  // Name map from dispute rows (server-resolved, reliable even if context failed)
+  // Server-resolved names from dispute rows (reliable even when personnelMap is sparse)
   const disputeNameMap = useMemo(() => {
     const m = {}
     for (const d of disputes) {
-      if (d.sfg_id && d.agent_name) m[d.sfg_id.toUpperCase()] = d.agent_name
+      if (d.sfg_id && d.agent_name) m[d.sfg_id.trim().toUpperCase()] = d.agent_name
     }
     return m
   }, [disputes])
 
-  // Resolve display name: prefer server-resolved agent_name on the dispute/reconciliation row,
-  // fall back to personnelMap, then raw sfg_id
   function resolveName(sfgId) {
-    const upper = sfgId?.toUpperCase()
+    const upper = sfgId?.trim().toUpperCase()
     if (!upper) return sfgId
     const p = personnelMap[upper]
     return disputeNameMap[upper] || p?.opt_name || p?.preferred_name || sfgId
@@ -113,7 +212,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
     return m
   }, [policies])
 
-  // Load qualifications
+  // Qualifications from activity endpoint
   useEffect(() => {
     fetch('/api/activity?type=qualifications')
       .then(r => r.json())
@@ -121,61 +220,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
       .catch(() => {})
   }, [])
 
-  // ── Hierarchy Totalizer ──────────────────────────────────────────────────────
-  const { affectedAgents, baseApvByAgent } = useMemo(() => {
-    const affected = new Set()
-    for (const d of disputes) if (d.sfg_id) affected.add(d.sfg_id.toUpperCase())
-
-    const withUplines = new Set(affected)
-    for (const sfgId of affected) {
-      let cur = personnelMap[sfgId]?.upline_sfg_id?.toUpperCase()
-      const visited = new Set()
-      while (cur && !visited.has(cur)) {
-        visited.add(cur)
-        withUplines.add(cur)
-        cur = personnelMap[cur]?.upline_sfg_id?.toUpperCase()
-      }
-    }
-
-    const base = {}
-    for (const sfgId of withUplines) {
-      base[sfgId] = monthPolicies
-        .filter(p => p.sfg_id?.toUpperCase() === sfgId && p.status?.toLowerCase() === 'issued')
-        .reduce((s, p) => s + (Number(p.issued_apv) || 0), 0)
-    }
-
-    return { affectedAgents: [...withUplines], baseApvByAgent: base }
-  }, [disputes, personnelMap, monthPolicies])
-
-  // Net APV respects local include overrides for real-time feedback
-  function getNetApv(sfgId) {
-    const upper = sfgId.toUpperCase()
-    let deduction = 0
-    for (const d of disputes) {
-      if (!isIncluded(d) && d.sfg_id?.toUpperCase() === upper) {
-        deduction += Number(d.disputed_amount) || 0
-      }
-    }
-    return (baseApvByAgent[upper] ?? 0) - deduction
-  }
-
-  function getThresholds(sfgId) {
-    const p = personnelMap[sfgId?.toUpperCase()]
-    if (!p) return []
-    return Object.values(qualifications).map(q => Number(q.regular)).filter(Boolean).sort((a, b) => a - b)
-  }
-
-  function thresholdColor(sfgId) {
-    const base = baseApvByAgent[sfgId] ?? 0
-    const net  = getNetApv(sfgId)
-    for (const t of getThresholds(sfgId)) {
-      if (base >= t && net < t) return 'red'
-      if (base < t && net >= t) return 'green'
-    }
-    return null
-  }
-
-  // Include/exclude: optimistic local update, fire-and-forget to server (no page refresh)
+  // Include/exclude: optimistic local update, fire-and-forget (no page refresh)
   function toggleIncluded(id, value) {
     setIncludedOverride(s => ({ ...s, [id]: value }))
     fetch('/api/snapshot?type=dispute', {
@@ -213,37 +258,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
   return (
     <div className="space-y-5">
 
-      {/* ── Hierarchy Totalizer ──────────────────────────────────────────────── */}
-      {affectedAgents.length > 0 && (
-        <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6 sticky top-4 z-10">
-          <h4 className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Hierarchy Totalizer</h4>
-          <div className="space-y-2">
-            {affectedAgents.map(sfgId => {
-              const base  = baseApvByAgent[sfgId] ?? 0
-              const net   = getNetApv(sfgId)
-              const color = thresholdColor(sfgId)
-              const p     = personnelMap[sfgId]
-              const name  = p?.opt_name || p?.preferred_name || disputeNameMap[sfgId] || sfgId
-              return (
-                <div key={sfgId} className="flex items-center gap-4 flex-wrap text-sm">
-                  <span className="font-medium text-gray-800 dark:text-white/90 min-w-[160px]">
-                    {name}
-                    {p?.role && <span className="ml-1.5 text-xs text-gray-400 dark:text-white/40">({p.role})</span>}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-white/50">Base: <strong>{fmtAmt(base)}</strong></span>
-                  <span className={`text-xs font-medium ${color === 'red' ? 'text-red-500' : color === 'green' ? 'text-green-500' : 'text-gray-600 dark:text-white/60'}`}>
-                    Net: {fmtAmt(net)}
-                    {color === 'red'   && ' 🔴'}
-                    {color === 'green' && ' 🟢'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Dispute Cards ────────────────────────────────────────────────────── */}
       {disputes.length === 0 && (
         <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-10 text-center">
           <p className="text-sm text-gray-400 dark:text-white/40">No disputes yet. Disputes are created from Step 1 discrepancy cards.</p>
@@ -259,7 +273,8 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
 
         return (
           <div key={d.id} className={`bg-white dark:bg-primary/30 border rounded-2xl overflow-hidden transition-colors ${included ? 'border-gray-200 dark:border-white/15' : 'border-red-200 dark:border-red-500/20 opacity-80'}`}>
-            {/* Header */}
+
+            {/* ── Card header ──────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10 flex-wrap gap-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{agentName}</span>
@@ -272,8 +287,11 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
                 ) : d.dispute_type ? (
                   <span className="text-xs text-gray-400 dark:text-white/40">{d.dispute_type}</span>
                 ) : null}
-                {d.disputed_amount && <span className="text-sm font-bold text-accent">{fmtAmt(d.disputed_amount)}</span>}
+                {d.disputed_amount != null && (
+                  <span className="text-sm font-bold text-accent">{fmtAmt(d.disputed_amount)}</span>
+                )}
               </div>
+
               {!readOnly && (
                 <div className="flex items-center gap-1">
                   <button
@@ -288,8 +306,10 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
               )}
             </div>
 
+            {/* ── Card body ────────────────────────────────────────────────── */}
             <div className="px-6 py-4 space-y-4">
-              {/* Saved note reference block */}
+
+              {/* Saved note reference */}
               {d.notes && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
                   <p className="text-xs font-semibold text-amber-600 dark:text-amber-300 mb-0.5">Note (paste above Jotform if needed):</p>
@@ -311,15 +331,24 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
                 </div>
               )}
 
-              {/* Policy edit trigger */}
               {policy && canWrite && (
                 <button onClick={() => setEditPolicy(policy)} className="text-xs text-accent hover:underline">Edit policy record</button>
               )}
 
-              {/* Jotform copy block */}
               {jotLines.length > 0 && <CopyBlock lines={jotLines} notes={noteVal || null} />}
 
-              {/* Status workflow */}
+              {/* ── Hierarchy chain ──────────────────────────────────────── */}
+              <HierarchyChain
+                sfgId={d.sfg_id}
+                disputes={disputes}
+                includedOverride={includedOverride}
+                agentMonthApv={agentMonthApv}
+                personnelMap={personnelMap}
+                disputeNameMap={disputeNameMap}
+                qualifications={qualifications}
+              />
+
+              {/* ── Status workflow ──────────────────────────────────────── */}
               {!readOnly && (
                 <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100 dark:border-white/10">
                   <span className="text-xs text-gray-400 dark:text-white/40">Status:</span>
@@ -328,7 +357,11 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
                       onClick={() => updateDispute(d.id, { submitted_at: new Date().toISOString() })}
                       disabled={savingId === d.id || !included}
                       title={!included ? 'Cannot submit an excluded dispute' : undefined}
-                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${included ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25' : 'bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-white/25 cursor-not-allowed'} disabled:opacity-60`}
+                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors disabled:opacity-60 ${
+                        included
+                          ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25'
+                          : 'bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-white/25 cursor-not-allowed'
+                      }`}
                     >Mark Submitted</button>
                   ) : !d.outcome ? (
                     <>
@@ -348,7 +381,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
         )
       })}
 
-      {/* ── Completion gate ─────────────────────────────────────────────────── */}
+      {/* Completion gate */}
       {allHaveOutcome && !cycle?.completed_at && canWrite && (
         <div className="flex justify-end">
           <button onClick={onStepComplete} className="text-sm font-semibold bg-accent text-white px-6 py-2 rounded-xl hover:bg-accent/90 transition-colors">
@@ -357,7 +390,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, mo
         </div>
       )}
 
-      {/* Policy edit modal */}
       {editPolicy && (
         <PolicyModalErrorBoundary onClose={() => setEditPolicy(null)}>
           <PolicyModal

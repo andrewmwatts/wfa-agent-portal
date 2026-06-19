@@ -302,7 +302,7 @@ export default function SnapshotPage() {
               disputes={cycleData.disputes ?? []}
               personnel={context?.personnel ?? []}
               policies={reconPolicies}
-              monthPolicies={context?.monthPolicies ?? []}
+              agentMonthApv={context?.agentMonthApv ?? {}}
               canWrite={canWrite && !completed}
               onStepComplete={() => advanceToStep(3)}
               onRefresh={refresh}
