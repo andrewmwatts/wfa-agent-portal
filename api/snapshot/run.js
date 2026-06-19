@@ -139,8 +139,10 @@ export default async function handler(req, res) {
       .lte('issue_date', snapshot_window.to)
     if (polErr) throw polErr
 
-    // Group by sfg_id + carrier; skip orphaned sfg_ids not in personnel
-    const knownSfgIds = new Set(Object.keys(nameFromSfgId))
+    // Group by sfg_id + carrier; only include agents with a known display name
+    const knownSfgIds = new Set(
+      Object.values(nameCrosswalk).map(id => id?.trim().toUpperCase()).filter(Boolean)
+    )
     const policyBuckets = {}  // `${sfg_id}||${carrier}` → [policies]
 
     for (const p of windowPolicies ?? []) {
@@ -205,7 +207,7 @@ export default async function handler(req, res) {
 
       discrepantAgents.add(sfgId)
 
-      const agentName = nameFromSfgId[sfgId?.toUpperCase()] ?? sfgId
+      const agentName = nameFromSfgId[sfgId?.toUpperCase()] || sfgId
 
       const issuedJson = JSON.stringify(policies.map(p => ({
         id:            p.id,
