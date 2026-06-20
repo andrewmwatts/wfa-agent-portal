@@ -182,10 +182,11 @@ const LAPSE_SORT = [
 const PENDING_STATUSES = new Set(['lapse pending', 'first premium not paid'])
 
 function PendingLapseTab({ policies, onSelect, optionStyle }) {
-  const [carrierFilter, setCarrierFilter] = useState('')
-  const [agentFilter,   setAgentFilter]   = useState('')
-  const [search,        setSearch]        = useState('')
-  const [sortBy,        setSortBy]        = useState('lapse-date')
+  const [carrierFilter,  setCarrierFilter]  = useState('')
+  const [agentFilter,    setAgentFilter]    = useState('')
+  const [search,         setSearch]         = useState('')
+  const [sortBy,         setSortBy]         = useState('lapse-date')
+  const [filterNotExempt, setFilterNotExempt] = useState(false)
 
   const base = useMemo(() =>
     policies.filter(p => PENDING_STATUSES.has((p.conservation_status || '').trim().toLowerCase()))
@@ -195,11 +196,12 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
   const agents   = useMemo(() => [...new Set(base.map(p => p.agent).filter(Boolean))].sort(), [base])
 
   const filtered = useMemo(() => base.filter(p => {
+    if (filterNotExempt && p.chargeback_exempt !== false) return false
     if (carrierFilter && p.carrier !== carrierFilter) return false
     if (agentFilter   && p.agent   !== agentFilter)   return false
     if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }), [base, carrierFilter, agentFilter, search])
+  }), [base, filterNotExempt, carrierFilter, agentFilter, search])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -222,6 +224,19 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          onClick={() => setFilterNotExempt(v => !v)}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            filterNotExempt
+              ? 'bg-orange-500/15 border border-orange-400/40 text-orange-600 dark:text-orange-400'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+          }`}
+        >
+          Not Chargeback Exempt
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <SelectFilter value={carrierFilter} onChange={setCarrierFilter} options={carriers} allLabel="All Carriers" optionStyle={optionStyle} />
         <SelectFilter value={agentFilter}   onChange={setAgentFilter}   options={agents}   allLabel="All Agents"   optionStyle={optionStyle} />
@@ -272,11 +287,12 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
 const LAPSED_STATUSES = new Set(['lapsed', 'cancelled'])
 
 function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionStyle }) {
-  const [scope,         setScope]         = useState('team')
-  const [carrierFilter, setCarrierFilter] = useState('')
-  const [agentFilter,   setAgentFilter]   = useState('')
-  const [search,        setSearch]        = useState('')
-  const [sortBy,        setSortBy]        = useState('lapse-date')
+  const [scope,          setScope]          = useState('team')
+  const [carrierFilter,  setCarrierFilter]  = useState('')
+  const [agentFilter,    setAgentFilter]    = useState('')
+  const [search,         setSearch]         = useState('')
+  const [sortBy,         setSortBy]         = useState('lapse-date')
+  const [filterNotExempt, setFilterNotExempt] = useState(false)
 
   const selfIds = useMemo(() => getSelfSfgIds(subjectSfgId, masterPersonnel), [subjectSfgId, masterPersonnel])
 
@@ -290,11 +306,12 @@ function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionSt
   const agents   = useMemo(() => [...new Set(base.map(p => p.agent).filter(Boolean))].sort(), [base])
 
   const filtered = useMemo(() => base.filter(p => {
+    if (filterNotExempt && p.chargeback_exempt !== false) return false
     if (carrierFilter && p.carrier !== carrierFilter) return false
     if (agentFilter   && p.agent   !== agentFilter)   return false
     if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }), [base, carrierFilter, agentFilter, search])
+  }), [base, filterNotExempt, carrierFilter, agentFilter, search])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -317,6 +334,19 @@ function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionSt
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          onClick={() => setFilterNotExempt(v => !v)}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            filterNotExempt
+              ? 'bg-orange-500/15 border border-orange-400/40 text-orange-600 dark:text-orange-400'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+          }`}
+        >
+          Not Chargeback Exempt
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <SelfTeamToggle value={scope} onChange={setScope} />
         <SelectFilter value={carrierFilter} onChange={setCarrierFilter} options={carriers} allLabel="All Carriers" optionStyle={optionStyle} />
