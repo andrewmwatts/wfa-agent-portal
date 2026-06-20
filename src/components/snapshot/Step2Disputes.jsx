@@ -175,12 +175,11 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Step2Disputes({ cycle, disputes, personnel, policies, agentMonthApv = {}, canWrite, onStepComplete, onRefresh }) {
-  const [qualifications,    setQualifications]    = useState({})
-  const [notes,             setNotes]             = useState({})
-  const [amountEdits,       setAmountEdits]       = useState({})
-  const [includedOverride,  setIncludedOverride]  = useState({})
-  const [savingId,          setSavingId]          = useState(null)
-  const [editPolicy,        setEditPolicy]        = useState(null)
+  const [qualifications,   setQualifications]   = useState({})
+  const [notes,            setNotes]            = useState({})
+  const [includedOverride, setIncludedOverride] = useState({})
+  const [savingId,         setSavingId]         = useState(null)
+  const [editPolicy,       setEditPolicy]       = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
 
@@ -267,21 +266,11 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     await updateDispute(id, { notes: notes[id] })
   }
 
-  async function saveAmount(id, currentSigned) {
-    if (amountEdits[id] === undefined) return
-    const abs = parseFloat(amountEdits[id].replace(/[$,]/g, '')) || 0
-    const signed = currentSigned < 0 ? -abs : abs
-    setAmountEdits(s => { const n = { ...s }; delete n[id]; return n })
-    await updateDispute(id, { disputed_amount: signed })
-  }
-
-  async function toggleDirection(d, newDir) {
-    const absAmt = amountEdits[d.id] !== undefined
-      ? (parseFloat(amountEdits[d.id].replace(/[$,]/g, '')) || 0)
-      : Math.abs(d.disputed_amount ?? 0)
-    const signed = newDir === 'reduce' ? -absAmt : absAmt
-    await updateDispute(d.id, { disputed_amount: signed })
-  }
+  // Stable sort by creation order so refreshes don't reorder cards
+  const sortedDisputes = [...disputes].sort((a, b) => {
+    if (a.created_at && b.created_at) return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
+    return 0
+  })
 
   const allHaveOutcome = disputes.length > 0 && disputes.every(d => d.outcome)
 
@@ -296,16 +285,13 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
         </div>
       )}
 
-      {disputes.map(d => {
-        const policy     = policyMap[d.policy_id]
-        const agentName  = resolveName(d.sfg_id)
-        const included   = isIncluded(d)
-        const jotLines   = buildJotformLines(agentName, d, policy)
-        const noteVal    = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
-        const isReduce   = (d.disputed_amount ?? 0) < 0
-        const absDisplay = amountEdits[d.id] !== undefined
-          ? amountEdits[d.id]
-          : String(Math.abs(d.disputed_amount ?? 0))
+      {sortedDisputes.map(d => {
+        const policy    = policyMap[d.policy_id]
+        const agentName = resolveName(d.sfg_id)
+        const included  = isIncluded(d)
+        const jotLines  = buildJotformLines(agentName, d, policy)
+        const noteVal   = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
+        const isReduce  = (d.disputed_amount ?? 0) < 0
 
         return (
           <div key={d.id} className={`bg-white dark:bg-primary/30 border rounded-2xl overflow-hidden transition-colors ${included ? 'border-gray-200 dark:border-white/15' : 'border-red-200 dark:border-red-500/20 opacity-80'}`}>
@@ -323,30 +309,17 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
                 ) : d.dispute_type ? (
                   <span className="text-xs text-gray-400 dark:text-white/40">{d.dispute_type}</span>
                 ) : null}
-                {/* Amount in dispute — editable inline if canWrite */}
-                {!readOnly ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-400 dark:text-white/40">$</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={absDisplay}
-                      onChange={e => setAmountEdits(s => ({ ...s, [d.id]: e.target.value }))}
-                      onBlur={() => saveAmount(d.id, d.disputed_amount ?? 0)}
-                      className="w-24 text-sm font-bold text-accent bg-transparent border-b border-dashed border-accent/40 focus:outline-none focus:border-accent px-0.5 tabular-nums"
-                    />
-                  </div>
-                ) : (
-                  d.disputed_amount != null && (
+                {/* Amount + direction badge (read-only; set in Step 1) */}
+                {d.disputed_amount != null && (
+                  <>
                     <span className={`text-sm font-bold ${isReduce ? 'text-red-500 dark:text-red-400' : 'text-accent'}`}>
                       {isReduce ? '−' : ''}{fmtAmt(Math.abs(d.disputed_amount))}
                     </span>
-                  )
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isReduce ? 'bg-red-500/15 text-red-600 dark:text-red-400' : 'bg-green-500/15 text-green-700 dark:text-green-400'}`}>
+                      {isReduce ? 'Reduces total' : 'Adds to total'}
+                    </span>
+                  </>
                 )}
-                {/* Direction badge */}
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isReduce ? 'bg-red-500/15 text-red-600 dark:text-red-400' : 'bg-green-500/15 text-green-700 dark:text-green-400'}`}>
-                  {isReduce ? 'Reduces total' : 'Adds to total'}
-                </span>
               </div>
 
               {!readOnly && (
@@ -365,27 +338,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
 
             {/* ── Card body ────────────────────────────────────────────────── */}
             <div className="px-6 py-4 space-y-4">
-
-              {/* Direction toggle */}
-              {!readOnly && (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400 dark:text-white/40">Effect on total:</span>
-                  <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
-                    <button
-                      onClick={() => !isReduce || toggleDirection(d, 'add')}
-                      className={`text-xs px-3 py-1 transition-colors ${!isReduce ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                    >
-                      Adds to total
-                    </button>
-                    <button
-                      onClick={() => isReduce || toggleDirection(d, 'reduce')}
-                      className={`text-xs px-3 py-1 border-l border-gray-200 dark:border-white/15 transition-colors ${isReduce ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                    >
-                      Reduces total
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* Saved note reference */}
               {d.notes && (
