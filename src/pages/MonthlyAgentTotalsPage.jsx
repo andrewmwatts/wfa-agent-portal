@@ -444,10 +444,11 @@ export default function MonthlyAgentTotalsPage() {
       const teamCbPols = [...descSet].flatMap(tid => chargebackMemo.pols[tid] ?? [])
 
       // Likely chargebacks (chargeback_exempt=false, conservation_date in selected month)
+      // Only relevant for the current month — past months use actual chargebacks only.
       const ownLikelyCbAmt   = likelyCbMemo.amounts[id] ?? 0
       const teamLikelyCbAmt  = [...descSet].reduce((s, tid) => s + (likelyCbMemo.amounts[tid] ?? 0), 0)
-      const ownLikelyCbPols  = includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
-      const teamLikelyCbPols = includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
+      const ownLikelyCbPols  = isCurrentMonth && includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
+      const teamLikelyCbPols = isCurrentMonth && includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
 
       // Status predicates
       const isIssued  = p => p.status?.toLowerCase() === 'issued'
@@ -462,12 +463,12 @@ export default function MonthlyAgentTotalsPage() {
       const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
       const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
 
-      // APV sums — always use issued_apv; chargebacks reduce issued totals for past months only
+      // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
       const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
-      const agentIssued     = sumApv(agentIssuedPols) - (isPastMonth ? ownCb  : 0) - (includeLikelyCb ? ownLikelyCbAmt  : 0)
+      const agentIssued     = sumApv(agentIssuedPols) - ownCb - (isCurrentMonth && includeLikelyCb ? ownLikelyCbAmt  : 0)
       const agentPending    = sumApv(agentPendingPols)
       const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = sumApv(teamIssuedPolsList) - (isPastMonth ? teamCb : 0) - (includeLikelyCb ? teamLikelyCbAmt : 0)
+      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
       const teamPending     = sumApv(teamPendingPols)
       const teamIncomplete  = sumApv(teamIncompletePols)
 
