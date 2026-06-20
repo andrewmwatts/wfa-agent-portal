@@ -51,8 +51,9 @@ function buildJotformLines(agentName, dispute, policy) {
   const carrier   = policy?.carrier ?? dispute.carrier ?? ''
   const policyNo  = policy?.policy_no ?? policy?.policy_number ?? ''
   const rawApv    = policy?.issued_apv ?? dispute.disputed_amount
+  // Always show positive amount in Jotform copy regardless of direction sign
   const apv       = rawApv != null
-    ? `$${Number(rawApv).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ? `$${Math.abs(Number(rawApv)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : ''
   const issueDate = policy?.issue_date
     ? new Date(policy.issue_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
@@ -102,10 +103,9 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
 
           // Net APV: base already reflects issued - actual chargebacks (server-computed).
-          // Included disputes are chargebacks being contested — adding back their amount
-          // gives the agent credit if the carrier reverses the deduction.
-          // Walk each included dispute's sfg_id upward; if 'id' appears in that chain,
-          // the disputed amount is added back to this agent's group total.
+          // Included disputes adjust the total by their signed disputed_amount:
+          //   positive = we're contesting a deduction (adds back credit)
+          //   negative = we're flagging an overcount (reduces total)
           const base = agentMonthApv[id] ?? 0
           let adjustment = 0
           for (const d of disputes) {
@@ -135,9 +135,13 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
               </div>
 
               {/* Net APV */}
-              <span className={`font-bold tabular-nums ${adjustment > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-700 dark:text-white/80'}`}>
+              <span className={`font-bold tabular-nums ${adjustment > 0 ? 'text-amber-600 dark:text-amber-300' : adjustment < 0 ? 'text-red-500 dark:text-red-400' : 'text-gray-700 dark:text-white/80'}`}>
                 {fmtAmt(net)}
-                {adjustment > 0 && <span className="font-normal text-gray-400 dark:text-white/30 ml-1">+{fmtAmt(adjustment)} disputed</span>}
+                {adjustment !== 0 && (
+                  <span className="font-normal text-gray-400 dark:text-white/30 ml-1">
+                    {adjustment > 0 ? '+' : '−'}{fmtAmt(Math.abs(adjustment))} disputed
+                  </span>
+                )}
               </span>
 
               {/* Promote target */}
@@ -171,11 +175,12 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Step2Disputes({ cycle, disputes, personnel, policies, agentMonthApv = {}, canWrite, onStepComplete, onRefresh }) {
-  const [qualifications,   setQualifications]   = useState({})
-  const [notes,            setNotes]            = useState({})
-  const [includedOverride, setIncludedOverride] = useState({})
-  const [savingId,         setSavingId]         = useState(null)
-  const [editPolicy,       setEditPolicy]       = useState(null)
+  const [qualifications,    setQualifications]    = useState({})
+  const [notes,             setNotes]             = useState({})
+  const [amountEdits,       setAmountEdits]       = useState({})
+  const [includedOverride,  setIncludedOverride]  = useState({})
+  const [savingId,          setSavingId]          = useState(null)
+  const [editPolicy,        setEditPolicy]        = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
 
@@ -262,6 +267,22 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     await updateDispute(id, { notes: notes[id] })
   }
 
+  async function saveAmount(id, currentSigned) {
+    if (amountEdits[id] === undefined) return
+    const abs = parseFloat(amountEdits[id].replace(/[$,]/g, '')) || 0
+    const signed = currentSigned < 0 ? -abs : abs
+    setAmountEdits(s => { const n = { ...s }; delete n[id]; return n })
+    await updateDispute(id, { disputed_amount: signed })
+  }
+
+  async function toggleDirection(d, newDir) {
+    const absAmt = amountEdits[d.id] !== undefined
+      ? (parseFloat(amountEdits[d.id].replace(/[$,]/g, '')) || 0)
+      : Math.abs(d.disputed_amount ?? 0)
+    const signed = newDir === 'reduce' ? -absAmt : absAmt
+    await updateDispute(d.id, { disputed_amount: signed })
+  }
+
   const allHaveOutcome = disputes.length > 0 && disputes.every(d => d.outcome)
 
   const INPUT = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
@@ -276,11 +297,15 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
       )}
 
       {disputes.map(d => {
-        const policy    = policyMap[d.policy_id]
-        const agentName = resolveName(d.sfg_id)
-        const included  = isIncluded(d)
-        const jotLines  = buildJotformLines(agentName, d, policy)
-        const noteVal   = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
+        const policy     = policyMap[d.policy_id]
+        const agentName  = resolveName(d.sfg_id)
+        const included   = isIncluded(d)
+        const jotLines   = buildJotformLines(agentName, d, policy)
+        const noteVal    = notes[d.id] !== undefined ? notes[d.id] : (d.notes ?? '')
+        const isReduce   = (d.disputed_amount ?? 0) < 0
+        const absDisplay = amountEdits[d.id] !== undefined
+          ? amountEdits[d.id]
+          : String(Math.abs(d.disputed_amount ?? 0))
 
         return (
           <div key={d.id} className={`bg-white dark:bg-primary/30 border rounded-2xl overflow-hidden transition-colors ${included ? 'border-gray-200 dark:border-white/15' : 'border-red-200 dark:border-red-500/20 opacity-80'}`}>
@@ -298,9 +323,30 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
                 ) : d.dispute_type ? (
                   <span className="text-xs text-gray-400 dark:text-white/40">{d.dispute_type}</span>
                 ) : null}
-                {d.disputed_amount != null && (
-                  <span className="text-sm font-bold text-accent">{fmtAmt(d.disputed_amount)}</span>
+                {/* Amount in dispute — editable inline if canWrite */}
+                {!readOnly ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400 dark:text-white/40">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={absDisplay}
+                      onChange={e => setAmountEdits(s => ({ ...s, [d.id]: e.target.value }))}
+                      onBlur={() => saveAmount(d.id, d.disputed_amount ?? 0)}
+                      className="w-24 text-sm font-bold text-accent bg-transparent border-b border-dashed border-accent/40 focus:outline-none focus:border-accent px-0.5 tabular-nums"
+                    />
+                  </div>
+                ) : (
+                  d.disputed_amount != null && (
+                    <span className={`text-sm font-bold ${isReduce ? 'text-red-500 dark:text-red-400' : 'text-accent'}`}>
+                      {isReduce ? '−' : ''}{fmtAmt(Math.abs(d.disputed_amount))}
+                    </span>
+                  )
                 )}
+                {/* Direction badge */}
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isReduce ? 'bg-red-500/15 text-red-600 dark:text-red-400' : 'bg-green-500/15 text-green-700 dark:text-green-400'}`}>
+                  {isReduce ? 'Reduces total' : 'Adds to total'}
+                </span>
               </div>
 
               {!readOnly && (
@@ -319,6 +365,27 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
 
             {/* ── Card body ────────────────────────────────────────────────── */}
             <div className="px-6 py-4 space-y-4">
+
+              {/* Direction toggle */}
+              {!readOnly && (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 dark:text-white/40">Effect on total:</span>
+                  <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
+                    <button
+                      onClick={() => !isReduce || toggleDirection(d, 'add')}
+                      className={`text-xs px-3 py-1 transition-colors ${!isReduce ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    >
+                      Adds to total
+                    </button>
+                    <button
+                      onClick={() => isReduce || toggleDirection(d, 'reduce')}
+                      className={`text-xs px-3 py-1 border-l border-gray-200 dark:border-white/15 transition-colors ${isReduce ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    >
+                      Reduces total
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Saved note reference */}
               {d.notes && (

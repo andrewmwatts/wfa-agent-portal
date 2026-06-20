@@ -255,14 +255,15 @@ export default async function handler(req, res) {
 
   // ── PUT dispute ──────────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'dispute') {
-    const { id, included, notes, outcome, outcome_date, submitted_at } = req.body ?? {}
+    const { id, included, notes, disputed_amount, outcome, outcome_date, submitted_at } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     const patch = {}
-    if (included     != null) patch.included     = included
-    if (notes        != null) patch.notes        = notes
-    if (outcome      != null) patch.outcome      = outcome
-    if (outcome_date != null) patch.outcome_date = outcome_date
-    if (submitted_at != null) patch.submitted_at = submitted_at
+    if (included         != null) patch.included         = included
+    if (notes            != null) patch.notes            = notes
+    if (disputed_amount  != null) patch.disputed_amount  = disputed_amount
+    if (outcome          != null) patch.outcome          = outcome
+    if (outcome_date     != null) patch.outcome_date     = outcome_date
+    if (submitted_at     != null) patch.submitted_at     = submitted_at
     try {
       const { error } = await supabase.from('snapshot_disputes').update(patch).eq('id', id)
       if (error) throw error
