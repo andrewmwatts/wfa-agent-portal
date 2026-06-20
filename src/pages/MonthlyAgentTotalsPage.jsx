@@ -363,9 +363,9 @@ export default function MonthlyAgentTotalsPage() {
     const amounts = {}
     const pols    = {}
     for (const p of policies) {
-      const cbYm = parseCbMonth(p.cb_month)
+      const cbYm = parseCbMonth(p.snapshot_chargeback_month)
       if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
-      const amt = parseCbApv(p.cb_apv)
+      const amt = parseCbApv(p.snapshot_chargeback_apv)
       if (!amt) continue
       const id = p.sfg_id?.toLowerCase()
       if (!id) continue
@@ -730,7 +730,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
 
   // Running total (positive policies minus chargebacks and likely chargebacks)
   const total = pols.reduce((s, p) => s + (p[apvField] ?? 0), 0)
-              - cbPols.reduce((s, p) => s + parseCbApv(p.cb_apv), 0)
+              - cbPols.reduce((s, p) => s + parseCbApv(p.snapshot_chargeback_apv), 0)
               - likelyCbPols.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
 
   const thCls = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 whitespace-nowrap'
@@ -800,7 +800,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.carrier || '—'}</td>
                       {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
                       <td className={`${tdCls} text-right tabular-nums text-red-500 dark:text-red-400 font-medium`}>
-                        {fmtAmt(-parseCbApv(p.cb_apv))}
+                        {fmtAmt(-parseCbApv(p.snapshot_chargeback_apv))}
                       </td>
                       {showNotes && <td />}
                     </tr>

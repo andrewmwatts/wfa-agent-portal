@@ -409,23 +409,58 @@ export default async function handler(req, res) {
           ? `${yr + 1}-01-01`
           : `${yr}-${String(mo + 1).padStart(2, '0')}-01`
 
-        const issuedRes = await supabase
-          .from('policies')
-          .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
-          .gte('issue_date', monthStart)
-          .lt('issue_date', nextMonth)
-          .ilike('status', 'issued')
+        // Parse snapshot_chargeback_month text field (various formats) → 1-indexed { year, month }
+        const parseCbMonthSvr = (s) => {
+          if (!s?.trim()) return null
+          const str = s.trim()
+          const iso = str.match(/^(\d{4})-(\d{2})/)
+          if (iso) return { year: +iso[1], month: +iso[2] }
+          const MONS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+          const mY = str.match(/^([A-Za-z]+)\s+(\d{4})$/)
+          if (mY) { const i = MONS.indexOf(mY[1].toLowerCase().slice(0, 3)); if (i >= 0) return { year: +mY[2], month: i + 1 } }
+          const mS = str.match(/^(\d{1,2})\/(\d{4})$/)
+          if (mS) return { year: +mS[2], month: +mS[1] }
+          return null
+        }
+        const parseCbApvSvr = (v) => {
+          if (v == null || v === '') return 0
+          if (typeof v === 'number') return v
+          const n = parseFloat(String(v).replace(/[$,]/g, ''))
+          return isNaN(n) ? 0 : n
+        }
+
+        const [issuedRes, cbRes] = await Promise.all([
+          supabase
+            .from('policies')
+            .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
+            .gte('issue_date', monthStart)
+            .lt('issue_date', nextMonth)
+            .ilike('status', 'issued'),
+          // Actual chargebacks: policies where snapshot_chargeback_month falls in this month.
+          // Filter by year in DB (text search), then parse exact month in JS.
+          supabase
+            .from('policies')
+            .select('sfg_id, snapshot_chargeback_month, snapshot_chargeback_apv')
+            .not('snapshot_chargeback_month', 'is', null)
+            .ilike('snapshot_chargeback_month', `%${yr}%`),
+        ])
         if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
+        if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
         monthPolicies = issuedRes.data ?? []
 
-        // Personal APV: sum issued_apv per agent for the month.
-        // Chargebacks are NOT deducted here — Monthly Agent Totals doesn't deduct them
-        // in its default view (snapshot_chargeback_month/apv columns exist but the legacy
-        // cb_month/cb_apv references in that page resolve to undefined, so teamCb === 0).
-        // conservation_date-based "likely chargeback" deduction was over-deducting.
+        // Personal APV: issued_apv for the calendar month, minus actual chargebacks
+        // logged in snapshot_chargeback_month for the same month.
         for (const p of monthPolicies) {
           const key = p.sfg_id?.trim().toUpperCase()
           if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) + (Number(p.issued_apv) || 0)
+        }
+        for (const p of cbRes.data ?? []) {
+          const cbYm = parseCbMonthSvr(p.snapshot_chargeback_month)
+          if (!cbYm || cbYm.year !== yr || cbYm.month !== mo) continue
+          const key = p.sfg_id?.trim().toUpperCase()
+          if (!key) continue
+          const amt = parseCbApvSvr(p.snapshot_chargeback_apv)
+          if (amt > 0) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - amt
         }
 
         // Build children map so we can compute cumulative (group) APV for each agent

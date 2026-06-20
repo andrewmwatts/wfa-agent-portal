@@ -101,25 +101,27 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           const p      = personnelMap[id]
           const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
 
-          // Net APV: cumulative group APV minus excluded disputes for any agent
-          // in this agent's downline (walk each dispute's sfg_id upward; if 'id'
-          // appears in that upline path, the dispute affects this agent's group total).
+          // Net APV: base already reflects issued - actual chargebacks (server-computed).
+          // Included disputes are chargebacks being contested — adding back their amount
+          // gives the agent credit if the carrier reverses the deduction.
+          // Walk each included dispute's sfg_id upward; if 'id' appears in that chain,
+          // the disputed amount is added back to this agent's group total.
           const base = agentMonthApv[id] ?? 0
-          let deduction = 0
+          let adjustment = 0
           for (const d of disputes) {
             const inc = includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
-            if (inc) continue
+            if (!inc) continue
             let cur = d.sfg_id?.trim().toUpperCase()
             const seen = new Set()
             while (cur && !seen.has(cur)) {
-              if (cur === id) { deduction += Number(d.disputed_amount) || 0; break }
+              if (cur === id) { adjustment += Number(d.disputed_amount) || 0; break }
               seen.add(cur)
               const up = personnelMap[cur]
               if (!up?.upline_sfg_id) break
               cur = up.upline_sfg_id.trim().toUpperCase()
             }
           }
-          const net = base - deduction
+          const net = base + adjustment
 
           // Next unmet promote threshold
           const nextT = thresholds.find(t => t.regular > net)
@@ -133,9 +135,9 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
               </div>
 
               {/* Net APV */}
-              <span className={`font-bold tabular-nums ${deduction > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-700 dark:text-white/80'}`}>
+              <span className={`font-bold tabular-nums ${adjustment > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-700 dark:text-white/80'}`}>
                 {fmtAmt(net)}
-                {deduction > 0 && <span className="font-normal text-gray-400 dark:text-white/30 ml-1">−{fmtAmt(deduction)} adj</span>}
+                {adjustment > 0 && <span className="font-normal text-gray-400 dark:text-white/30 ml-1">+{fmtAmt(adjustment)} disputed</span>}
               </span>
 
               {/* Promote target */}
