@@ -409,33 +409,23 @@ export default async function handler(req, res) {
           ? `${yr + 1}-01-01`
           : `${yr}-${String(mo + 1).padStart(2, '0')}-01`
 
-        const [issuedRes, cbRes] = await Promise.all([
-          supabase
-            .from('policies')
-            .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
-            .gte('issue_date', monthStart)
-            .lt('issue_date', nextMonth)
-            .ilike('status', 'issued'),
-          // Chargebacks: policies where the carrier's chargeback date falls this month
-          supabase
-            .from('policies')
-            .select('sfg_id, issued_apv')
-            .gte('conservation_date', monthStart)
-            .lt('conservation_date', nextMonth)
-            .ilike('status', 'issued')
-            .not('conservation_date', 'is', null),
-        ])
+        const issuedRes = await supabase
+          .from('policies')
+          .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
+          .gte('issue_date', monthStart)
+          .lt('issue_date', nextMonth)
+          .ilike('status', 'issued')
         if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
-        if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
         monthPolicies = issuedRes.data ?? []
 
+        // Personal APV: sum issued_apv per agent for the month.
+        // Chargebacks are NOT deducted here — Monthly Agent Totals doesn't deduct them
+        // in its default view (snapshot_chargeback_month/apv columns exist but the legacy
+        // cb_month/cb_apv references in that page resolve to undefined, so teamCb === 0).
+        // conservation_date-based "likely chargeback" deduction was over-deducting.
         for (const p of monthPolicies) {
           const key = p.sfg_id?.trim().toUpperCase()
           if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) + (Number(p.issued_apv) || 0)
-        }
-        for (const p of cbRes.data ?? []) {
-          const key = p.sfg_id?.trim().toUpperCase()
-          if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - (Number(p.issued_apv) || 0)
         }
 
         // Build children map so we can compute cumulative (group) APV for each agent
