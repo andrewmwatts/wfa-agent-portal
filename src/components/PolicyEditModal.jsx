@@ -211,7 +211,17 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
   }, [onClose])
 
   function startEdit() {
-    setDraft({ ...p })
+    const initialDraft = { ...p }
+    if (initialDraft.chargeback_exempt == null && initialDraft.conservation_status?.trim()) {
+      const exempt = computeChargebackExempt(
+        initialDraft.conservation_status,
+        initialDraft.conservation_date,
+        initialDraft.issue_date,
+        initialDraft.carrier,
+      )
+      if (exempt !== null) initialDraft.chargeback_exempt = exempt
+    }
+    setDraft(initialDraft)
     setEditing(true)
     setSaveError(null)
   }

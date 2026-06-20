@@ -51,6 +51,16 @@ function buildPromotionMaps(promoRows) {
 
 // ── Policy fetch (mirrors api/policies.js — used for ?include=policies) ──────
 
+const MONTHS_LONG = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December']
+function formatCbMonth(dateStr) {
+  if (!dateStr) return ''
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})-\d{2}/)
+  if (!m) return String(dateStr)
+  const idx = parseInt(m[2]) - 1
+  return (idx >= 0 && idx < 12) ? `${MONTHS_LONG[idx]} ${parseInt(m[1])}` : String(dateStr)
+}
+
 const POLICY_COLS = [
   'id', 'sfg_id', 'applicant', 'carrier', 'policy_name', 'policy_number',
   'face_amount', 'submitted_apv', 'issued_apv', 'status',
@@ -417,6 +427,8 @@ export default async function handler(req, res) {
           policy_type: p.policy_name    ?? '',
           policy_no:   p.policy_number  ?? '',
           face_amt:    p.face_amount != null ? String(p.face_amount) : '',
+          cb_month:    formatCbMonth(p.snapshot_chargeback_month),
+          cb_apv:      p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
         }))
         return res.status(200).json({ personnel: results, policies })
       }
