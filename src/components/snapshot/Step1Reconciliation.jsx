@@ -157,10 +157,11 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
   const [resolveNote,          setResolveNote]          = useState('')
   const [savingId,             setSavingId]             = useState(null)
 
-  const [disputingCandidate,      setDisputingCandidate]      = useState(null)  // { recId, candidate }
-  const [candidateDisputeNote,    setCandidateDisputeNote]    = useState('')
-  const [candidateDisputeAmount,  setCandidateDisputeAmount]  = useState('')
+  const [disputingCandidate,        setDisputingCandidate]        = useState(null)  // { recId, candidate }
+  const [candidateDisputeNote,      setCandidateDisputeNote]      = useState('')
+  const [candidateDisputeAmount,    setCandidateDisputeAmount]    = useState('')
   const [candidateDisputeDirection, setCandidateDisputeDirection] = useState('add')
+  const [disputeError,              setDisputeError]              = useState(null)
 
   const [policySearches,    setPolicySearches]    = useState({})   // recId → query string
   const [policyResults,     setPolicyResults]     = useState({})   // recId → [policy]
@@ -239,30 +240,38 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
 
   async function handleCandidateDispute(rec, candidate) {
     setSavingId(rec.id)
+    setDisputeError(null)
     try {
-      const absAmt   = parseFloat(String(candidateDisputeAmount).replace(/[$,]/g, ''))
-                       || Math.abs(candidate.delta_contribution ?? 0)
+      const absAmt    = parseFloat(String(candidateDisputeAmount).replace(/[$,]/g, ''))
+                        || Math.abs(candidate.delta_contribution ?? 0)
       const signedAmt = candidateDisputeDirection === 'reduce' ? -absAmt : absAmt
-      await fetch('/api/snapshot?type=disputes', {
+      const res = await fetch('/api/snapshot?type=disputes', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cycle_id:          cycle.id,
           reconciliation_id: rec.id,
           sfg_id:            rec.sfg_id,
-          policy_id:         candidate.policy_id,
+          policy_id:         candidate.policy_id ?? null,
           disputed_amount:   signedAmt,
           dispute_type:      candidate.flag,
           notes:             candidateDisputeNote || null,
         }),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setDisputeError(body.error || `Server error ${res.status}`)
+        return
+      }
       setDisputingCandidate(null)
       setCandidateDisputeNote('')
       setCandidateDisputeAmount('')
       setCandidateDisputeDirection('add')
+      setDisputeError(null)
       await onRefresh()
     } catch (err) {
       console.error('dispute error', err)
+      setDisputeError(err.message || 'Unknown error')
     } finally {
       setSavingId(null)
     }
@@ -538,10 +547,12 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                         <span className="text-xs text-gray-500 dark:text-white/50">Effect on total:</span>
                         <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-white/20">
                           <button
+                            type="button"
                             onClick={() => setCandidateDisputeDirection('add')}
                             className={`text-xs px-3 py-1 transition-colors ${candidateDisputeDirection === 'add' ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                           >Adds to total</button>
                           <button
+                            type="button"
                             onClick={() => setCandidateDisputeDirection('reduce')}
                             className={`text-xs px-3 py-1 border-l border-gray-300 dark:border-white/20 transition-colors ${candidateDisputeDirection === 'reduce' ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                           >Reduces total</button>
@@ -556,12 +567,16 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                       placeholder="Notes (optional)…"
                       className={INPUT + ' resize-none'}
                     />
+                    {disputeError && (
+                      <p className="text-xs text-red-500 dark:text-red-400">{disputeError}</p>
+                    )}
                     <div className="flex gap-2">
-                      <button onClick={() => handleCandidateDispute(rec, disputingCandidate.candidate)} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60">
-                        Generate Dispute
+                      <button type="button" onClick={() => handleCandidateDispute(rec, disputingCandidate.candidate)} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60">
+                        {savingId === rec.id ? 'Saving…' : 'Generate Dispute'}
                       </button>
                       <button
-                        onClick={() => { setDisputingCandidate(null); setCandidateDisputeAmount(''); setCandidateDisputeDirection('add') }}
+                        type="button"
+                        onClick={() => { setDisputingCandidate(null); setCandidateDisputeAmount(''); setCandidateDisputeDirection('add'); setDisputeError(null) }}
                         className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                       >Cancel</button>
                     </div>

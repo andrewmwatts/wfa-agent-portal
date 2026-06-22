@@ -23,7 +23,8 @@ export default function SnapshotPage() {
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [newCycleOpen,  setNewCycleOpen]  = useState(false)
-  const [newMonth,      setNewMonth]      = useState('')
+  const [newCycleMonth, setNewCycleMonth] = useState('')   // 'MM'
+  const [newCycleYear,  setNewCycleYear]  = useState('')   // 'YYYY'
   const [creating,      setCreating]      = useState(false)
 
   const canWrite = permissions.snapshot.write
@@ -100,18 +101,20 @@ export default function SnapshotPage() {
 
   // ── Create new cycle ──────────────────────────────────────────────────────────
   async function createCycle() {
-    if (!newMonth) return
+    if (!newCycleMonth || !newCycleYear) return
+    const month = `${newCycleYear}-${newCycleMonth}`
     setCreating(true)
     try {
       const data = await fetch('/api/snapshot?type=cycles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month: newMonth }),
+        body: JSON.stringify({ month }),
       }).then(r => r.json())
       if (data.error) { alert(data.error); return }
       const updated = await loadCycles()
       setNewCycleOpen(false)
-      setNewMonth('')
+      setNewCycleMonth('')
+      setNewCycleYear('')
       await selectCycle(data.id, updated)
     } finally {
       setCreating(false)
@@ -210,7 +213,12 @@ export default function SnapshotPage() {
           )}
 
           {canWrite && (
-            <button onClick={() => setNewCycleOpen(true)}
+            <button onClick={() => {
+              const now = new Date()
+              setNewCycleMonth(String(now.getMonth() + 1).padStart(2, '0'))
+              setNewCycleYear(String(now.getFullYear()))
+              setNewCycleOpen(true)
+            }}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 transition-colors">
               + New Cycle
             </button>
@@ -328,20 +336,39 @@ export default function SnapshotPage() {
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-base font-bold text-gray-900 dark:text-white">New Snapshot Cycle</h2>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">Month</label>
-              <input
-                type="month"
-                value={newMonth}
-                onChange={e => setNewMonth(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50"
-              />
+              <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-2">Month</label>
+              <div className="flex gap-2">
+                {(() => {
+                  const SEL = 'flex-1 rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
+                  const OPT = { background: 'transparent' }
+                  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+                  const thisYear = new Date().getFullYear()
+                  const years = [thisYear - 1, thisYear, thisYear + 1]
+                  return (
+                    <>
+                      <select value={newCycleMonth} onChange={e => setNewCycleMonth(e.target.value)} className={SEL}>
+                        <option value="" style={OPT}>Month</option>
+                        {MONTHS.map((m, i) => (
+                          <option key={i} value={String(i + 1).padStart(2, '0')} style={OPT}>{m}</option>
+                        ))}
+                      </select>
+                      <select value={newCycleYear} onChange={e => setNewCycleYear(e.target.value)} className={SEL}>
+                        <option value="" style={OPT}>Year</option>
+                        {years.map(y => (
+                          <option key={y} value={String(y)} style={OPT}>{y}</option>
+                        ))}
+                      </select>
+                    </>
+                  )
+                })()}
+              </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setNewCycleOpen(false); setNewMonth('') }}
+              <button onClick={() => { setNewCycleOpen(false); setNewCycleMonth(''); setNewCycleYear('') }}
                 className="px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">
                 Cancel
               </button>
-              <button onClick={createCycle} disabled={!newMonth || creating}
+              <button onClick={createCycle} disabled={!newCycleMonth || !newCycleYear || creating}
                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 disabled:opacity-50">
                 {creating ? 'Creating…' : 'Create Cycle'}
               </button>
