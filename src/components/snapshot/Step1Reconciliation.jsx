@@ -587,15 +587,11 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                 {!readOnly && !rec.resolution && (
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
                     {!isResolving ? (
-                      <button onClick={() => { setResolvingId(rec.id); setResolveNote('') }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Mark Resolved</button>
+                      <button onClick={() => setResolvingId(rec.id)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Mark Resolved</button>
                     ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-gray-600 dark:text-white/60">Resolution note (optional):</p>
-                        <textarea rows={2} value={resolveNote} onChange={e => setResolveNote(e.target.value)} className={INPUT + ' resize-none'} placeholder="How was this resolved?…" />
-                        <div className="flex gap-2">
-                          <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm</button>
-                          <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
-                        </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm</button>
+                        <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
                       </div>
                     )}
                   </div>
