@@ -214,9 +214,9 @@ export default function SnapshotPage() {
 
           {canWrite && (
             <button onClick={() => {
-              const now = new Date()
-              setNewCycleMonth(String(now.getMonth() + 1).padStart(2, '0'))
-              setNewCycleYear(String(now.getFullYear()))
+              const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+              setNewCycleMonth(String(prev.getMonth() + 1).padStart(2, '0'))
+              setNewCycleYear(String(prev.getFullYear()))
               setNewCycleOpen(true)
             }}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 transition-colors">
