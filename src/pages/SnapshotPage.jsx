@@ -99,6 +99,14 @@ export default function SnapshotPage() {
     setActiveStep(step)
   }
 
+  // ── Open new-cycle modal pre-filled to previous month ────────────────────────
+  function openNewCycleModal() {
+    const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+    setNewCycleMonth(String(prev.getMonth() + 1).padStart(2, '0'))
+    setNewCycleYear(String(prev.getFullYear()))
+    setNewCycleOpen(true)
+  }
+
   // ── Create new cycle ──────────────────────────────────────────────────────────
   async function createCycle() {
     if (!newCycleMonth || !newCycleYear) return
@@ -113,8 +121,6 @@ export default function SnapshotPage() {
       if (data.error) { alert(data.error); return }
       const updated = await loadCycles()
       setNewCycleOpen(false)
-      setNewCycleMonth('')
-      setNewCycleYear('')
       await selectCycle(data.id, updated)
     } finally {
       setCreating(false)
@@ -213,12 +219,7 @@ export default function SnapshotPage() {
           )}
 
           {canWrite && (
-            <button onClick={() => {
-              const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
-              setNewCycleMonth(String(prev.getMonth() + 1).padStart(2, '0'))
-              setNewCycleYear(String(prev.getFullYear()))
-              setNewCycleOpen(true)
-            }}
+            <button onClick={openNewCycleModal}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 transition-colors">
               + New Cycle
             </button>
@@ -282,7 +283,7 @@ export default function SnapshotPage() {
         <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/15 px-8 py-16 text-center space-y-3">
           <p className="text-sm text-gray-500 dark:text-white/50">No snapshot cycles yet.</p>
           {canWrite && (
-            <button onClick={() => setNewCycleOpen(true)}
+            <button onClick={openNewCycleModal}
               className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90">
               Create First Cycle
             </button>
@@ -339,8 +340,8 @@ export default function SnapshotPage() {
               <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-2">Month</label>
               <div className="flex gap-2">
                 {(() => {
-                  const SEL = 'flex-1 rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
-                  const OPT = { background: 'transparent' }
+                  const SEL = 'flex-1 rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white dark:[color-scheme:dark] text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
+                  const OPT = {}
                   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
                   const thisYear = new Date().getFullYear()
                   const years = [thisYear - 1, thisYear, thisYear + 1]
@@ -364,7 +365,7 @@ export default function SnapshotPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setNewCycleOpen(false); setNewCycleMonth(''); setNewCycleYear('') }}
+              <button onClick={() => setNewCycleOpen(false)}
                 className="px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">
                 Cancel
               </button>
