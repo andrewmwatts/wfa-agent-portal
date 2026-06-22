@@ -175,13 +175,18 @@ export default async function handler(req, res) {
   // ── PUT resolution ───────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'resolution') {
     const { id, resolution, resolution_note } = req.body ?? {}
-    if (!id || !resolution) return res.status(400).json({ error: 'id and resolution are required' })
-    const VALID = new Set(['legitimate', 'disputed', 'no_action'])
-    if (!VALID.has(resolution)) return res.status(400).json({ error: 'Invalid resolution value' })
+    if (!id) return res.status(400).json({ error: 'id is required' })
     try {
+      const patch = resolution
+        ? { resolution, resolution_note: resolution_note ?? null, resolved_at: new Date().toISOString() }
+        : { resolution: null, resolution_note: null, resolved_at: null }
+      if (resolution) {
+        const VALID = new Set(['legitimate', 'disputed', 'no_action'])
+        if (!VALID.has(resolution)) return res.status(400).json({ error: 'Invalid resolution value' })
+      }
       const { error } = await supabase
         .from('snapshot_reconciliations')
-        .update({ resolution, resolution_note: resolution_note ?? null, resolved_at: new Date().toISOString() })
+        .update(patch)
         .eq('id', id)
       if (error) throw error
       return res.status(200).json({ ok: true })

@@ -152,10 +152,8 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
   const [runResult,     setRunResult]     = useState(null)
   const [runError,      setRunError]      = useState(null)
 
-  const [expanded,             setExpanded]             = useState({})
-  const [resolvingId,          setResolvingId]          = useState(null)  // card in "Mark Legitimate" flow
-  const [resolveNote,          setResolveNote]          = useState('')
-  const [savingId,             setSavingId]             = useState(null)
+  const [expanded,  setExpanded]  = useState({})
+  const [savingId,  setSavingId]  = useState(null)
 
   const [disputingCandidate,        setDisputingCandidate]        = useState(null)  // { recId, candidate }
   const [candidateDisputeNote,      setCandidateDisputeNote]      = useState('')
@@ -283,14 +281,29 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       const res = await fetch('/api/snapshot?type=resolution', {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: rec.id, resolution, resolution_note: resolveNote || null }),
+        body: JSON.stringify({ id: rec.id, resolution }),
       })
       if (!res.ok) throw new Error('Failed to save resolution')
-      setResolvingId(null)
-      setResolveNote('')
       await onRefresh()
     } catch (err) {
       console.error('resolve error', err)
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  async function handleUnresolve(rec) {
+    setSavingId(rec.id)
+    try {
+      const res = await fetch('/api/snapshot?type=resolution', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: rec.id, resolution: null }),
+      })
+      if (!res.ok) throw new Error('Failed to clear resolution')
+      await onRefresh()
+    } catch (err) {
+      console.error('unresolve error', err)
     } finally {
       setSavingId(null)
     }
@@ -413,7 +426,6 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
 
       {sorted.map(rec => {
         const isExpanded  = expanded[rec.id] ?? !rec.resolution
-        const isResolving = resolvingId === rec.id
         const isDisputing = disputingCandidate?.recId === rec.id
 
         // Parse analysis from stored JSON (populated by run.js)
@@ -583,22 +595,27 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   </div>
                 )}
 
-                {/* Resolution: Mark Resolved (for tracker-side fixes; disputes set this automatically) */}
-                {!readOnly && !rec.resolution && (
+                {/* Resolution footer */}
+                {!readOnly && (
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
-                    {!isResolving ? (
-                      <button onClick={() => setResolvingId(rec.id)} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Mark Resolved</button>
+                    {!rec.resolution ? (
+                      <button
+                        onClick={() => handleResolve(rec, 'legitimate')}
+                        disabled={savingId === rec.id}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-60"
+                      >
+                        Mark Resolved
+                      </button>
                     ) : (
-                      <div className="flex gap-2">
-                        <button onClick={() => handleResolve(rec, 'legitimate')} disabled={savingId === rec.id} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-60">Confirm</button>
-                        <button onClick={() => setResolvingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
-                      </div>
+                      <button
+                        onClick={() => handleUnresolve(rec)}
+                        disabled={savingId === rec.id}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-white/60 transition-colors disabled:opacity-60"
+                      >
+                        Reopen
+                      </button>
                     )}
                   </div>
-                )}
-
-                {rec.resolution && rec.resolution_note && (
-                  <p className="text-xs text-gray-500 dark:text-white/40 italic">Note: {rec.resolution_note}</p>
                 )}
               </div>
             )}
