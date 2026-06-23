@@ -19,39 +19,16 @@ const fmtDate = str => fmtDateUtil(str, { empty: null })
 
 // ─── Milestone helpers ────────────────────────────────────────────────────────
 
+const LEADERSHIP_ORDER = ['TL', 'KL', 'AO']
+
 function isOwnerRecord(p) {
-  const ao = p.named_milestones?.AO ?? []
-  return !!(ao[0] && ao[1])
+  return p.commission_leadership?.level === 'AO'
 }
 
 function allFilled(months) {
   return Array.isArray(months) && months.length > 0 && months.every(m => m?.trim())
 }
 
-// Highest numeric contract level where every month column is filled.
-// Defaults to 80 if no level has been promoted yet.
-function contractLevel(milestones = {}) {
-  const levels = Object.keys(milestones)
-    .map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
-  let highest = null
-  for (const lvl of levels) {
-    if (allFilled(milestones[String(lvl)])) highest = lvl
-  }
-  return highest ?? 80
-}
-
-// Highest leadership level (TL < KL < AO) where every month column is filled
-const LEADERSHIP_ORDER = ['TL', 'KL', 'AO']
-function leadershipLevel(named = {}) {
-  let highest = null
-  for (const key of LEADERSHIP_ORDER) {
-    if (allFilled(named[key])) highest = key
-  }
-  return highest
-}
-
-// TP / EP badge presence
-function hasAchieved(named = {}, key) { return allFilled(named[key]) }
 
 // Format milestone date → "Jan 2024" (month + year only)
 function fmtMo(str) {
@@ -172,10 +149,10 @@ export default function AgentsPage() {
       .filter(p => !uplineFilter || p.upline_name === uplineFilter)
       .map(p => ({
         ...p,
-        _contract:    contractLevel(p.milestones),
-        _leadership:  leadershipLevel(p.named_milestones),
-        _hasTP:       hasAchieved(p.named_milestones, 'TP'),
-        _hasEP:       hasAchieved(p.named_milestones, 'EP'),
+        _contract:    p.commission_contract?.level != null ? Number(p.commission_contract.level) : null,
+        _leadership:  p.commission_leadership?.level ?? null,
+        _hasTP:       p.commission_prestige?.includes('TP') ?? false,
+        _hasEP:       p.commission_prestige?.includes('EP') ?? false,
       }))
       .sort((a, b) => {
         let va, vb
@@ -410,10 +387,10 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
   const [saving,    setSaving]    = useState(false)
   const [saveError, setSaveError] = useState(null)
 
-  const contractLvl   = contractLevel(p.milestones)
-  const leadershipLvl = leadershipLevel(p.named_milestones)
-  const hasTP = hasAchieved(p.named_milestones, 'TP')
-  const hasEP = hasAchieved(p.named_milestones, 'EP')
+  const contractLvl   = p.commission_contract?.level != null ? Number(p.commission_contract.level) : null
+  const leadershipLvl = p.commission_leadership?.level ?? null
+  const hasTP = p.commission_prestige?.includes('TP') ?? false
+  const hasEP = p.commission_prestige?.includes('EP') ?? false
 
   // All numeric contract levels that have any data at all
   const contractEntries = Object.keys(p.milestones ?? {})

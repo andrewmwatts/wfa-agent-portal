@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
+import { buildLevelMap } from '../shared/commissionLevel.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -49,6 +50,16 @@ function buildPromotionMaps(promoRows) {
 }
 
 // ── Policy fetch (mirrors api/policies.js — used for ?include=policies) ──────
+
+const MONTHS_LONG = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December']
+function formatCbMonth(dateStr) {
+  if (!dateStr) return ''
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})-\d{2}/)
+  if (!m) return String(dateStr)
+  const idx = parseInt(m[2]) - 1
+  return (idx >= 0 && idx < 12) ? `${MONTHS_LONG[idx]} ${parseInt(m[1])}` : String(dateStr)
+}
 
 const POLICY_COLS = [
   'id', 'sfg_id', 'applicant', 'carrier', 'policy_name', 'policy_number',
@@ -294,7 +305,7 @@ export default async function handler(req, res) {
       // For direct sfg_id lookups (no tree traversal needed), filter at the DB level
       // so we don't fetch every row in both tables just to filter them in JS.
       const PERS_COLS  = 'sfg_id, preferred_name, opt_name, upline_sfg_id, hire_date, birth_date, npn, email, surelc_profile_date, profile_issues, no_eando, contracting_to_producer, contracting_complete, status, phone, address, city, state, zip'
-      const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'
+      const PROMO_COLS = 'sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot, is_qualified, qualified_date'
       const upperIds   = requestedIds.map(id => id.toUpperCase())
       const useDbFilter = !rootParam && requestedIds.length > 0
 
@@ -322,6 +333,8 @@ export default async function handler(req, res) {
         if (!id) continue
         ;(promosBySfgId[id] ??= []).push(row)
       }
+
+      const levelMap = buildLevelMap(promoRows ?? [])
 
       const nameById = {}
       for (const p of personnelRows) {
@@ -358,6 +371,9 @@ export default async function handler(req, res) {
           zip:                     p.zip?.trim()               ?? '',
           milestones,
           named_milestones,
+          commission_contract:   levelMap[p.sfg_id?.toUpperCase()]?.contract   ?? { level: '80', qualified_date: null },
+          commission_leadership: levelMap[p.sfg_id?.toUpperCase()]?.leadership ?? null,
+          commission_prestige:   levelMap[p.sfg_id?.toUpperCase()]?.prestige   ?? [],
         }
       })
 
@@ -411,6 +427,8 @@ export default async function handler(req, res) {
           policy_type: p.policy_name    ?? '',
           policy_no:   p.policy_number  ?? '',
           face_amt:    p.face_amount != null ? String(p.face_amount) : '',
+          cb_month:    formatCbMonth(p.snapshot_chargeback_month),
+          cb_apv:      p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
         }))
         return res.status(200).json({ personnel: results, policies })
       }

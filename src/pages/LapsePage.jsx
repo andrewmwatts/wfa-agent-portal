@@ -60,6 +60,7 @@ export default function LapsePage() {
   const [loading, setLoading]             = useState(false)
   const [selectedScope, setSelectedScope] = useState('master')
   const [quickFilter, setQuickFilter]     = useState('pending')
+  const [filterNotExempt, setFilterNotExempt] = useState(false)
   const [search, setSearch]               = useState('')
   const [statusFilter, setStatusFilter]   = useState('')
   const [carrierFilter, setCarrierFilter] = useState('')
@@ -139,6 +140,7 @@ export default function LapsePage() {
         if (cs !== 'lapse pending' && cs !== 'first premium not paid') return false
       }
 
+      if (filterNotExempt && p.chargeback_exempt !== false) return false
       if (statusFilter  && p.conservation_status !== statusFilter)  return false
       if (carrierFilter && p.carrier !== carrierFilter)              return false
       if (agentFilter   && p.agent   !== agentFilter)               return false
@@ -146,7 +148,7 @@ export default function LapsePage() {
 
       return true
     })
-  }, [policies, quickFilter, statusFilter, carrierFilter, agentFilter, search])
+  }, [policies, quickFilter, filterNotExempt, statusFilter, carrierFilter, agentFilter, search])
 
   // ── Sort ──────────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
@@ -232,6 +234,17 @@ export default function LapsePage() {
             {f.label}
           </button>
         ))}
+        <span className="text-gray-300 dark:text-white/20 text-xs select-none">|</span>
+        <button
+          onClick={() => setFilterNotExempt(v => !v)}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            filterNotExempt
+              ? 'bg-orange-500/15 border border-orange-400/40 text-orange-600 dark:text-orange-400'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+          }`}
+        >
+          Not Chargeback Exempt
+        </button>
       </div>
 
       {/* ── Filter / sort row ────────────────────────────────────────────────── */}

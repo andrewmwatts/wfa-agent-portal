@@ -5,47 +5,7 @@ import ScopeDropdown from '../components/ScopeDropdown'
 import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
-// ─── Milestone helpers (mirrors AgentsPage) ───────────────────────────────────
-
-function allFilled(months) {
-  return Array.isArray(months) && months.length > 0 && months.every(m => m?.trim())
-}
-
-function contractLevel(milestones = {}) {
-  const levels = Object.keys(milestones).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
-  let highest = null
-  for (const lvl of levels) {
-    if (allFilled(milestones[String(lvl)])) highest = lvl
-  }
-  return highest ?? 80
-}
-
-const LEADERSHIP_ORDER = ['TL', 'KL', 'AO']
-function leadershipLevel(named = {}) {
-  let highest = null
-  for (const key of LEADERSHIP_ORDER) {
-    if (allFilled(named[key])) highest = key
-  }
-  return highest
-}
-
-// ─── Promotion-level sequencing ───────────────────────────────────────────────
-
-const CONTRACT_LEVELS = [85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
-
-function nextContractLevel(current) {
-  if (current < 85) return 85
-  const idx = CONTRACT_LEVELS.indexOf(current)
-  if (idx === -1 || idx === CONTRACT_LEVELS.length - 1) return null
-  return CONTRACT_LEVELS[idx + 1]
-}
-
-function nextLeadershipLevel(current) {
-  if (!current) return 'TL'
-  const idx = LEADERSHIP_ORDER.indexOf(current)
-  if (idx === -1 || idx === LEADERSHIP_ORDER.length - 1) return null
-  return LEADERSHIP_ORDER[idx + 1]
-}
+import { nextContractLevel, nextLeadershipLevel } from '../../shared/commissionLevel'
 
 // ─── Conditional-formatting logic ─────────────────────────────────────────────
 // Returns 'green' | 'yellow' | 'none'
@@ -403,9 +363,9 @@ export default function MonthlyAgentTotalsPage() {
     const amounts = {}
     const pols    = {}
     for (const p of policies) {
-      const cbYm = parseCbMonth(p.cb_month)
+      const cbYm = parseCbMonth(p.snapshot_chargeback_month)
       if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
-      const amt = parseCbApv(p.cb_apv)
+      const amt = parseCbApv(p.snapshot_chargeback_apv)
       if (!amt) continue
       const id = p.sfg_id?.toLowerCase()
       if (!id) continue
@@ -484,10 +444,11 @@ export default function MonthlyAgentTotalsPage() {
       const teamCbPols = [...descSet].flatMap(tid => chargebackMemo.pols[tid] ?? [])
 
       // Likely chargebacks (chargeback_exempt=false, conservation_date in selected month)
+      // Only relevant for the current month — past months use actual chargebacks only.
       const ownLikelyCbAmt   = likelyCbMemo.amounts[id] ?? 0
       const teamLikelyCbAmt  = [...descSet].reduce((s, tid) => s + (likelyCbMemo.amounts[tid] ?? 0), 0)
-      const ownLikelyCbPols  = includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
-      const teamLikelyCbPols = includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
+      const ownLikelyCbPols  = isCurrentMonth && includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
+      const teamLikelyCbPols = isCurrentMonth && includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
 
       // Status predicates
       const isIssued  = p => p.status?.toLowerCase() === 'issued'
@@ -502,12 +463,12 @@ export default function MonthlyAgentTotalsPage() {
       const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
       const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
 
-      // APV sums — always use issued_apv; chargebacks reduce issued totals for past months only
+      // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
       const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
-      const agentIssued     = sumApv(agentIssuedPols) - (isPastMonth ? ownCb  : 0) - (includeLikelyCb ? ownLikelyCbAmt  : 0)
+      const agentIssued     = sumApv(agentIssuedPols) - ownCb - (isCurrentMonth && includeLikelyCb ? ownLikelyCbAmt  : 0)
       const agentPending    = sumApv(agentPendingPols)
       const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = sumApv(teamIssuedPolsList) - (isPastMonth ? teamCb : 0) - (includeLikelyCb ? teamLikelyCbAmt : 0)
+      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
       const teamPending     = sumApv(teamPendingPols)
       const teamIncomplete  = sumApv(teamIncompletePols)
 
@@ -515,8 +476,8 @@ export default function MonthlyAgentTotalsPage() {
       const writers = new Set(teamPols.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)).size
 
       // Current levels & next targets
-      const curContract  = contractLevel(agent.milestones ?? {})
-      const curLeader    = leadershipLevel(agent.named_milestones ?? {})
+      const curContract  = agent.commission_contract?.level ?? null
+      const curLeader    = agent.commission_leadership?.level ?? null
       const nextConLvl   = nextContractLevel(curContract)
       const nextLeadLvl  = nextLeadershipLevel(curLeader)
       const promoQual    = nextConLvl  ? (qualMap[String(nextConLvl)] ?? null) : null
@@ -770,7 +731,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
 
   // Running total (positive policies minus chargebacks and likely chargebacks)
   const total = pols.reduce((s, p) => s + (p[apvField] ?? 0), 0)
-              - cbPols.reduce((s, p) => s + parseCbApv(p.cb_apv), 0)
+              - cbPols.reduce((s, p) => s + parseCbApv(p.snapshot_chargeback_apv), 0)
               - likelyCbPols.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
 
   const thCls = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 whitespace-nowrap'
@@ -840,7 +801,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.carrier || '—'}</td>
                       {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
                       <td className={`${tdCls} text-right tabular-nums text-red-500 dark:text-red-400 font-medium`}>
-                        {fmtAmt(-parseCbApv(p.cb_apv))}
+                        {fmtAmt(-parseCbApv(p.snapshot_chargeback_apv))}
                       </td>
                       {showNotes && <td />}
                     </tr>
