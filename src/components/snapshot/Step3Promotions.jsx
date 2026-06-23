@@ -258,26 +258,28 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         const q = getThresholds(nextContract)
         if (meetsThreshold(q, apv, writers)) {
           const existing = agentPromoMap[`${sfgId}||${nextContract}`] ?? null
-          const months   = Number(q?.months) || 2
-          let monthNum   = 1
-          if (existing?.month_1 && !existing?.month_2) monthNum = 2
-          if (existing?.month_1 && existing?.month_2 && months === 3) monthNum = 3
+          if (!existing?.is_qualified) {
+            const months = Number(q?.months) || 2
+            let monthNum = 1
+            if (existing?.month_1 && existing.month_1.slice(0, 7) !== cycleMonth && !existing?.month_2) monthNum = 2
+            if (existing?.month_1 && existing?.month_2 && existing.month_2.slice(0, 7) !== cycleMonth && months === 3) monthNum = 3
 
-          const key = `${sfgId}||contract||${nextContract}||${monthNum}`
-          const alreadyLogged = promotions.some(
-            a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
-                 a.level === nextContract && ['promotion', 'qualifying_month'].includes(a.action_type)
-          )
-          if (!alreadyLogged) {
-            result.push({
-              key, person, sfgId, apv, writers, monthNum,
-              track: 'contract',
-              targetLevel: nextContract,
-              promoType:   isSlingshot(q, apv) ? 'Slingshot' : 'Standard',
-              existing,
-              flags,
-              totalMonths: months,
-            })
+            const key = `${sfgId}||contract||${nextContract}||${monthNum}`
+            const alreadyLogged = promotions.some(
+              a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
+                   a.level === nextContract && ['promotion', 'qualifying_month'].includes(a.action_type)
+            )
+            if (!alreadyLogged) {
+              result.push({
+                key, person, sfgId, apv, writers, monthNum,
+                track: 'contract',
+                targetLevel: nextContract,
+                promoType:   isSlingshot(q, apv) ? 'Slingshot' : 'Standard',
+                existing,
+                flags,
+                totalMonths: months,
+              })
+            }
           }
         }
       }
@@ -288,27 +290,28 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         const q = getThresholds(nextLeadership)
         if (meetsThreshold(q, apv, writers)) {
           const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
-          const qL       = getThresholds(nextLeadership)
-          const months   = Number(qL?.months) || 2
-          let monthNum   = 1
-          if (existing?.month_1 && !existing?.month_2) monthNum = 2
-          if (existing?.month_1 && existing?.month_2 && months === 3) monthNum = 3
+          if (!existing?.is_qualified) {
+            const months = Number(q?.months) || 2
+            let monthNum = 1
+            if (existing?.month_1 && existing.month_1.slice(0, 7) !== cycleMonth && !existing?.month_2) monthNum = 2
+            if (existing?.month_1 && existing?.month_2 && existing.month_2.slice(0, 7) !== cycleMonth && months === 3) monthNum = 3
 
-          const key = `${sfgId}||leadership||${nextLeadership}||${monthNum}`
-          const alreadyLogged = promotions.some(
-            a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
-                 a.level === nextLeadership && ['promotion', 'qualifying_month'].includes(a.action_type)
-          )
-          if (!alreadyLogged) {
-            result.push({
-              key, person, sfgId, apv, writers, monthNum,
-              track: 'leadership',
-              targetLevel: nextLeadership,
-              promoType:   nextLeadership,
-              existing,
-              flags,
-              totalMonths: months,
-            })
+            const key = `${sfgId}||leadership||${nextLeadership}||${monthNum}`
+            const alreadyLogged = promotions.some(
+              a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
+                   a.level === nextLeadership && ['promotion', 'qualifying_month'].includes(a.action_type)
+            )
+            if (!alreadyLogged) {
+              result.push({
+                key, person, sfgId, apv, writers, monthNum,
+                track: 'leadership',
+                targetLevel: nextLeadership,
+                promoType:   nextLeadership,
+                existing,
+                flags,
+                totalMonths: months,
+              })
+            }
           }
         }
       }
@@ -324,7 +327,8 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       .filter(ap => {
         if (ap.is_qualified || ap.month_3) return false
         if (!ap.month_1) return false
-        if (ap.month_1 === cycleMonth) return false  // just started this month
+        if (ap.month_1?.slice(0, 7) === cycleMonth) return false  // started this cycle
+        if (ap.month_2?.slice(0, 7) === cycleMonth) return false  // completed this cycle
         return !qualifyingIds.has(ap.sfg_id?.toUpperCase())
       })
       .map(ap => ({ ...ap, person: personnelMap[ap.sfg_id?.toUpperCase()], apv: apvByAgent[ap.sfg_id?.toUpperCase()] ?? 0 }))
