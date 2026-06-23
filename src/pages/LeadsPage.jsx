@@ -1550,9 +1550,6 @@ function LeadsSetupModal({ onClose, userId, optName, authHeaders }) {
                 />
               </div>
               {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
-              <p className="text-xs text-gray-500 dark:text-white/50 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5">
-                💡 It's recommended to turn on push notifications from the user menu in the top right so that you will get notified when new digital leads drop.
-              </p>
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveEmail}
@@ -1626,6 +1623,9 @@ function LeadsSetupModal({ onClose, userId, optName, authHeaders }) {
                       </div>
                     </div>
                   </div>
+                  <p className="text-xs text-gray-500 dark:text-white/50 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5">
+                    💡 It's recommended to turn on push notifications from the user menu in the top right so that you will get notified when new digital leads drop.
+                  </p>
                   <div>
                     <p className="font-semibold text-gray-800 dark:text-white/80 mb-1">Step 2 — Backfill old leads</p>
                     <p className="mb-1">If you have leads in Funnel, make sure they are synced to HQ by hitting the Sync button in Funnel. It may take a few minutes for the sync to complete.</p>
