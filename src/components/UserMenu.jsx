@@ -17,6 +17,9 @@ const SECTIONS = [
   { key: 'snapshot',          label: 'Promotions'           },
 ]
 
+// Sections all users have write access to — no admin grant required to delegate write
+const ALWAYS_WRITABLE = new Set(['leads', 'recruiting', 'activity', 'income'])
+
 
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 
@@ -488,6 +491,8 @@ function DelegationRow({ delegation, userProfile, onRevoke, onUpdated }) {
   const [saving,  setSaving]  = useState(false)
   const [err,     setErr]     = useState('')
 
+  const canWriteSections = new Set([...ALWAYS_WRITABLE, ...(userProfile?.write_sections ?? [])])
+
   function initDraft() {
     const base = Object.fromEntries(SECTIONS.map(s => [s.key, { read: false, write: false }]))
     for (const p of (delegation.assistant_permissions ?? [])) {
@@ -526,7 +531,7 @@ function DelegationRow({ delegation, userProfile, onRevoke, onUpdated }) {
     return (
       <div className="p-3 rounded-lg border border-accent/30 dark:border-accent/20 bg-accent/[0.03] space-y-3">
         <p className="text-sm font-medium text-gray-900 dark:text-white">{delegation.assistantName}</p>
-        <SectionPicker sectionPerms={draft} onToggle={(key, type) => setDraft(prev => {
+        <SectionPicker sectionPerms={draft} canWriteSections={canWriteSections} onToggle={(key, type) => setDraft(prev => {
           const curr = prev[key] ?? { read: false, write: false }
           if (type === 'read') {
             const newRead = !curr.read
@@ -567,6 +572,8 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
   )
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState(null)
+
+  const canWriteSections = new Set([...ALWAYS_WRITABLE, ...(userProfile?.write_sections ?? [])])
 
   function toggleSection(key, type) {
     setSectionPerms(prev => {
@@ -613,6 +620,7 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
           sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
+          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -626,6 +634,7 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
           sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
+          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -638,7 +647,7 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
   )
 }
 
-function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
+function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [sfgId, setSfgId]         = useState('')
   const [lookupResult, setLookup] = useState(null)
   const [looking, setLooking]     = useState(false)
@@ -707,7 +716,7 @@ function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSect
       )}
 
       {lookupResult?.found && lookupResult?.hasAccount && (
-        <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} />
+        <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
       )}
 
       {error && <p className="text-xs text-accent">{error}</p>}
@@ -724,7 +733,7 @@ function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSect
   )
 }
 
-function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
+function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [email, setEmail]   = useState('')
   const [sent, setSent]     = useState(false)
 
@@ -783,7 +792,7 @@ function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSe
   )
 }
 
-function SectionPicker({ sectionPerms, onToggle }) {
+function SectionPicker({ sectionPerms, onToggle, canWriteSections }) {
   return (
     <div>
       <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 mb-1.5 px-1">
@@ -792,7 +801,9 @@ function SectionPicker({ sectionPerms, onToggle }) {
         <span className="text-xs text-gray-400 dark:text-white/40 w-8 text-center">Write</span>
       </div>
       {SECTIONS.map(s => {
-        const perms = sectionPerms[s.key] ?? { read: false, write: false }
+        const perms    = sectionPerms[s.key] ?? { read: false, write: false }
+        const canWrite = canWriteSections.has(s.key)
+        const writeEnabled = perms.read && canWrite
         return (
           <div key={s.key} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1 px-1">
             <span className="text-sm text-gray-700 dark:text-white/70">{s.label}</span>
@@ -804,8 +815,8 @@ function SectionPicker({ sectionPerms, onToggle }) {
             <div className="flex justify-center w-8">
               <input type="checkbox" checked={perms.write}
                 onChange={() => onToggle(s.key, 'write')}
-                disabled={!perms.read}
-                title={perms.read ? '' : 'Enable read access first'}
+                disabled={!writeEnabled}
+                title={!perms.read ? 'Enable read access first' : !canWrite ? 'Write access not granted for this section' : ''}
                 className="w-4 h-4 accent-accent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" />
             </div>
           </div>
