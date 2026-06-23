@@ -1550,6 +1550,9 @@ function LeadsSetupModal({ onClose, userId, optName, authHeaders }) {
                 />
               </div>
               {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+              <p className="text-xs text-gray-500 dark:text-white/50 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5">
+                💡 It's recommended to turn on push notifications from the user menu in the top right so that you will get notified when new digital leads drop.
+              </p>
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveEmail}
