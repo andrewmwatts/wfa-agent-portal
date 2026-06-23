@@ -306,13 +306,15 @@ export default async function handler(req, res) {
     if (!sfgId)        return res.status(400).json({ error: 'sfg_id is required' })
     if (!leads.length) return res.status(400).json({ error: 'No leads provided' })
 
-    // Verify caller is super_admin (or bypass for dev)
+    // Any authenticated user may bulk import their own leads; super_admin may import for any sfg_id
     const bypass = process.env.VITE_BYPASS_AUTH === 'true'
     if (!bypass) {
       const callerSfgId = await resolveCallerSfgId(req, null)
       if (!callerSfgId) return res.status(401).json({ error: 'Unauthorized' })
       const { data: caller } = await sb.from('users').select('role').eq('sfg_id', callerSfgId).single()
-      if (caller?.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden: super_admin required' })
+      if (caller?.role !== 'super_admin' && sfgId !== callerSfgId) {
+        return res.status(403).json({ error: 'Forbidden: cannot import leads for another user' })
+      }
     }
 
     // Fetch existing phones for this agent to detect duplicates
