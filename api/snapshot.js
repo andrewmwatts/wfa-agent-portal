@@ -443,18 +443,18 @@ export default async function handler(req, res) {
             .gte('issue_date', monthStart)
             .lt('issue_date', nextMonth)
             .ilike('status', 'issued'),
-          // Actual chargebacks: policies where snapshot_chargeback_month falls in this month.
-          // Filter by year in DB (text search), then parse exact month in JS.
-          // Also fetch issued_apv as fallback when snapshot_chargeback_apv is 0.
+          // Actual chargebacks: policies where snapshot_chargeback_month (date column) falls
+          // within this calendar month. Use date range — ilike won't work on a date type.
+          // Also fetch issued_apv as fallback when snapshot_chargeback_apv is 0/null.
           supabase
             .from('policies')
             .select('sfg_id, issued_apv, snapshot_chargeback_month, snapshot_chargeback_apv')
             .not('snapshot_chargeback_month', 'is', null)
-            .ilike('snapshot_chargeback_month', `%${yr}%`),
+            .gte('snapshot_chargeback_month', monthStart)
+            .lt('snapshot_chargeback_month', nextMonth),
         ])
         if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
         if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
-        console.log(`[snapshot/context] chargeback query returned ${cbRes.data?.length ?? 0} rows for year ${yr}`)
         monthPolicies = issuedRes.data ?? []
 
         // Personal APV: issued_apv for the calendar month, minus actual chargebacks
@@ -464,17 +464,11 @@ export default async function handler(req, res) {
           if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) + (Number(p.issued_apv) || 0)
         }
         for (const p of cbRes.data ?? []) {
-          const cbYm = parseCbMonthSvr(p.snapshot_chargeback_month)
-          if (!cbYm || cbYm.year !== yr || cbYm.month !== mo) {
-            console.log(`[snapshot/context] skipping chargeback — month "${p.snapshot_chargeback_month}" parsed as`, cbYm, 'target:', yr, mo)
-            continue
-          }
           const key = p.sfg_id?.trim().toUpperCase()
           if (!key) continue
           // Use snapshot_chargeback_apv; fall back to issued_apv if it is 0/null
           const cbApv = parseCbApvSvr(p.snapshot_chargeback_apv)
           const amt   = cbApv > 0 ? cbApv : parseCbApvSvr(p.issued_apv)
-          console.log(`[snapshot/context] chargeback sfg_id=${key} month="${p.snapshot_chargeback_month}" cb_apv=${p.snapshot_chargeback_apv} issued_apv=${p.issued_apv} deducting=${amt}`)
           if (amt > 0) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - amt
         }
 
