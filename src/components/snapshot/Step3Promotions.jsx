@@ -253,7 +253,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       const flags   = hierarchyFlags(sfgId)
 
       // ── Contract track ────────────────────────────────────────────────────
-      const nextContract = nextContractLevel(person.commission_contract?.level ?? null)
+      const nextContract = nextContractLevel(person.commission_contract?.level ?? '80')
       if (nextContract && !skipped.has(sfgId + '||' + nextContract)) {
         const q = getThresholds(nextContract)
         if (meetsThreshold(q, apv, writers)) {
@@ -523,7 +523,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               const showJotform = isFinal || jotformOpen.has(jotformKey)
               const jotformLines = buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing)
               const currentLevelLabel = track === 'contract'
-                ? (person.commission_contract?.level ? `${person.commission_contract.level}%` : 'New')
+                ? `${person.commission_contract?.level ?? '80'}%`
                 : (person.commission_leadership?.level ?? 'None')
 
               return (
