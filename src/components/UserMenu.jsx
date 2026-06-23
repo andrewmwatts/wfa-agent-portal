@@ -18,7 +18,7 @@ const SECTIONS = [
 ]
 
 // Sections where write access can always be delegated (no admin grant needed)
-const ALWAYS_WRITABLE = new Set(['leads', 'recruiting', 'income'])
+const ALWAYS_WRITABLE = new Set(['leads', 'recruiting', 'income', 'activity'])
 
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 

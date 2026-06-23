@@ -15,7 +15,6 @@ const WRITE_SECTIONS = [
   { key: 'onboarding',        label: 'Contracting & Agents' },
   { key: 'apps_and_policies', label: 'Apps & Policies'      },
   { key: 'metrics',           label: 'Metrics'              },
-  { key: 'activity',          label: 'Activity'             },
   { key: 'accountability',    label: 'Accountability'       },
   { key: 'snapshot',          label: 'Promotions'           },
 ]
