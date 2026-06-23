@@ -272,7 +272,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     return 0
   })
 
-  const allHaveOutcome = disputes.length > 0 && disputes.every(d => d.outcome)
+  const allHaveOutcome = disputes.length > 0 && disputes.every(d => !isIncluded(d) || d.outcome)
 
   const INPUT = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
