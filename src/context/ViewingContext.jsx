@@ -19,6 +19,8 @@ const SECTION_MAP = {
 
 const ALL_SECTIONS = ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'admin', 'leads', 'recruiting', 'accountability', 'snapshot', 'activity', 'income']
 
+const ALWAYS_WRITE = new Set(['leads', 'recruiting', 'activity', 'income'])
+
 function makePerms(readable = [], writable = []) {
   return Object.fromEntries(
     ALL_SECTIONS.map(s => [s, {
@@ -28,7 +30,7 @@ function makePerms(readable = [], writable = []) {
   )
 }
 
-// Sections each role can read (and write — all portal users manage their own data)
+// Sections each role can read
 function sectionsByRole(role) {
   switch (role) {
     case 'super_admin':
@@ -46,8 +48,15 @@ function sectionsByRole(role) {
 function resolvePermissions(viewer, isSelf, assistantPerms = null) {
   if (viewer.role === 'super_admin') return makePerms(['*'], ['*'])
   if (isSelf) {
-    const sections = sectionsByRole(viewer.role)
-    return makePerms(sections, sections)
+    const readable = sectionsByRole(viewer.role)
+    const writable = readable.filter(s => ALWAYS_WRITE.has(s))
+    for (const dbKey of viewer.write_sections ?? []) {
+      const viewKey = SECTION_MAP[dbKey]
+      if (viewKey && readable.includes(viewKey) && !writable.includes(viewKey)) {
+        writable.push(viewKey)
+      }
+    }
+    return makePerms(readable, writable)
   }
   if (assistantPerms) {
     const readable = []

@@ -17,8 +17,6 @@ const SECTIONS = [
   { key: 'snapshot',          label: 'Promotions'           },
 ]
 
-// Sections where write access can always be delegated (no admin grant needed)
-const ALWAYS_WRITABLE = new Set(['leads', 'recruiting', 'income', 'activity'])
 
 // ── Main UserMenu ──────────────────────────────────────────────────────────────
 
@@ -490,11 +488,6 @@ function DelegationRow({ delegation, userProfile, onRevoke, onUpdated }) {
   const [saving,  setSaving]  = useState(false)
   const [err,     setErr]     = useState('')
 
-  const canWriteSections = new Set([
-    ...ALWAYS_WRITABLE,
-    ...(userProfile?.write_sections ?? []),
-  ])
-
   function initDraft() {
     const base = Object.fromEntries(SECTIONS.map(s => [s.key, { read: false, write: false }]))
     for (const p of (delegation.assistant_permissions ?? [])) {
@@ -541,7 +534,7 @@ function DelegationRow({ delegation, userProfile, onRevoke, onUpdated }) {
           }
           const newWrite = !curr.write
           return { ...prev, [key]: { read: newWrite ? true : curr.read, write: newWrite } }
-        })} canWriteSections={canWriteSections} />
+        })} />
         {err && <p className="text-xs text-accent">{err}</p>}
         <div className="flex gap-2">
           <button onClick={saveEdit} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button>
@@ -574,8 +567,6 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
   )
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState(null)
-
-  const canWriteSections = new Set([...ALWAYS_WRITABLE, ...(userProfile?.write_sections ?? [])])
 
   function toggleSection(key, type) {
     setSectionPerms(prev => {
@@ -622,7 +613,6 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
           sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
-          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -636,7 +626,6 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
           sectionPerms={sectionPerms}
           selectedSections={selectedSections}
           onToggleSection={toggleSection}
-          canWriteSections={canWriteSections}
           saving={saving}
           setSaving={setSaving}
           error={error}
@@ -649,7 +638,7 @@ function AddDelegationForm({ agentSfgId, userProfile, onSaved, onCancel }) {
   )
 }
 
-function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
+function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [sfgId, setSfgId]         = useState('')
   const [lookupResult, setLookup] = useState(null)
   const [looking, setLooking]     = useState(false)
@@ -718,7 +707,7 @@ function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSect
       )}
 
       {lookupResult?.found && lookupResult?.hasAccount && (
-        <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
+        <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} />
       )}
 
       {error && <p className="text-xs text-accent">{error}</p>}
@@ -735,7 +724,7 @@ function SfgLookupTab({ agentSfgId, sectionPerms, selectedSections, onToggleSect
   )
 }
 
-function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, canWriteSections, saving, setSaving, error, setError, onSaved, onCancel }) {
+function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSection, saving, setSaving, error, setError, onSaved, onCancel }) {
   const [email, setEmail]   = useState('')
   const [sent, setSent]     = useState(false)
 
@@ -782,7 +771,7 @@ function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSe
         placeholder="name@example.com"
         className={inputCls}
       />
-      <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
+      <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} />
       {error && <p className="text-xs text-accent">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className={btnSecondary}>Cancel</button>
@@ -794,7 +783,7 @@ function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSe
   )
 }
 
-function SectionPicker({ sectionPerms, onToggle, canWriteSections }) {
+function SectionPicker({ sectionPerms, onToggle }) {
   return (
     <div>
       <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 mb-1.5 px-1">
@@ -803,8 +792,7 @@ function SectionPicker({ sectionPerms, onToggle, canWriteSections }) {
         <span className="text-xs text-gray-400 dark:text-white/40 w-8 text-center">Write</span>
       </div>
       {SECTIONS.map(s => {
-        const perms    = sectionPerms[s.key] ?? { read: false, write: false }
-        const canWrite = canWriteSections.has(s.key)
+        const perms = sectionPerms[s.key] ?? { read: false, write: false }
         return (
           <div key={s.key} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-1 px-1">
             <span className="text-sm text-gray-700 dark:text-white/70">{s.label}</span>
@@ -816,8 +804,8 @@ function SectionPicker({ sectionPerms, onToggle, canWriteSections }) {
             <div className="flex justify-center w-8">
               <input type="checkbox" checked={perms.write}
                 onChange={() => onToggle(s.key, 'write')}
-                disabled={!canWrite}
-                title={canWrite ? '' : 'Write access not granted for this section'}
+                disabled={!perms.read}
+                title={perms.read ? '' : 'Enable read access first'}
                 className="w-4 h-4 accent-accent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" />
             </div>
           </div>
