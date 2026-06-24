@@ -125,6 +125,30 @@ function parseDate(val) {
   return String(val).trim()
 }
 
+// Next Friday on or after the given YYYY-MM-DD date string.
+function computeSubmitWeek(isoDate) {
+  if (!isoDate) return null
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const dow = date.getDay()
+  const daysAhead = dow === 5 ? 0 : ((5 - dow + 7) % 7 || 7)
+  date.setDate(date.getDate() + daysAhead)
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+}
+
+// Which Friday of the month (1–5) does the given YYYY-MM-DD Friday fall on?
+function computeSubmitWeekNum(fridayISO) {
+  if (!fridayISO) return null
+  const [y, m, d] = fridayISO.split('-').map(Number)
+  const friday = new Date(y, m - 1, d)
+  let firstFriday = new Date(y, m - 1, 1)
+  while (firstFriday.getDay() !== 5) firstFriday.setDate(firstFriday.getDate() + 1)
+  let count = 0
+  let cursor = new Date(firstFriday)
+  while (cursor <= friday) { count++; cursor.setDate(cursor.getDate() + 7) }
+  return count || null
+}
+
 // ── update-policy coercion helpers ───────────────────────────────────────────
 
 const NUMERIC_COLS  = new Set(['submitted_apv', 'issued_apv', 'face_amount', 'snapshot_chargeback_apv'])
@@ -654,6 +678,10 @@ export default async function handler(req, res) {
         not_in_opt:        ['x','true','1','yes'].includes(String(f.not_in_opt ?? '').trim().toLowerCase()),
         split_reset:       ['x','true','1','yes'].includes(String(f.split_reset ?? '').trim().toLowerCase()),
         last_update:       parseDate(f.last_update),
+      }
+      if (!record.submit_week && record.submit_date) {
+        record.submit_week     = computeSubmitWeek(record.submit_date)
+        record.submit_week_num = computeSubmitWeekNum(record.submit_week)
       }
       const { error } = await supabase.from('policies').insert(record)
       if (error) throw error
