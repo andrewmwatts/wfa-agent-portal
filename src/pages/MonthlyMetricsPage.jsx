@@ -42,6 +42,16 @@ function weeksInMonth(ym) {
   return count
 }
 
+function parseCbMonth(str) {
+  if (!str) return null
+  const MONTHS = { January:'01',February:'02',March:'03',April:'04',May:'05',June:'06',
+                   July:'07',August:'08',September:'09',October:'10',November:'11',December:'12' }
+  const m = String(str).match(/^([A-Za-z]+)\s+(\d{4})$/)
+  if (!m) return null
+  const mo = MONTHS[m[1]]
+  return mo ? `${m[2]}-${mo}` : null
+}
+
 function fmtApv(n) {
   if (!n) return '$0'
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -100,6 +110,15 @@ function buildMonthly(policies) {
     if (p.status?.toLowerCase() === 'issued') {
       const issYM = toYearMonth(p.issue_date) ?? submYM
       if (issYM) ensure(issYM).iss += parseAmt(p.issued_apv)
+    }
+
+    // Deduct chargebacks from the month they occurred
+    if (p.cb_month) {
+      const cbYM = parseCbMonth(p.cb_month)
+      if (cbYM) {
+        const cbAmt = parseAmt(p.cb_apv) > 0 ? parseAmt(p.cb_apv) : parseAmt(p.issued_apv)
+        if (cbAmt > 0) ensure(cbYM).iss -= cbAmt
+      }
     }
   }
 
