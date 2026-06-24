@@ -127,11 +127,10 @@ export default async function handler(req, res) {
       seriesSlug = s?.slug ?? null
     }
 
-    const { data, error } = await sb.from('resources').insert({
+    const row = {
       title:          b.title.trim(),
       description:    b.description    || null,
       video_date:     b.video_date     || null,
-      content_type:   b.content_type   || null,
       platform:       plt,
       url:            b.url            || null,
       thumbnail_url:  b.thumbnail_url  || null,
@@ -144,8 +143,12 @@ export default async function handler(req, res) {
       source_account: b.source_account || null,
       is_published:   b.is_published   ?? true,
       is_huddle:      b.is_huddle      ?? false,
-      sort_order:     b.sort_order != null && b.sort_order !== '' ? Number(b.sort_order) : null,
-    }).select().single()
+    }
+    // Omit content_type and sort_order when blank so DB defaults ('video', 0) apply
+    if (b.content_type) row.content_type = b.content_type
+    if (b.sort_order != null && b.sort_order !== '') row.sort_order = Number(b.sort_order)
+
+    const { data, error } = await sb.from('resources').insert(row).select().single()
 
     if (error) { res.status(500).json({ error: error.message }); return }
     return res.status(201).json({ resource: data })
@@ -182,9 +185,17 @@ export default async function handler(req, res) {
         patch.series_slug = null
       }
     }
-    // Coerce sort_order
+    // Coerce sort_order — omit rather than null so DB default (0) applies
     if ('sort_order' in patch) {
-      patch.sort_order = patch.sort_order != null && patch.sort_order !== '' ? Number(patch.sort_order) : null
+      if (patch.sort_order != null && patch.sort_order !== '') {
+        patch.sort_order = Number(patch.sort_order)
+      } else {
+        delete patch.sort_order
+      }
+    }
+    // Drop content_type if empty string to avoid check constraint
+    if ('content_type' in patch && !patch.content_type) {
+      delete patch.content_type
     }
 
     patch.updated_at = new Date().toISOString()

@@ -952,7 +952,7 @@ function SystemMessagesTab({ adminFetch }) {
 // ─── Tab 7: Video Library ──────────────────────────────────────────────────────
 
 const BLANK_VIDEO = {
-  title: '', description: '', series_id: '', video_date: '', content_type: '',
+  title: '', description: '', series_id: '', video_date: '', content_type: 'video',
   speakers: '', source_account: '', topics: [], platform: '', url: '',
   vimeo_id: '', thumbnail_url: '', source_series: '', sort_order: '',
   is_published: true, is_huddle: false,
@@ -1057,7 +1057,7 @@ function VideoLibraryTab({ ah }) {
       description:    v.description    ?? '',
       series_id:      v.series_id      ?? '',
       video_date:     v.video_date     ?? '',
-      content_type:   v.content_type   ?? '',
+      content_type:   v.content_type   ?? 'video',
       speakers:       v.speakers       ?? '',
       source_account: v.source_account ?? '',
       topics:         v.topics         ?? [],
@@ -1145,8 +1145,12 @@ function VideoLibraryTab({ ah }) {
             </div>
             <div>
               <label className={LBL}>Content Type</label>
-              <input value={form.content_type} onChange={e => setForm(f => ({...f, content_type: e.target.value}))}
-                className={INP} placeholder="e.g. Training, Webinar, Huddle" />
+              <select value={form.content_type} onChange={e => setForm(f => ({...f, content_type: e.target.value}))} className={INP}>
+                <option value="video">Video</option>
+                <option value="audio">Audio</option>
+                <option value="document">Document</option>
+                <option value="link">Link</option>
+              </select>
             </div>
           </div>
 
