@@ -205,7 +205,7 @@ async function sendLeadPushNotification(sb, lead) {
   const payload = JSON.stringify({
     title: 'New Lead',
     body:  bodyParts.join(' — '),
-    url:   '/leads',
+    url:   '/portal/leads',
   })
 
   const staleIds = []

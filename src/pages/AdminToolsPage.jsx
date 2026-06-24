@@ -26,6 +26,7 @@ const TABS = [
   { key: 'agencies', label: 'Agency Settings'       },
   { key: 'errors',   label: 'Parse Errors'          },
   { key: 'messages', label: 'System Messages'       },
+  { key: 'videos',   label: 'Video Library'         },
 ]
 
 const PORTAL_PAGES = [
@@ -92,6 +93,7 @@ export default function AdminToolsPage() {
       {tab === 'agencies'  && <AgencySettingsTab     adminFetch={adminFetch} />}
       {tab === 'errors'    && <ParseErrorsTab        adminFetch={adminFetch} />}
       {tab === 'messages'  && <SystemMessagesTab     adminFetch={adminFetch} />}
+      {tab === 'videos'    && <VideoLibraryTab       ah={ah} />}
     </main>
   )
 }
@@ -943,6 +945,456 @@ function SystemMessagesTab({ adminFetch }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Tab 7: Video Library ──────────────────────────────────────────────────────
+
+const BLANK_VIDEO = {
+  title: '', description: '', series_id: '', video_date: '', content_type: '',
+  speakers: '', source_account: '', topics: [], platform: '', url: '',
+  vimeo_id: '', thumbnail_url: '', source_series: '', sort_order: '',
+  is_published: true, is_huddle: false,
+}
+
+const PLATFORM_LABELS = { vimeo: 'Vimeo', youtube: 'YouTube', loom: 'Loom', other: 'Other' }
+
+function detectPlatform(url) {
+  if (!url) return ''
+  if (url.includes('vimeo.com')) return 'vimeo'
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
+  if (url.includes('loom.com')) return 'loom'
+  return 'other'
+}
+
+function VideoLibraryTab({ ah }) {
+  const [series,     setSeries]     = useState([])
+  const [videos,     setVideos]     = useState([])
+  const [total,      setTotal]      = useState(0)
+  const [page,       setPage]       = useState(0)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [form,       setForm]       = useState(BLANK_VIDEO)
+  const [editingId,  setEditingId]  = useState(null)
+  const [topicInput, setTopicInput] = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [saveErr,    setSaveErr]    = useState('')
+  const [delConfirm, setDelConfirm] = useState(null)
+  const [oemLoading, setOemLoading] = useState(false)
+  const [filterSeries,   setFilterSeries]   = useState('')
+  const [filterPlatform, setFilterPlatform] = useState('')
+  const [filterPub,      setFilterPub]      = useState('')
+  const [search,         setSearch]         = useState('')
+
+  const PAGE_SIZE = 25
+
+  async function rf(url, method = 'GET', body) {
+    const opts = { method, headers: ah() }
+    if (body !== undefined) opts.body = JSON.stringify(body)
+    const res = await fetch(url, opts)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || String(res.status))
+    return data
+  }
+
+  useEffect(() => {
+    rf('/api/resources?type=series').then(d => setSeries(d.series ?? [])).catch(() => {})
+  }, [])
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
+      if (filterSeries)                  qs.set('series_id', filterSeries)
+      if (filterPlatform)                qs.set('platform', filterPlatform)
+      if (filterPub === 'published')     qs.set('is_published', 'true')
+      if (filterPub === 'unpublished')   qs.set('is_published', 'false')
+      if (search)                        qs.set('q', search)
+      const d = await rf(`/api/resources?${qs}`)
+      setVideos(d.resources ?? [])
+      setTotal(d.total ?? 0)
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
+  }, [page, filterSeries, filterPlatform, filterPub, search])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleUrlBlur() {
+    const url = form.url.trim()
+    if (!url) return
+    const platform = detectPlatform(url)
+    setForm(f => ({ ...f, platform }))
+    setOemLoading(true)
+    try {
+      const d = await rf(`/api/oembed?url=${encodeURIComponent(url)}`)
+      setForm(f => ({
+        ...f,
+        title:         f.title || (d.title ?? ''),
+        thumbnail_url: d.thumbnail ?? '',
+        vimeo_id:      d.vimeo_id  ?? f.vimeo_id,
+        platform,
+      }))
+    } catch { /* oEmbed optional */ }
+    finally { setOemLoading(false) }
+  }
+
+  function addTopic() {
+    const tags = topicInput.split(',').map(t => t.trim()).filter(Boolean)
+    if (!tags.length) return
+    setForm(f => ({ ...f, topics: [...new Set([...f.topics, ...tags])] }))
+    setTopicInput('')
+  }
+
+  function removeTopic(tag) {
+    setForm(f => ({ ...f, topics: f.topics.filter(t => t !== tag) }))
+  }
+
+  function startEdit(v) {
+    setEditingId(v.id)
+    setForm({
+      title:          v.title          ?? '',
+      description:    v.description    ?? '',
+      series_id:      v.series_id      ?? '',
+      video_date:     v.video_date     ?? '',
+      content_type:   v.content_type   ?? '',
+      speakers:       v.speakers       ?? '',
+      source_account: v.source_account ?? '',
+      topics:         v.topics         ?? [],
+      platform:       v.platform       ?? '',
+      url:            v.url            ?? '',
+      vimeo_id:       v.vimeo_id       ?? '',
+      thumbnail_url:  v.thumbnail_url  ?? '',
+      source_series:  v.source_series  ?? '',
+      sort_order:     v.sort_order != null ? String(v.sort_order) : '',
+      is_published:   v.is_published   ?? true,
+      is_huddle:      v.is_huddle      ?? false,
+    })
+    setTopicInput(''); setSaveErr('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelEdit() {
+    setEditingId(null); setForm(BLANK_VIDEO); setTopicInput(''); setSaveErr('')
+  }
+
+  async function save() {
+    if (!form.title.trim()) { setSaveErr('Title is required'); return }
+    setSaving(true); setSaveErr('')
+    try {
+      if (editingId) {
+        await rf(`/api/resources?id=${editingId}`, 'PATCH', form)
+      } else {
+        await rf('/api/resources', 'POST', form)
+      }
+      cancelEdit(); setPage(0); load()
+    } catch (e) { setSaveErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  async function togglePublished(v) {
+    try {
+      await rf(`/api/resources?id=${v.id}`, 'PATCH', { is_published: !v.is_published })
+      setVideos(vs => vs.map(x => x.id === v.id ? { ...x, is_published: !x.is_published } : x))
+    } catch (e) { alert(e.message) }
+  }
+
+  async function confirmDelete() {
+    if (!delConfirm) return
+    try {
+      await rf(`/api/resources?id=${delConfirm.id}`, 'DELETE')
+      setDelConfirm(null); load()
+    } catch (e) { alert(e.message) }
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Form: Add / Edit ──────────────────────────────────────────────── */}
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-4">
+          {editingId ? 'Edit Video' : 'Add Video'}
+        </p>
+        <div className="space-y-3">
+          {/* Row 1: Title + Series */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={LBL}>Title *</label>
+              <input value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))}
+                className={INP} placeholder="Video title" />
+            </div>
+            <div>
+              <label className={LBL}>Series</label>
+              <select value={form.series_id} onChange={e => setForm(f => ({...f, series_id: e.target.value}))} className={INP}>
+                <option value="">— No series —</option>
+                {series.filter(s => s.is_published).map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Date + Content Type */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={LBL}>Date</label>
+              <input type="date" value={form.video_date} onChange={e => setForm(f => ({...f, video_date: e.target.value}))}
+                className={INP + ' dark:[color-scheme:dark]'} />
+            </div>
+            <div>
+              <label className={LBL}>Content Type</label>
+              <input value={form.content_type} onChange={e => setForm(f => ({...f, content_type: e.target.value}))}
+                className={INP} placeholder="e.g. Training, Webinar, Huddle" />
+            </div>
+          </div>
+
+          {/* Row 3: Speakers + Source Account */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={LBL}>Speakers</label>
+              <input value={form.speakers} onChange={e => setForm(f => ({...f, speakers: e.target.value}))}
+                className={INP} placeholder="John Doe, Jane Smith" />
+            </div>
+            <div>
+              <label className={LBL}>Source Account</label>
+              <input value={form.source_account} onChange={e => setForm(f => ({...f, source_account: e.target.value}))}
+                className={INP} placeholder="e.g. WFA Vimeo, Andrew Watts" />
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className={LBL}>Description</label>
+            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}
+              rows={2} className={INP + ' resize-y'} placeholder="Optional description…" />
+          </div>
+
+          {/* Topics */}
+          <div>
+            <label className={LBL}>Topics</label>
+            <div className="flex gap-2">
+              <input
+                value={topicInput}
+                onChange={e => setTopicInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTopic() } }}
+                className={INP} placeholder="Add topic and press Enter (or comma-separate)"
+              />
+              <button onClick={addTopic} type="button"
+                className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 shrink-0'}>Add</button>
+            </div>
+            {form.topics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {form.topics.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-full">
+                    {t}
+                    <button onClick={() => removeTopic(t)} className="hover:text-accent/60 leading-none ml-0.5">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* URL — oEmbed auto-fetch on blur */}
+          <div>
+            <label className={LBL}>Video URL</label>
+            <div className="flex gap-2 items-center">
+              <input
+                value={form.url}
+                onChange={e => setForm(f => ({...f, url: e.target.value, platform: detectPlatform(e.target.value)}))}
+                onBlur={handleUrlBlur}
+                className={INP}
+                placeholder="https://vimeo.com/…  or  youtube.com/…  or  loom.com/…"
+              />
+              {oemLoading && <span className="text-xs text-gray-400 shrink-0">Fetching…</span>}
+            </div>
+          </div>
+
+          {/* Platform + Vimeo ID + Thumbnail */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className={LBL}>Platform</label>
+              <input value={PLATFORM_LABELS[form.platform] ?? form.platform} readOnly
+                className={INP + ' opacity-60 cursor-default'} placeholder="Auto-detected" />
+            </div>
+            <div>
+              <label className={LBL}>Vimeo ID</label>
+              <input value={form.vimeo_id} onChange={e => setForm(f => ({...f, vimeo_id: e.target.value}))}
+                className={INP} placeholder="Auto-populated for Vimeo" />
+            </div>
+            <div>
+              <label className={LBL}>Thumbnail URL</label>
+              <div className="flex gap-1.5">
+                <input value={form.thumbnail_url} onChange={e => setForm(f => ({...f, thumbnail_url: e.target.value}))}
+                  className={INP} placeholder="Auto-populated" />
+                <button onClick={handleUrlBlur} type="button" title="Refresh from URL"
+                  className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 shrink-0'}>↺</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Source Series + Sort Order */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={LBL}>Source Series</label>
+              <input value={form.source_series} onChange={e => setForm(f => ({...f, source_series: e.target.value}))}
+                className={INP} placeholder="e.g. Reineke Master Huddle" />
+            </div>
+            <div>
+              <label className={LBL}>Sort Order</label>
+              <input type="number" value={form.sort_order} onChange={e => setForm(f => ({...f, sort_order: e.target.value}))}
+                className={INP} placeholder="Leave blank for default" />
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div className="flex gap-6 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-white/70">
+              <input type="checkbox" checked={form.is_published}
+                onChange={e => setForm(f => ({...f, is_published: e.target.checked}))}
+                className="rounded border-gray-300 text-accent focus:ring-accent" />
+              Published
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-white/70">
+              <input type="checkbox" checked={form.is_huddle}
+                onChange={e => setForm(f => ({...f, is_huddle: e.target.checked}))}
+                className="rounded border-gray-300 text-accent focus:ring-accent" />
+              Huddle content
+            </label>
+          </div>
+
+          <Err msg={saveErr} />
+          <div className="flex gap-2 pt-1">
+            <button onClick={save} disabled={saving}
+              className={BTN + ' bg-accent text-white hover:bg-accent/90 disabled:opacity-50'}>
+              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Video'}
+            </button>
+            {editingId && (
+              <button onClick={cancelEdit}
+                className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Table ─────────────────────────────────────────────────────────── */}
+      <div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }}
+            className={INP + ' max-w-xs'} placeholder="Search title or speaker…" />
+          <select value={filterSeries} onChange={e => { setFilterSeries(e.target.value); setPage(0) }}
+            className={INP + ' w-auto'}>
+            <option value="">All Series</option>
+            {series.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select value={filterPlatform} onChange={e => { setFilterPlatform(e.target.value); setPage(0) }}
+            className={INP + ' w-auto'}>
+            <option value="">All Platforms</option>
+            <option value="vimeo">Vimeo</option>
+            <option value="youtube">YouTube</option>
+            <option value="loom">Loom</option>
+            <option value="other">Other</option>
+          </select>
+          <select value={filterPub} onChange={e => { setFilterPub(e.target.value); setPage(0) }}
+            className={INP + ' w-auto'}>
+            <option value="">All</option>
+            <option value="published">Published</option>
+            <option value="unpublished">Unpublished</option>
+          </select>
+        </div>
+
+        {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+
+        {loading ? (
+          <p className="text-sm text-gray-400">Loading…</p>
+        ) : videos.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-white/40">No videos found.</p>
+        ) : (
+          <>
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-gray-200 dark:border-white/10">
+                    <tr>
+                      <th className={TH + ' pl-4'}>Title</th>
+                      <th className={TH}>Series</th>
+                      <th className={TH}>Date</th>
+                      <th className={TH}>Platform</th>
+                      <th className={TH}>Published</th>
+                      <th className={TH}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                    {videos.map(v => (
+                      <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
+                        <td className={TD + ' pl-4 font-medium text-gray-900 dark:text-white max-w-xs'}>
+                          <span className="truncate block">{v.title}</span>
+                        </td>
+                        <td className={TD}>{v.series_name ?? '—'}</td>
+                        <td className={TD + ' whitespace-nowrap'}>{v.video_date ? fmtDate(v.video_date) : '—'}</td>
+                        <td className={TD + ' capitalize'}>{PLATFORM_LABELS[v.platform] ?? v.platform ?? '—'}</td>
+                        <td className={TD}>
+                          <button
+                            onClick={() => togglePublished(v)}
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                              v.is_published
+                                ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
+                                : 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10'
+                            }`}
+                          >
+                            {v.is_published ? 'Published' : 'Draft'}
+                          </button>
+                        </td>
+                        <td className={TD}>
+                          <div className="flex gap-2">
+                            <button onClick={() => startEdit(v)}
+                              className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 dark:text-white/50'}>Edit</button>
+                            <button onClick={() => setDelConfirm(v)}
+                              className={BTN + ' border border-red-200 text-red-500 dark:border-red-500/30 dark:text-red-400'}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-3">
+                <p className="text-xs text-gray-400 dark:text-white/40">
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
+                    className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 disabled:opacity-40'}>← Prev</button>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
+                    className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 disabled:opacity-40'}>Next →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Delete confirmation */}
+      {delConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={e => { if (e.target === e.currentTarget) setDelConfirm(null) }}>
+          <div className="bg-white dark:bg-primary rounded-2xl shadow-2xl w-full max-w-sm p-5">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Delete video?</h3>
+            <p className="text-sm text-gray-500 dark:text-white/50 mb-4">
+              "{delConfirm.title}" will be permanently deleted.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={confirmDelete} className={BTN + ' bg-red-500 text-white hover:bg-red-600'}>Delete</button>
+              <button onClick={() => setDelConfirm(null)}
+                className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

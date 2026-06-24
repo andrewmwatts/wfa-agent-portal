@@ -5,6 +5,26 @@
       "schedule": "0 14 * * *"
     }
   ],
+  "redirects": [
+    { "source": "/dashboard",           "destination": "/portal/dashboard",           "permanent": true },
+    { "source": "/policies",            "destination": "/portal/policies",            "permanent": true },
+    { "source": "/engagement",          "destination": "/portal/engagement",          "permanent": true },
+    { "source": "/leads",               "destination": "/portal/leads",               "permanent": true },
+    { "source": "/recruiting",          "destination": "/portal/recruiting",          "permanent": true },
+    { "source": "/coaching",            "destination": "/portal/coaching",            "permanent": true },
+    { "source": "/activity",            "destination": "/portal/activity",            "permanent": true },
+    { "source": "/contracting",         "destination": "/portal/contracting",         "permanent": true },
+    { "source": "/monthly-agent-totals","destination": "/portal/monthly-agent-totals","permanent": true },
+    { "source": "/accountability",      "destination": "/portal/accountability",      "permanent": true },
+    { "source": "/promotions",          "destination": "/portal/promotions",          "permanent": true },
+    { "source": "/agents",              "destination": "/portal/agents",              "permanent": true },
+    { "source": "/income",              "destination": "/portal/income",              "permanent": true },
+    { "source": "/monthly-metrics",     "destination": "/portal/monthly-metrics",     "permanent": true },
+    { "source": "/weekly-metrics",      "destination": "/portal/weekly-metrics",      "permanent": true },
+    { "source": "/carrier-metrics",     "destination": "/portal/carrier-metrics",     "permanent": true },
+    { "source": "/admin",               "destination": "/portal/admin",               "permanent": true },
+    { "source": "/admin-tools",         "destination": "/portal/admin-tools",         "permanent": true }
+  ],
   "rewrites": [
     { "source": "/:path*", "destination": "/index.html" }
   ]

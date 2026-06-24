@@ -42,7 +42,7 @@ self.addEventListener('push', (event) => {
         body:  data.body  ?? 'A new lead has been assigned to you.',
         icon:  '/pwa-192x192.png',
         badge: '/pwa-192x192.png',
-        data:  { url: data.url ?? '/leads' },
+        data:  { url: data.url ?? '/portal/leads' },
       })
       // App icon badge — Android Chrome and desktop Chrome/Edge only (no iOS/Firefox support)
       if ('setAppBadge' in navigator) {
