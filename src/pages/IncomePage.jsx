@@ -393,16 +393,11 @@ function RunningBalanceChart({ periodTx, theme }) {
     })
   }, [periodTx])
 
-  const distinctMonths = useMemo(() => {
-    const months = new Set(periodTx.map(tx => tx.date?.slice(0,7)))
-    return months.size
-  }, [periodTx])
-
-  if (chartData.length < 2 || distinctMonths < 2) {
+  if (chartData.length < 2) {
     return (
       <CardShell className="p-5">
         <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">Running Balance</h3>
-        <EmptyChart message="Need at least 2 months of data to show running balance" />
+        <EmptyChart message="Add at least 2 transactions to see running balance" />
       </CardShell>
     )
   }
