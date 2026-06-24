@@ -6,6 +6,7 @@ import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import AddAgentModal from '../components/AddAgentModal'
 import HireMatchingModal from '../components/HireMatchingModal'
 import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil } from '../utils/format'
+import { makeAuthHeaders } from '../utils/authHeaders'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -74,11 +75,7 @@ export default function AgentsPage() {
   const [addSuccess,   setAddSuccess]   = useState(null)
   const [matchingHires, setMatchingHires] = useState(null) // array of newly added agents to match
 
-  function authHeaders() {
-    const h = { 'Content-Type': 'application/json' }
-    if (session?.access_token) h['Authorization'] = `Bearer ${session.access_token}`
-    return h
-  }
+  const authHeaders = () => makeAuthHeaders(session)
 
   const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 

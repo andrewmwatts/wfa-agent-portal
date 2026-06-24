@@ -4,9 +4,11 @@ import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 
 import AddAgentModal from '../components/AddAgentModal'
+import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
 import { toInputDate, fmtDate } from '../utils/format'
+import { makeAuthHeaders } from '../utils/authHeaders'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,8 +22,10 @@ function isTruthy(val) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const { userProfile }                = useAuth()
+  const { userProfile, session }       = useAuth()
   const { activeSubject, permissions } = useViewing()
+
+  const authHeaders = () => makeAuthHeaders(session)
 
   const [masterPersonnel,  setMasterPersonnel]  = useState([])
   const [contractCounts,   setContractCounts]   = useState({}) // sfg_id → count of core carrier numbers
@@ -41,6 +45,7 @@ export default function OnboardingPage() {
 
   const [selected,    setSelected]    = useState(null) // personnel row for detail modal
   const [showAdd,     setShowAdd]     = useState(false)
+  const [showImport,  setShowImport]  = useState(false)
   const [addSuccess,  setAddSuccess]  = useState(null) // { uplineWarning } | null
 
   const isSuperAdmin = userProfile?.role === 'super_admin'
@@ -195,12 +200,20 @@ export default function OnboardingPage() {
               {rows.length.toLocaleString()} of {visibleCount.toLocaleString()} agents
             </span>
             {isSuperAdmin && (
-              <button
-                onClick={() => setShowAdd(true)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-accent text-accent font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
-              >
-                + Add Agent
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-accent text-accent font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
+                >
+                  + Add Agent
+                </button>
+                <button
+                  onClick={() => setShowImport(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors whitespace-nowrap"
+                >
+                  Import CSV
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -329,6 +342,16 @@ export default function OnboardingPage() {
             setTimeout(() => setAddSuccess(null), 5000)
             if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
           }}
+        />
+      )}
+
+      {/* ── Bulk Import Modal ───────────────────────────────────────────────── */}
+      {showImport && (
+        <BulkAgentImportModal
+          existingPersonnel={personnel}
+          authHeaders={authHeaders}
+          onClose={() => setShowImport(false)}
+          onImportDone={() => { if (activeSubject?.sfg_id) load(activeSubject.sfg_id) }}
         />
       )}
 
