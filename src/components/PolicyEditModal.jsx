@@ -279,9 +279,17 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
       const updates = {}
       for (const [key, col] of Object.entries(POLICY_COL_MAP)) {
         const v = typedDraft[key]
-        if      (POLICY_NUMERIC_KEYS.has(key))  updates[col] = v
-        else if (POLICY_BOOLEAN_KEYS.has(key))  updates[col] = !!v
-        else                                    updates[col] = String(v ?? '')
+        if (POLICY_NUMERIC_KEYS.has(key)) {
+          updates[col] = v
+        } else if (POLICY_BOOLEAN_KEYS.has(key)) {
+          updates[col] = !!v
+        } else {
+          const str = String(v ?? '')
+          // Don't overwrite computed week fields with null when the policy was
+          // loaded from a context that doesn't include them (snapshot, dashboard)
+          if ((col === 'submit_week' || col === 'submit_week_num') && !str) continue
+          updates[col] = str
+        }
       }
       if (typedDraft.chargeback_exempt === null || typedDraft.chargeback_exempt === undefined) {
         delete updates['chargeback_exempt']
