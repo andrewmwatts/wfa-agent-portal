@@ -1,10 +1,11 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const DEV_BYPASS = import.meta.env.VITE_BYPASS_AUTH === 'true'
 
 export default function ProtectedRoute({ allowedRoles }) {
   const { session, role, loading, pendingInvite } = useAuth()
+  const location = useLocation()
 
   if (DEV_BYPASS) return <Outlet />
 
@@ -16,13 +17,16 @@ export default function ProtectedRoute({ allowedRoles }) {
     )
   }
 
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) {
+    const redirect = encodeURIComponent(location.pathname + location.search)
+    return <Navigate to={`/login?redirect=${redirect}`} replace />
+  }
 
   // Invite-only session — no portal profile yet
   if (pendingInvite) return <Navigate to="/accept-invite" replace />
 
   if (allowedRoles && !allowedRoles.includes(role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/portal/dashboard" replace />
   }
 
   return <Outlet />

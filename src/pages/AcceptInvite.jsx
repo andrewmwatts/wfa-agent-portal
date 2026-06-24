@@ -76,7 +76,7 @@ export default function AcceptInvite() {
       await fetchAndSetProfile(session.user.id)
       setPendingInvite(false)
 
-      navigate('/dashboard', { replace: true })
+      navigate('/portal/dashboard', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {

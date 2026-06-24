@@ -1,11 +1,22 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+function getSafeRedirect(redirectParam) {
+  if (!redirectParam) return '/portal/dashboard'
+  try {
+    const decoded = decodeURIComponent(redirectParam)
+    if (decoded.startsWith('/portal/') || decoded === '/portal') {
+      return decoded
+    }
+  } catch { /* malformed encoding */ }
+  return '/portal/dashboard'
+}
 
 export default function Login() {
   const { signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   const [forgotSent, setForgotSent] = useState(false)
@@ -30,7 +41,7 @@ export default function Login() {
     try {
       if (mode === 'login') {
         await signIn(email, password)
-        navigate('/dashboard', { replace: true })
+        navigate(getSafeRedirect(searchParams.get('redirect')), { replace: true })
       } else if (mode === 'register') {
         // Step 1: validate SFG ID against Personnel sheet
         const validation = await fetch('/api/users?action=validate', {
@@ -52,7 +63,7 @@ export default function Login() {
         } else if (result2?.requiresConfirmation) {
           setRegisterSuccess(true)
         } else {
-          navigate('/dashboard', { replace: true })
+          navigate(getSafeRedirect(searchParams.get('redirect')), { replace: true })
         }
       } else if (mode === 'forgot') {
         await resetPassword(email)
