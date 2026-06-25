@@ -28,6 +28,7 @@ const LINE_COLORS     = ['#3b82f6', '#10b981', '#f59e0b']
 
 const CONTRACT_LEVELS   = [85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
 const LEADERSHIP_ORDER  = ['TL', 'KL', 'AO']
+const TITLE_LABELS      = { TL: 'Team Leader', KL: 'Key Leader', AO: 'Agency Owner' }
 
 // ─── Date / period helpers ─────────────────────────────────────────────────────
 
@@ -356,6 +357,11 @@ function AgentHeader({ agent, promotions, nextCommTarget, nextLeadTarget }) {
     .filter(p => p.promotion_type === 'commission' && p.qualified_date)
     .sort((a, b) => a.qualified_date.localeCompare(b.qualified_date))
 
+  // Leadership title promotions sorted ascending by qualified_date
+  const leadPromos = (promotions ?? [])
+    .filter(p => p.promotion_type === 'leadership' && p.qualified_date)
+    .sort((a, b) => a.qualified_date.localeCompare(b.qualified_date))
+
   const fmtAPV = v => v != null ? `$${Math.round(v).toLocaleString()}` : '—'
 
   return (
@@ -414,24 +420,48 @@ function AgentHeader({ agent, promotions, nextCommTarget, nextLeadTarget }) {
         </div>
       )}
 
-      {/* Compact promotion timeline */}
-      {commPromos.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-2">
-            Promotion History
-          </p>
-          <div className="flex flex-wrap gap-x-1 gap-y-1 items-center">
-            {commPromos.map((p, i) => (
-              <div key={i} className="flex items-center gap-1">
-                {i > 0 && <span className="text-gray-300 dark:text-white/15 text-xs select-none">→</span>}
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/8 dark:bg-accent/12 text-xs">
-                  <span className="font-semibold text-accent">Lvl {p.level}</span>
-                  <span className="text-gray-400 dark:text-white/35">{fmtDate(p.qualified_date)}</span>
-                  {p.is_slingshot && <span className="text-yellow-500">⚡</span>}
-                </span>
+      {/* Promotion + leadership timelines */}
+      {(commPromos.length > 0 || leadPromos.length > 0) && (
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/8 space-y-3">
+          {commPromos.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-2">
+                Promotion History
+              </p>
+              <div className="flex flex-wrap gap-x-1 gap-y-1 items-center">
+                {commPromos.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-gray-300 dark:text-white/15 text-xs select-none">→</span>}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/8 dark:bg-accent/12 text-xs">
+                      <span className="font-semibold text-accent">Lvl {p.level}</span>
+                      <span className="text-gray-400 dark:text-white/35">{fmtDate(p.qualified_date)}</span>
+                      {p.is_slingshot && <span className="text-yellow-500">⚡</span>}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+          {leadPromos.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-2">
+                Leadership Titles
+              </p>
+              <div className="flex flex-wrap gap-x-1 gap-y-1 items-center">
+                {leadPromos.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-gray-300 dark:text-white/15 text-xs select-none">→</span>}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/8 dark:bg-purple-500/12 text-xs">
+                      <span className="font-semibold text-purple-600 dark:text-purple-400">
+                        {TITLE_LABELS[String(p.level).toUpperCase()] ?? String(p.level).toUpperCase()}
+                      </span>
+                      <span className="text-gray-400 dark:text-white/35">{fmtDate(p.qualified_date)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </CardShell>
@@ -1161,7 +1191,7 @@ function PendingPolicies({ policies }) {
 
 // ─── Section 9: Recruiting & Downline ─────────────────────────────────────────
 
-function RecruitingDownline({ downline, downlinePolicies, period }) {
+function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], period }) {
   const periodLabel = PERIOD_PRESETS.find(p => p.key === period.preset)?.label ?? 'Period'
 
   if (!downline.length) {
@@ -1188,15 +1218,26 @@ function RecruitingDownline({ downline, downlinePolicies, period }) {
     if (pol.status === 'Issued' && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true
   }
 
-  // Team totals
-  const totalHired   = downline.length
-  const last90Count  = downline.filter(a => a.hire_date >= cutoff90).length
+  // Agent's own production in period (included in team totals)
+  const selfProd = { submAPV: 0, issdAPV: 0, cntSubm: 0, cntIssd: 0 }
+  for (const pol of agentPolicies) {
+    if (inPeriod(pol.submit_date, period)) {
+      selfProd.submAPV += pol.submitted_apv ?? 0
+      selfProd.issdAPV += pol.issued_apv    ?? 0
+      selfProd.cntSubm += 1
+      if (pol.status === 'Issued') selfProd.cntIssd += 1
+    }
+  }
+
+  // Team totals (downline + agent themselves)
+  const totalHired    = downline.length
+  const last90Count   = downline.filter(a => a.hire_date >= cutoff90).length
   const activeWriters = downline.filter(a => agentProd[a.sfg_id]?.active).length
-  const teamSubmAPV  = Object.values(agentProd).reduce((s, v) => s + v.submAPV, 0)
-  const teamIssdAPV  = Object.values(agentProd).reduce((s, v) => s + v.issdAPV, 0)
-  const teamCntSubm  = Object.values(agentProd).reduce((s, v) => s + v.cntSubm, 0)
-  const teamCntIssd  = Object.values(agentProd).reduce((s, v) => s + v.cntIssd, 0)
-  const teamAvgAPV   = teamCntSubm > 0 ? Math.round(teamSubmAPV / teamCntSubm) : null
+  const teamSubmAPV   = Object.values(agentProd).reduce((s, v) => s + v.submAPV, 0) + selfProd.submAPV
+  const teamIssdAPV   = Object.values(agentProd).reduce((s, v) => s + v.issdAPV, 0) + selfProd.issdAPV
+  const teamCntSubm   = Object.values(agentProd).reduce((s, v) => s + v.cntSubm, 0) + selfProd.cntSubm
+  const teamCntIssd   = Object.values(agentProd).reduce((s, v) => s + v.cntIssd, 0) + selfProd.cntIssd
+  const teamAvgAPV    = teamCntSubm > 0 ? Math.round(teamSubmAPV / teamCntSubm) : null
 
   return (
     <div className="space-y-5">
@@ -1454,6 +1495,7 @@ export default function CoachingPage() {
             <RecruitingDownline
               downline={data.downline}
               downlinePolicies={data.downlinePolicies}
+              agentPolicies={data.policies}
               period={period}
             />
           </SectionCard>
