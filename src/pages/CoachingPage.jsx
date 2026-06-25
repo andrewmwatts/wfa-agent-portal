@@ -11,10 +11,11 @@ import { fmtDate, parseDateLocal } from '../utils/format'
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const PERIOD_PRESETS = [
-  { key: 'month',   label: 'Month'    },
-  { key: 'quarter', label: 'Quarter'  },
-  { key: 'ytd',     label: 'YTD'      },
-  { key: 'all',     label: 'All Time' },
+  { key: 'month',   label: 'Month'     },
+  { key: 'quarter', label: 'Quarter'   },
+  { key: 'ytd',     label: 'YTD'       },
+  { key: 'year',    label: 'Last Year' },
+  { key: 'all',     label: 'All Time'  },
 ]
 
 const DONUT_COLORS = [
@@ -42,6 +43,7 @@ function computePeriod(preset) {
   if (preset === 'month')   return { preset, start: toYMD(new Date(y, m, 1)),                 end: toYMD(now) }
   if (preset === 'quarter') return { preset, start: toYMD(new Date(y, Math.floor(m/3)*3, 1)), end: toYMD(now) }
   if (preset === 'ytd')     return { preset, start: toYMD(new Date(y, 0, 1)),                  end: toYMD(now) }
+  if (preset === 'year')    { const s = new Date(now); s.setFullYear(s.getFullYear() - 1); return { preset, start: toYMD(s), end: toYMD(now) } }
   return { preset: 'all', start: null, end: null }
 }
 
@@ -477,7 +479,7 @@ function ProductionSummary({ policies, period, isDark }) {
   // All stats driven by the period selector
   const periodPols  = policies.filter(p => inPeriod(p.submit_date, period))
   const submAPV     = periodPols.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
-  const issdAPV     = periodPols.reduce((s, p) => s + (p.issued_apv    ?? 0), 0)
+  const issdAPV     = periodPols.filter(p => p.status === 'Issued').reduce((s, p) => s + (p.issued_apv ?? 0), 0)
   const cntSubm     = periodPols.length
   const cntIssd     = periodPols.filter(p => p.status === 'Issued').length
   const avgAPV      = cntSubm > 0 ? Math.round(submAPV / cntSubm) : null
@@ -1211,9 +1213,11 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
     if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { submAPV: 0, issdAPV: 0, cntSubm: 0, cntIssd: 0, active: false }
     if (inPeriod(pol.submit_date, period)) {
       agentProd[pol.sfg_id].submAPV  += pol.submitted_apv ?? 0
-      agentProd[pol.sfg_id].issdAPV  += pol.issued_apv    ?? 0
       agentProd[pol.sfg_id].cntSubm  += 1
-      if (pol.status === 'Issued') agentProd[pol.sfg_id].cntIssd += 1
+      if (pol.status === 'Issued') {
+        agentProd[pol.sfg_id].issdAPV += pol.issued_apv ?? 0
+        agentProd[pol.sfg_id].cntIssd += 1
+      }
     }
     if (pol.status === 'Issued' && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true
   }
@@ -1223,11 +1227,24 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
   for (const pol of agentPolicies) {
     if (inPeriod(pol.submit_date, period)) {
       selfProd.submAPV += pol.submitted_apv ?? 0
-      selfProd.issdAPV += pol.issued_apv    ?? 0
       selfProd.cntSubm += 1
-      if (pol.status === 'Issued') selfProd.cntIssd += 1
+      if (pol.status === 'Issued') {
+        selfProd.issdAPV += pol.issued_apv ?? 0
+        selfProd.cntIssd += 1
+      }
     }
   }
+
+  // Period-filtered roster stats
+  const hiredInPeriod    = downline.filter(a => inPeriod(a.hire_date, period))
+  const writersInPeriod  = downline.filter(a => (agentProd[a.sfg_id]?.cntSubm ?? 0) > 0)
+  // "New writer" = wrote in period but had no prior production before the period start
+  const agentsWithPrior  = new Set(
+    period.preset === 'all' ? [] :
+    downlinePolicies.filter(p => p.submit_date < period.start).map(p => p.sfg_id)
+  )
+  const newWriters       = writersInPeriod.filter(a => !agentsWithPrior.has(a.sfg_id))
+  const returningWriters = writersInPeriod.filter(a =>  agentsWithPrior.has(a.sfg_id))
 
   // Team totals (downline + agent themselves)
   const totalHired    = downline.length
@@ -1241,11 +1258,28 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
 
   return (
     <div className="space-y-5">
-      {/* Roster overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard label="Agents Hired"    primary={totalHired}    sub1={`${last90Count} in last 90 days`} />
-        <MetricCard label="Active Writers"  primary={activeWriters} sub1="issued policy in last 90 days" />
-        <MetricCard label="Inactive Writers" primary={totalHired - activeWriters} sub1="no recent production" />
+      {/* Roster overview — all time */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-3">
+          All Time
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <MetricCard label="Agents Hired"     primary={totalHired}                sub1="all time" />
+          <MetricCard label="Active Writers"   primary={activeWriters}             sub1="issued policy in last 90 days" />
+          <MetricCard label="Inactive Writers" primary={totalHired - activeWriters} sub1="no recent production" />
+        </div>
+      </div>
+
+      {/* Roster overview — selected period */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35 mb-3">
+          {periodLabel}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <MetricCard label="Hired"              primary={hiredInPeriod.length}    sub1={periodLabel} />
+          <MetricCard label="New Writers"        primary={newWriters.length}       sub1="first production ever" />
+          <MetricCard label="Returning Writers"  primary={returningWriters.length} sub1="prior production on record" />
+        </div>
       </div>
 
       {/* Team production — mirrors the agent production cards */}
