@@ -12,7 +12,7 @@ export const SERIES_META = {
 }
 
 // Named strips rendered in order; everything else → additional strip
-export const STRIP_ORDER = ['wfh', 'fif-reset-room', 'babb', 'tpc', 'su']
+export const STRIP_ORDER = ['wfh', 'tpc', 'babb', 'fif-reset-room', 'su']
 
 export const SERIES_CHIP_COLORS = {
   'wfh':             { bg: '#E6F3F5', text: '#005365' },

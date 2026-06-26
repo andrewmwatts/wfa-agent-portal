@@ -12,7 +12,7 @@ function ArrowLeftIcon() {
 
 const PAGE_SIZE = 25
 
-export default function FlatView({ videos, activeSeries, searchQuery, onVideoClick, onBack }) {
+export default function FlatView({ videos, activeSeries, searchQuery, onVideoClick, onBack, listHeaderTop = 52 }) {
   const [showing, setShowing] = useState(PAGE_SIZE)
 
   // Reset pagination when filter changes
@@ -30,7 +30,7 @@ export default function FlatView({ videos, activeSeries, searchQuery, onVideoCli
     <div style={{ background: 'var(--pub-bg-page)', paddingBottom: 40 }}>
       {/* Sticky list header */}
       <div style={{
-        position: 'sticky', top: 52, zIndex: 30,
+        position: 'sticky', top: listHeaderTop, zIndex: 30,
         background: '#fff', borderBottom: '0.5px solid var(--pub-border)',
         padding: '12px 28px',
       }}>

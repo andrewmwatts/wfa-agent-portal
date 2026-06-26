@@ -32,10 +32,10 @@ export default function VideoRow({ video, onClick }) {
       }}
     >
       {/* Thumbnail */}
-      <div style={{ width: 88, flexShrink: 0, borderRadius: 8, overflow: 'hidden', position: 'relative', aspectRatio: '16/9' }}>
+      <div style={{ width: 101, flexShrink: 0, borderRadius: 8, overflow: 'hidden', position: 'relative', aspectRatio: '16/9' }}>
         {video.thumbnail_url ? (
           <img src={video.thumbnail_url} alt="" loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            style={{ width: 101, height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', background: '#E4EDEF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: '#A8BFC2' }}><PlayIcon size={16} /></span>

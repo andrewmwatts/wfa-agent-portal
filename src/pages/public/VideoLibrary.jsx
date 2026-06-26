@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PublicLayout from '../../components/public/PublicLayout'
 import SearchBar from '../../components/public/SearchBar'
@@ -18,6 +18,17 @@ export default function VideoLibrary() {
   const [activeSeries,  setActiveSeries]  = useState(() => searchParams.get('series') ?? null)
   const [searchQuery,   setSearchQuery]   = useState(() => searchParams.get('q') ?? '')
   const [selectedVideo, setSelectedVideo] = useState(null)
+
+  // Measure filter bar height so FlatView's ListHeader stacks below it
+  const filterBarRef = useRef(null)
+  const [filterBarH, setFilterBarH] = useState(0)
+  useEffect(() => {
+    const el = filterBarRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => setFilterBarH(entries[0].contentRect.height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // Load all published resources once
   useEffect(() => {
@@ -80,15 +91,24 @@ export default function VideoLibrary() {
 
   return (
     <PublicLayout>
-      {/* Hero / filter bar */}
-      <div style={{ background: '#fff', borderBottom: '0.5px solid #DDE6E8', padding: '28px 28px 20px' }}>
+      {/* Page title — not sticky */}
+      <div style={{ background: '#fff', padding: '28px 28px 0' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24, fontWeight: 500, color: '#003539', margin: '0 0 6px' }}>
             Training video library
           </h1>
-          <p style={{ fontSize: 13, color: '#4A6568', margin: '0 0 16px', maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
+          <p style={{ fontSize: 13, color: '#4A6568', margin: 0, maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
             {videoCount}+ videos across all calls and series. Search by topic, speaker, or browse below.
           </p>
+        </div>
+      </div>
+
+      {/* Filter bar — sticky so chips stay reachable while scrolling */}
+      <div ref={filterBarRef} style={{
+        background: '#fff', borderBottom: '0.5px solid #DDE6E8',
+        padding: '14px 28px 16px', position: 'sticky', top: 52, zIndex: 30,
+      }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <SearchBar value={searchQuery} onChange={handleSearchChange} />
           <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} />
         </div>
@@ -117,6 +137,7 @@ export default function VideoLibrary() {
             searchQuery={searchQuery}
             onVideoClick={setSelectedVideo}
             onBack={handleBack}
+            listHeaderTop={52 + filterBarH}
           />
         ) : (
           <StripsView
