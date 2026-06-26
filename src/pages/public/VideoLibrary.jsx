@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PublicLayout from '../../components/public/PublicLayout'
 import SearchBar from '../../components/public/SearchBar'
@@ -7,7 +7,15 @@ import StripsView from '../../components/public/StripsView'
 import FlatView from '../../components/public/FlatView'
 import VideoModal from '../../components/public/VideoModal'
 import { supabase } from '../../lib/supabaseClient'
-import { SHOW_ALL_FLAT } from '../../components/public/publicConstants'
+import { SHOW_ALL_FLAT, getSeriesName } from '../../components/public/publicConstants'
+
+function ArrowLeftIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  )
+}
 
 export default function VideoLibrary() {
   const [searchParams] = useSearchParams()
@@ -20,17 +28,6 @@ export default function VideoLibrary() {
   const [searchQuery,   setSearchQuery]   = useState(() => searchParams.get('q') ?? '')
   const [showAllFlat,   setShowAllFlat]   = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(null)
-
-  // Measure chips bar height so FlatView's ListHeader stacks below it
-  const chipsBarRef = useRef(null)
-  const [chipsBarH, setChipsBarH] = useState(0)
-  useEffect(() => {
-    const el = chipsBarRef.current
-    if (!el) return
-    const ro = new ResizeObserver(entries => setChipsBarH(entries[0].contentRect.height))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   // Load all published resources once
   useEffect(() => {
@@ -58,9 +55,7 @@ export default function VideoLibrary() {
   // Client-side filtering — all-time data is already sorted newest first
   const filteredVideos = useMemo(() => {
     let list = allVideos
-    if (activeSeries) {
-      list = list.filter(v => v.series_slug === activeSeries)
-    }
+    if (activeSeries) list = list.filter(v => v.series_slug === activeSeries)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       list = list.filter(v =>
@@ -74,15 +69,15 @@ export default function VideoLibrary() {
 
   const isFlatView = showAllFlat || !!activeSeries || !!searchQuery.trim()
 
+  const flatTitle = activeSeries
+    ? getSeriesName(activeSeries)
+    : searchQuery.trim() ? 'Search results' : 'All videos'
+
   function handleSeriesSelect(slug) {
     if (slug === SHOW_ALL_FLAT) {
-      setShowAllFlat(true)
-      setActiveSeries(null)
-      setSearchQuery('')
+      setShowAllFlat(true); setActiveSeries(null); setSearchQuery('')
     } else {
-      setShowAllFlat(false)
-      setActiveSeries(slug)
-      setSearchQuery('')
+      setShowAllFlat(false); setActiveSeries(slug); setSearchQuery('')
     }
   }
 
@@ -92,9 +87,7 @@ export default function VideoLibrary() {
   }
 
   function handleBack() {
-    setShowAllFlat(false)
-    setActiveSeries(null)
-    setSearchQuery('')
+    setShowAllFlat(false); setActiveSeries(null); setSearchQuery('')
   }
 
   const videoCount = allVideos.length || 440
@@ -114,13 +107,41 @@ export default function VideoLibrary() {
         </div>
       </div>
 
-      {/* Chips bar — sticky so series filters stay reachable while scrolling */}
-      <div ref={chipsBarRef} style={{
+      {/* Single sticky bar — chips always, plus list context row in flat view */}
+      <div style={{
         background: '#fff', borderBottom: '0.5px solid #DDE6E8',
-        padding: '10px 28px 12px', position: 'sticky', top: 52, zIndex: 30,
+        position: 'sticky', top: 52, zIndex: 30,
       }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} marginTop={0} />
+        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px' }}>
+          {/* Chips row */}
+          <div style={{ padding: '10px 0 12px' }}>
+            <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} marginTop={0} />
+          </div>
+
+          {/* List context row — only shown in flat view */}
+          {isFlatView && (
+            <div style={{
+              borderTop: '0.5px solid #EEF1F2', padding: '10px 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <p style={{ fontSize: 15, fontWeight: 500, color: '#1A2B2E', margin: 0, fontFamily: 'Inter, sans-serif' }}>
+                  {flatTitle}
+                </p>
+                <p style={{ fontSize: 12, color: '#7A9499', margin: '1px 0 0', fontFamily: 'Inter, sans-serif' }}>
+                  {filteredVideos.length} video{filteredVideos.length !== 1 ? 's' : ''} · newest first
+                </p>
+              </div>
+              <button onClick={handleBack}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 12, color: '#4A6568', display: 'flex', alignItems: 'center', gap: 4,
+                  fontFamily: 'Inter, sans-serif', padding: '6px 0',
+                }}>
+                <ArrowLeftIcon /> All series
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -143,11 +164,7 @@ export default function VideoLibrary() {
         isFlatView ? (
           <FlatView
             videos={filteredVideos}
-            activeSeries={activeSeries}
-            searchQuery={searchQuery}
             onVideoClick={setSelectedVideo}
-            onBack={handleBack}
-            listHeaderTop={52 + chipsBarH}
           />
         ) : (
           <StripsView
