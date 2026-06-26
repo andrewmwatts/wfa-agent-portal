@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import SeriesStrip from './SeriesStrip'
-import { STRIP_ORDER } from './publicConstants'
+import { STRIP_ORDER, SHOW_ALL_FLAT } from './publicConstants'
 
 export default function StripsView({ videos, onSeriesSelect, onVideoClick }) {
   const { bySlug, additional } = useMemo(() => {
@@ -42,7 +42,7 @@ export default function StripsView({ videos, onSeriesSelect, onVideoClick }) {
             slug="__additional__"
             videos={additional}
             totalCount={additional.length}
-            onSeeAll={() => onSeriesSelect(null)}
+            onSeeAll={() => onSeriesSelect(SHOW_ALL_FLAT)}
             onVideoClick={onVideoClick}
             isLast={true}
           />

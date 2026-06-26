@@ -14,6 +14,10 @@ export const SERIES_META = {
 // Named strips rendered in order; everything else → additional strip
 export const STRIP_ORDER = ['wfh', 'tpc', 'babb', 'fif-reset-room', 'su']
 
+// Sentinel used by the Additional Training "See all →" link to enter flat
+// view showing all videos (activeSeries stays null but isFlatView = true)
+export const SHOW_ALL_FLAT = '__show_all__'
+
 export const SERIES_CHIP_COLORS = {
   'wfh':             { bg: '#E6F3F5', text: '#005365' },
   'fif-reset-room':  { bg: '#EAF3DE', text: '#3B6D11' },

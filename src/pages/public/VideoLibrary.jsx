@@ -7,6 +7,7 @@ import StripsView from '../../components/public/StripsView'
 import FlatView from '../../components/public/FlatView'
 import VideoModal from '../../components/public/VideoModal'
 import { supabase } from '../../lib/supabaseClient'
+import { SHOW_ALL_FLAT } from '../../components/public/publicConstants'
 
 export default function VideoLibrary() {
   const [searchParams] = useSearchParams()
@@ -17,15 +18,16 @@ export default function VideoLibrary() {
   const [error,         setError]         = useState(null)
   const [activeSeries,  setActiveSeries]  = useState(() => searchParams.get('series') ?? null)
   const [searchQuery,   setSearchQuery]   = useState(() => searchParams.get('q') ?? '')
+  const [showAllFlat,   setShowAllFlat]   = useState(false)
   const [selectedVideo, setSelectedVideo] = useState(null)
 
-  // Measure filter bar height so FlatView's ListHeader stacks below it
-  const filterBarRef = useRef(null)
-  const [filterBarH, setFilterBarH] = useState(0)
+  // Measure chips bar height so FlatView's ListHeader stacks below it
+  const chipsBarRef = useRef(null)
+  const [chipsBarH, setChipsBarH] = useState(0)
   useEffect(() => {
-    const el = filterBarRef.current
+    const el = chipsBarRef.current
     if (!el) return
-    const ro = new ResizeObserver(entries => setFilterBarH(entries[0].contentRect.height))
+    const ro = new ResizeObserver(entries => setChipsBarH(entries[0].contentRect.height))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -70,19 +72,27 @@ export default function VideoLibrary() {
     return list
   }, [allVideos, activeSeries, searchQuery])
 
-  const isFlatView = !!activeSeries || !!searchQuery.trim()
+  const isFlatView = showAllFlat || !!activeSeries || !!searchQuery.trim()
 
   function handleSeriesSelect(slug) {
-    setActiveSeries(slug)
-    setSearchQuery('')
+    if (slug === SHOW_ALL_FLAT) {
+      setShowAllFlat(true)
+      setActiveSeries(null)
+      setSearchQuery('')
+    } else {
+      setShowAllFlat(false)
+      setActiveSeries(slug)
+      setSearchQuery('')
+    }
   }
 
   function handleSearchChange(q) {
     setSearchQuery(q)
-    if (q.trim()) setActiveSeries(null)
+    if (q.trim()) { setActiveSeries(null); setShowAllFlat(false) }
   }
 
   function handleBack() {
+    setShowAllFlat(false)
     setActiveSeries(null)
     setSearchQuery('')
   }
@@ -91,26 +101,26 @@ export default function VideoLibrary() {
 
   return (
     <PublicLayout>
-      {/* Page title — not sticky */}
-      <div style={{ background: '#fff', padding: '28px 28px 0' }}>
+      {/* Page title + search — not sticky */}
+      <div style={{ background: '#fff', padding: '28px 28px 16px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24, fontWeight: 500, color: '#003539', margin: '0 0 6px' }}>
             Training video library
           </h1>
-          <p style={{ fontSize: 13, color: '#4A6568', margin: 0, maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
+          <p style={{ fontSize: 13, color: '#4A6568', margin: '0 0 16px', maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
             {videoCount}+ videos across all calls and series. Search by topic, speaker, or browse below.
           </p>
+          <SearchBar value={searchQuery} onChange={handleSearchChange} />
         </div>
       </div>
 
-      {/* Filter bar — sticky so chips stay reachable while scrolling */}
-      <div ref={filterBarRef} style={{
+      {/* Chips bar — sticky so series filters stay reachable while scrolling */}
+      <div ref={chipsBarRef} style={{
         background: '#fff', borderBottom: '0.5px solid #DDE6E8',
-        padding: '14px 28px 16px', position: 'sticky', top: 52, zIndex: 30,
+        padding: '10px 28px 12px', position: 'sticky', top: 52, zIndex: 30,
       }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <SearchBar value={searchQuery} onChange={handleSearchChange} />
-          <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} />
+          <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} marginTop={0} />
         </div>
       </div>
 
@@ -137,7 +147,7 @@ export default function VideoLibrary() {
             searchQuery={searchQuery}
             onVideoClick={setSelectedVideo}
             onBack={handleBack}
-            listHeaderTop={52 + filterBarH}
+            listHeaderTop={52 + chipsBarH}
           />
         ) : (
           <StripsView

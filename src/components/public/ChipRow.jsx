@@ -1,8 +1,8 @@
 import { CHIPS } from './publicConstants'
 
-export default function ChipRow({ activeSeries, onSelect }) {
+export default function ChipRow({ activeSeries, onSelect, marginTop = 14 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop }}>
       <span style={{
         fontSize: 11, color: '#7A9499', textTransform: 'uppercase',
         letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif', flexShrink: 0,
