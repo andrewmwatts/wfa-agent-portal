@@ -239,9 +239,19 @@ function MaccSchedule() {
         </p>
       </div>
 
-      <p style={{ fontSize: 11, color: '#9BB3B8', margin: '10px 0 0', fontFamily: 'Inter, sans-serif' }}>
-        Zoom ID: 358 094 4678 · password: grit
-      </p>
+      <div style={{ marginTop: 14 }}>
+        <a
+          href="https://us02web.zoom.us/j/3580944678?pwd=bjVqVmJZMS9LaDJSMEFidkI4NWozQT09"
+          target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 13, color: '#EE2666', fontFamily: 'Inter, sans-serif', textDecoration: 'none', fontWeight: 500 }}
+        >
+          Join the MACC Room →
+        </a>
+        <p style={{ fontSize: 12, color: '#7A9499', margin: '6px 0 0', fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
+          Meeting ID: 358 094 4678<br />
+          Passcode: grit
+        </p>
+      </div>
     </div>
   )
 }
@@ -272,26 +282,24 @@ export default function CalendarPage() {
             Business Months
           </p>
 
-          {/* Rules */}
-          <ul style={{ margin: '0 0 36px', padding: '0 0 0 18px', listStyle: 'disc' }}>
-            {BULLETS.map((b, i) => (
-              <li key={i} style={{ fontSize: 13, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: i < BULLETS.length - 1 ? 6 : 0 }}>
-                {b}
-              </li>
-            ))}
-          </ul>
-
           {/* Two-column layout */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
 
-            {/* Left — business calendars */}
+            {/* Left — MACC dialer schedule */}
+            <MaccSchedule />
+
+            {/* Right — business calendars + rules */}
             <div>
+              <ul style={{ margin: '0 0 28px', padding: '0 0 0 18px', listStyle: 'disc' }}>
+                {BULLETS.map((b, i) => (
+                  <li key={i} style={{ fontSize: 13, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: i < BULLETS.length - 1 ? 6 : 0 }}>
+                    {b}
+                  </li>
+                ))}
+              </ul>
               <BusinessCalendar bMonth={currentMonth} today={today} showTodayHighlight={true}  showLegend={true} />
               <BusinessCalendar bMonth={nextMonth}    today={today} showTodayHighlight={false} showLegend={false} />
             </div>
-
-            {/* Right — MACC dialer schedule */}
-            <MaccSchedule />
 
           </div>
 

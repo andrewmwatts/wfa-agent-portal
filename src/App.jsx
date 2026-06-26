@@ -103,7 +103,8 @@ export default function App() {
             <Route path="/"          element={<Landing />} />
             <Route path="/videos"    element={<VideoLibrary />} />
             <Route path="/resources" element={<ComingSoon title="Documents & guides" />} />
-            <Route path="/calendar"  element={<CalendarPage />} />
+            <Route path="/calendar"    element={<CalendarPage />} />
+            <Route path="/guidelines"  element={<ComingSoon title="Underwriting Guidelines" />} />
 
             {/* Unknown /portal/* paths → dashboard */}
             <Route path="/portal/*" element={<Navigate to="/portal/dashboard" replace />} />

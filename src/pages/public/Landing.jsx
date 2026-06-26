@@ -32,6 +32,15 @@ function CalendarIcon() {
   )
 }
 
+function BookIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#005365" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+    </svg>
+  )
+}
+
 const QUICK_LINKS = [
   {
     icon: <VideoIcon />,
@@ -48,7 +57,13 @@ const QUICK_LINKS = [
   {
     icon: <CalendarIcon />,
     title: 'Agency calendar',
-    body: 'Call schedules, training events, and key dates for the agency.',
+    body: 'Business month calendars, MACC Room schedule, and promotion rules.',
+    link: { label: 'View calendar →', to: '/calendar', active: true },
+  },
+  {
+    icon: <BookIcon />,
+    title: 'Underwriting guidelines',
+    body: 'Carrier-specific underwriting criteria, health classifications, and eligibility guides.',
     link: { label: 'Coming soon', active: false },
   },
 ]
@@ -83,7 +98,7 @@ export default function Landing() {
       {/* Quick links */}
       <div style={{ background: '#fff', padding: '32px 28px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {QUICK_LINKS.map(card => (
               <div key={card.title}
                 style={{ background: '#fff', border: '0.5px solid #DDE6E8', borderRadius: 10, padding: '20px 20px 16px' }}>

@@ -139,8 +139,14 @@ function Header({ userProfile, onSignOut, onMenuClick }) {
         )}
       </div>
 
-      {/* Right: theme toggle + user menu */}
+      {/* Right: agent resources link + theme toggle + user menu */}
       <div className="flex items-center gap-1 sm:gap-2">
+        <a
+          href="/"
+          className="hidden sm:inline-flex items-center text-xs font-medium text-gray-500 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/80 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 mr-1"
+        >
+          Agent Resources
+        </a>
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
