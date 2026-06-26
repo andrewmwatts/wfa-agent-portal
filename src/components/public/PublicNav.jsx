@@ -13,7 +13,7 @@ function LockIcon() {
 
 const NAV_LINKS = [
   { label: 'Videos',    path: '/videos'    },
-  { label: 'Resources', path: '/resources' },
+  { label: 'Documents', path: '/resources' },
   { label: 'Calendar',  path: '/calendar'  },
 ]
 
@@ -33,9 +33,9 @@ export default function PublicNav() {
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px', height: '100%', display: 'flex', alignItems: 'center', gap: 32 }}>
         {/* Wordmark */}
         <Link to="/" style={{ display: 'flex', alignItems: 'baseline', gap: 4, textDecoration: 'none', flexShrink: 0 }}>
-          <span style={{ color: '#fff', fontSize: 18, fontWeight: 500, fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>Watts/</span>
+          <span style={{ color: '#fff', fontSize: 18, fontWeight: 500, fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>Watts Family Agency</span>
           <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif' }}>
-            Resource library
+            Agent Resources
           </span>
         </Link>
 
