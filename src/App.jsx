@@ -30,6 +30,7 @@ import SnapshotPage from './pages/SnapshotPage'
 import IncomePage from './pages/IncomePage'
 import Landing from './pages/public/Landing'
 import VideoLibrary from './pages/public/VideoLibrary'
+import CalendarPage from './pages/public/CalendarPage'
 import PublicLayout from './components/public/PublicLayout'
 
 function ComingSoon({ title }) {
@@ -102,7 +103,7 @@ export default function App() {
             <Route path="/"          element={<Landing />} />
             <Route path="/videos"    element={<VideoLibrary />} />
             <Route path="/resources" element={<ComingSoon title="Documents & guides" />} />
-            <Route path="/calendar"  element={<ComingSoon title="Agency calendar" />} />
+            <Route path="/calendar"  element={<CalendarPage />} />
 
             {/* Unknown /portal/* paths → dashboard */}
             <Route path="/portal/*" element={<Navigate to="/portal/dashboard" replace />} />
