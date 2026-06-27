@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import PublicLayout from '../../components/public/PublicLayout'
 
 // ── Symmetry business-month helpers ──────────────────────────────────────────
@@ -274,12 +275,12 @@ function MaccSchedule() {
         </p>
       </div>
 
-      {/* Lightbox overlay */}
-      {lightbox && (
+      {/* Lightbox overlay — portalled to body so it clears all column stacking contexts */}
+      {lightbox && createPortal(
         <div
           onClick={() => setLightbox(false)}
           style={{
-            position: 'fixed', inset: 0, zIndex: 100,
+            position: 'fixed', inset: 0, zIndex: 9999,
             background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(6px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: 24, cursor: 'zoom-out',
@@ -301,7 +302,8 @@ function MaccSchedule() {
               backdropFilter: 'blur(4px)',
             }}
           >✕</button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
