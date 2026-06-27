@@ -141,6 +141,78 @@ export default function UnderwritingPage() {
             <span style={{ color: '#005365', fontWeight: 700 }}>†</span> Instant issue product — decision rendered at point of sale with no additional underwriting required.
           </p>
 
+          {/* Basic Underwriting Steps */}
+          <div style={{ marginTop: 56 }}>
+            <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
+              Underwriting Guidelines
+            </p>
+            <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: '0 0 28px' }}>
+              Basic Underwriting Steps
+            </h1>
+
+            <ol style={{ margin: '0 0 20px', padding: '0 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {[
+                {
+                  text: 'Use the Carrier Cheat Sheet to eliminate products based on age or coverage.',
+                  links: [{ label: 'Carrier Cheat Sheet', href: 'https://docs.google.com/document/d/1nG36psMpVOvHtqJ1bmL4eAMk9lNPzTRi1WdEyH9Ok-U/edit?usp=sharing' }],
+                },
+                {
+                  text: 'Use build charts to eliminate products based on height/weight.',
+                  links: [{ label: 'Build Charts', href: 'https://docs.google.com/spreadsheets/d/1fbx_Mb4mk7vAD9WpxRjcBzipQ_-ccBCOEbZZxNcrlXU/edit?gid=11449507#gid=11449507' }],
+                },
+                {
+                  text: 'Use the Matrix to eliminate products based on client health history.',
+                  links: [{ label: 'Matrix', href: 'https://docs.google.com/spreadsheets/d/1vd7cjSb3wB6FlH--YrLfzVur3XOclbYSAp8hP_rhuNs/edit?gid=1294218144#gid=1294218144' }],
+                },
+                {
+                  text: 'Use lookback guides for amplifying information.',
+                  links: [
+                    { label: 'Lookback Guide 1', href: 'https://acrobat.adobe.com/id/urn:aaid:sc:US:55eea2d3-a262-46d2-9f23-16fce572b173' },
+                    { label: 'Lookback Guide 2', href: 'https://acrobat.adobe.com/id/urn:aaid:sc:US:1f329cd0-3e42-4a2a-90a0-20aa84e15bf1' },
+                  ],
+                },
+                { text: 'Once you have eliminated knockout policies, call remaining carriers to risk assess.' },
+                { text: "If RA hotline didn't give you a premium quote, run quotes." },
+                { text: 'Post in #underwriting-help channel or message your mentor with your results for confirmation.' },
+              ].map(({ text, links }, i) => (
+                <li key={i} style={{
+                  display: 'flex', gap: 16, padding: '14px 0',
+                  borderBottom: i < 6 ? '0.5px solid #EEF3F4' : 'none',
+                }}>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700, color: '#005365',
+                    fontFamily: 'Inter, sans-serif', minWidth: 20, lineHeight: 1.6, flexShrink: 0,
+                  }}>
+                    {i + 1}
+                  </span>
+                  <span style={{ fontSize: 14, color: '#1A2B2E', fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
+                    {text}
+                    {links && (
+                      <span style={{ display: 'inline-flex', gap: 10, marginLeft: 8, flexWrap: 'wrap' }}>
+                        {links.map(({ label, href }) => (
+                          <a key={href} href={href} target="_blank" rel="noopener noreferrer"
+                            style={{ color: '#EE2666', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
+                            {label} →
+                          </a>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <div style={{
+              background: '#F5F9FA', border: '0.5px solid #DDE6E8', borderRadius: 10,
+              padding: '16px 20px', display: 'flex', gap: 12, alignItems: 'flex-start',
+            }}>
+              <span style={{ fontSize: 16, lineHeight: 1.4, flexShrink: 0 }}>💡</span>
+              <p style={{ fontSize: 13, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, margin: 0 }}>
+                <strong style={{ color: '#1A2B2E' }}>Navigator</strong> is great at comparing multiple products quickly, but it doesn't have every product in it. If you get a potential product via Navigator it's probably a good option, but if not you will need to go through all of the steps here.
+              </p>
+            </div>
+          </div>
+
         </div>
       </div>
     </PublicLayout>
