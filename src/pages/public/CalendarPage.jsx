@@ -309,15 +309,6 @@ function MaccSchedule() {
   )
 }
 
-// ── Rules bullets ─────────────────────────────────────────────────────────────
-
-const BULLETS = [
-  'Slingshot requires a submitted policy in at least 3 of 4 business weeks (or 4 of 5 in a 5-week month).',
-  'All other promotion metrics are based on issued business — issue dates follow the calendar month (1st through last day).',
-  'This means that some instant-issue business may "submit" in one month but issue in the previous month.',
-  'Leaderboards use Symmetry business weeks and months.',
-]
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
@@ -341,13 +332,6 @@ export default function CalendarPage() {
               <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 20px', fontFamily: 'Inter, sans-serif' }}>
                 Business Months
               </p>
-              <ul style={{ margin: '0 0 28px', padding: '0 0 0 18px', listStyle: 'disc' }}>
-                {BULLETS.map((b, i) => (
-                  <li key={i} style={{ fontSize: 13, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: i < BULLETS.length - 1 ? 6 : 0 }}>
-                    {b}
-                  </li>
-                ))}
-              </ul>
               <BusinessCalendar bMonth={currentMonth} today={today} showTodayHighlight={true}  showLegend={true} />
               <BusinessCalendar bMonth={nextMonth}    today={today} showTodayHighlight={false} showLegend={false} />
             </div>

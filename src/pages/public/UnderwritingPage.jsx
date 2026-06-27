@@ -1,12 +1,11 @@
 import PublicLayout from '../../components/public/PublicLayout'
 
 const TERM = [
-  { carrier: 'Banner',       product: 'BeyondTerm',                instant: true  },
-  { carrier: 'SBLI',         product: 'EasyTrak',                  instant: true  },
-  { carrier: 'Americo',      product: 'Home Mortgage Series',       instant: true  },
-  { carrier: 'AmAm',         product: 'Home Certainty',             instant: false },
-  { carrier: 'MOO',          product: 'Term Life Express',          instant: false },
-  { carrier: 'Foresters',    product: 'Strong Foundation',          instant: false },
+  { carrier: 'Banner',       product: 'BeyondTerm',                        instant: true  },
+  { carrier: 'SBLI',         product: 'EasyTrak',                          instant: true  },
+  { carrier: 'Americo',      product: 'Instant Decision Term Series (HMS/CBO)', instant: true  },
+  { carrier: 'MOO',          product: 'Term Life Express',                 instant: false },
+  { carrier: 'Foresters',    product: 'Strong Foundation',                 instant: false },
 ]
 
 const WHOLE_LIFE = [
@@ -16,6 +15,17 @@ const WHOLE_LIFE = [
   { carrier: 'TransAmerica', product: 'FE Express',                 instant: true  },
   { carrier: 'UHL',          product: 'Express Issue Whole Life',   instant: false },
   { carrier: 'MOO',          product: 'Living Promise',             instant: false },
+  { carrier: 'Foresters',    product: 'Plan Right',                 instant: false },
+]
+
+const GIWL = [
+  { carrier: 'Corebridge',   product: 'GIWL',                       instant: false },
+  { carrier: 'UHL',          product: 'GIWL',                       instant: false },
+]
+
+const ACCIDENTAL = [
+  { carrier: 'MOO',          product: 'Guaranteed ADvantage',       instant: false },
+  { carrier: 'Foresters',    product: 'Prepared II',                instant: false },
 ]
 
 function ProductList({ items }) {
@@ -47,19 +57,25 @@ function ProductList({ items }) {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, descriptor, children, shade }) {
   return (
     <div style={{
-      background: '#fff', border: '0.5px solid #DDE6E8', borderRadius: 10,
+      background: shade ? '#F5F9FA' : '#fff',
+      border: '0.5px solid #DDE6E8', borderRadius: 10,
       padding: '20px 24px',
     }}>
       <h2 style={{
         fontFamily: "'Playfair Display', Georgia, serif",
         fontSize: 20, fontWeight: 500, color: '#003539',
-        margin: '0 0 16px',
+        margin: descriptor ? '0 0 4px' : '0 0 16px',
       }}>
         {title}
       </h2>
+      {descriptor && (
+        <p style={{ fontSize: 12, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.5, margin: '0 0 14px' }}>
+          {descriptor}
+        </p>
+      )}
       {children}
     </div>
   )
@@ -84,31 +100,44 @@ export default function UnderwritingPage() {
 
           {/* Two-column: Term + Whole Life */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-            <Section title="Term">
+            <Section title="Term" descriptor="Most coverage for the premium, but only valid for a limited time. Target age: 20–60">
               <ProductList items={TERM} />
             </Section>
-            <Section title="Whole Life">
+            <Section title="Whole Life / Final Expense" descriptor="Lower coverage, but good for life. Target age: 50–80">
               <ProductList items={WHOLE_LIFE} />
+            </Section>
+          </div>
+
+          {/* Two-column: GIWL + Accidental */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+            <Section title="GIWL" descriptor="Extremely unhealthy clients. If insured dies within the first two years due to non-accidental causes, beneficiary receives premiums paid plus 10% rather than the full face value." shade>
+              <ProductList items={GIWL} />
+            </Section>
+            <Section title="Accidental" descriptor="Accidents are the third leading cause of death in the U.S. Extremely affordable plans. Accidental policies are great add-ons to every policy type. MOO requires a health license; Foresters does not." shade>
+              <ProductList items={ACCIDENTAL} />
             </Section>
           </div>
 
           {/* IUL section */}
           <div style={{
             background: '#F5F9FA', border: '0.5px solid #DDE6E8', borderRadius: 10,
-            padding: '20px 24px', marginBottom: 24,
+            padding: '20px 24px', marginBottom: 20,
           }}>
-            <h2 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500, color: '#003539', margin: '0 0 8px' }}>
+            <h2 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500, color: '#003539', margin: '0 0 4px' }}>
               IUL
             </h2>
+            <p style={{ fontSize: 12, color: '#4A6568', margin: '0 0 10px', fontFamily: 'Inter, sans-serif', lineHeight: 1.5 }}>
+              Extremely customizable whole life policies. Commonly used for growing cash value.
+            </p>
             <p style={{ fontSize: 14, color: '#4A6568', margin: 0, fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
-              IUL placement varies significantly by client profile and carrier appetite. We recommend consulting your{' '}
+              IUL case design varies significantly by client needs. We recommend consulting your{' '}
               <strong style={{ color: '#1A2B2E', fontWeight: 600 }}>mentor</strong> or a{' '}
               <strong style={{ color: '#1A2B2E', fontWeight: 600 }}>subject matter expert (SME)</strong> before quoting an IUL.
             </p>
           </div>
 
           {/* Dagger note */}
-          <p style={{ fontSize: 12, color: '#7A9499', fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 12, color: '#7A9499', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: 0 }}>
             <span style={{ color: '#005365', fontWeight: 700 }}>†</span> Instant issue product — decision rendered at point of sale with no additional underwriting required.
           </p>
 

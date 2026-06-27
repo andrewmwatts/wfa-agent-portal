@@ -57,7 +57,7 @@ const QUICK_LINKS = [
   {
     icon: <CalendarIcon />,
     title: 'Agency calendar',
-    body: 'Business month calendars, MACC Room schedule, and promotion rules.',
+    body: 'Business month calendars and MACC Room schedule.',
     link: { label: 'View calendar →', to: '/calendar', active: true },
   },
   {
