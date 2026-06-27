@@ -83,15 +83,6 @@ export default function Landing() {
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', maxWidth: 480, margin: '10px 0 0', lineHeight: 1.6, fontFamily: 'Inter, sans-serif' }}>
             Videos, guides, and tools for agents across the Symmetry network.
           </p>
-          <Link to="/videos"
-            style={{
-              display: 'inline-block', marginTop: 24,
-              background: '#EE2666', color: '#fff', fontSize: 13,
-              padding: '10px 20px', borderRadius: 8,
-              textDecoration: 'none', fontFamily: 'Inter, sans-serif',
-            }}>
-            Browse the video library →
-          </Link>
         </div>
       </div>
 
