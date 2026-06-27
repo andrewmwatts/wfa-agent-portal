@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import PublicLayout from '../../components/public/PublicLayout'
 
 // ── Symmetry business-month helpers ──────────────────────────────────────────
@@ -205,8 +206,8 @@ const MACC_IMAGE_URL =
   'https://vmsiaijeymiepnkkdawm.supabase.co/storage/v1/object/public/MACC%20schedule/current.jpg'
 
 function MaccSchedule() {
-  // Append timestamp so the browser re-fetches after an upload without a hard reload.
-  const src = `${MACC_IMAGE_URL}?t=${Math.floor(Date.now() / 60000)}` // refreshes once per minute
+  const [lightbox, setLightbox] = useState(false)
+  const src = `${MACC_IMAGE_URL}?t=${Math.floor(Date.now() / 60000)}`
 
   return (
     <div style={{ position: 'sticky', top: 64 }}>
@@ -217,26 +218,46 @@ function MaccSchedule() {
         MACC Room of Our Dreams
       </h2>
 
-      <img
-        src={src}
-        alt="MACC Room of Our Dreams — Live Dialer Schedule"
-        style={{ width: '100%', borderRadius: 8, border: '0.5px solid #DDE6E8', display: 'block' }}
-        onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
-      />
-      <div style={{
-        display: 'none', border: '1.5px dashed #C5D8DC', borderRadius: 8,
-        background: '#F5F9FA', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '48px 24px', textAlign: 'center', gap: 10,
-      }}>
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9BB3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <polyline points="21 15 16 10 5 21"/>
-        </svg>
-        <p style={{ fontSize: 13, color: '#4A6568', margin: 0, fontFamily: 'Inter, sans-serif', lineHeight: 1.5 }}>
-          No schedule uploaded yet. Upload via Admin Tools → MACC Schedule.
-        </p>
+      {/* Clickable thumbnail */}
+      <div
+        onClick={() => setLightbox(true)}
+        style={{ cursor: 'zoom-in', position: 'relative', borderRadius: 8, overflow: 'hidden' }}
+        title="Click to expand"
+      >
+        <img
+          src={src}
+          alt="MACC Room of Our Dreams — Live Dialer Schedule"
+          style={{ width: '100%', borderRadius: 8, border: '0.5px solid #DDE6E8', display: 'block' }}
+          onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+        />
+        {/* Expand hint badge */}
+        <div style={{
+          position: 'absolute', bottom: 8, right: 8,
+          background: 'rgba(0,53,57,0.75)', borderRadius: 6,
+          padding: '3px 7px', display: 'flex', alignItems: 'center', gap: 4,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+          <span style={{ fontSize: 10, color: '#fff', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>Expand</span>
+        </div>
+        <div style={{
+          display: 'none', border: '1.5px dashed #C5D8DC', borderRadius: 8,
+          background: '#F5F9FA', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: '48px 24px', textAlign: 'center', gap: 10,
+        }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9BB3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <p style={{ fontSize: 13, color: '#4A6568', margin: 0, fontFamily: 'Inter, sans-serif', lineHeight: 1.5 }}>
+            No schedule uploaded yet. Upload via Admin Tools → MACC Schedule.
+          </p>
+        </div>
       </div>
 
       <div style={{ marginTop: 14 }}>
@@ -252,6 +273,36 @@ function MaccSchedule() {
           Passcode: grit
         </p>
       </div>
+
+      {/* Lightbox overlay */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24, cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={src}
+            alt="MACC Room of Our Dreams — Live Dialer Schedule"
+            style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 10, boxShadow: '0 32px 80px rgba(0,0,0,0.6)', display: 'block' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setLightbox(false)}
+            style={{
+              position: 'fixed', top: 20, right: 24,
+              background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+              width: 36, height: 36, cursor: 'pointer', color: '#fff',
+              fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(4px)',
+            }}
+          >✕</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -277,11 +328,6 @@ export default function CalendarPage() {
       <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px 28px 60px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
-          {/* Page eyebrow */}
-          <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 20px', fontFamily: 'Inter, sans-serif' }}>
-            Business Months
-          </p>
-
           {/* Two-column layout */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
 
@@ -290,6 +336,9 @@ export default function CalendarPage() {
 
             {/* Right — business calendars + rules */}
             <div>
+              <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 20px', fontFamily: 'Inter, sans-serif' }}>
+                Business Months
+              </p>
               <ul style={{ margin: '0 0 28px', padding: '0 0 0 18px', listStyle: 'disc' }}>
                 {BULLETS.map((b, i) => (
                   <li key={i} style={{ fontSize: 13, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: i < BULLETS.length - 1 ? 6 : 0 }}>
