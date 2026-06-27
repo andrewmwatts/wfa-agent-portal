@@ -64,7 +64,7 @@ const QUICK_LINKS = [
     icon: <BookIcon />,
     title: 'Underwriting guidelines',
     body: 'Carrier-specific underwriting criteria, health classifications, and eligibility guides.',
-    link: { label: 'Coming soon', active: false },
+    link: { label: 'View guidelines →', to: '/guidelines', active: true },
   },
 ]
 

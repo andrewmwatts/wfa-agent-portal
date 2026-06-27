@@ -79,7 +79,7 @@ export default function UnderwritingPage() {
             Carrier Preference Order
           </h1>
           <p style={{ fontSize: 14, color: '#4A6568', margin: '0 0 32px', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, maxWidth: 640 }}>
-            This is our recommended order of preference for each policy type. Start at the top and work down based on the client's health and eligibility.
+            This is our recommended order of preference for each policy type. Start at the top and work down based on the client's health and eligibility. Additional products are available and may be required depending on client health, but these should be your first choices.
           </p>
 
           {/* Two-column: Term + Whole Life */}
@@ -103,7 +103,7 @@ export default function UnderwritingPage() {
             <p style={{ fontSize: 14, color: '#4A6568', margin: 0, fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
               IUL placement varies significantly by client profile and carrier appetite. We recommend consulting your{' '}
               <strong style={{ color: '#1A2B2E', fontWeight: 600 }}>mentor</strong> or a{' '}
-              <strong style={{ color: '#1A2B2E', fontWeight: 600 }}>subject matter expert (SME)</strong> before placing IUL business.
+              <strong style={{ color: '#1A2B2E', fontWeight: 600 }}>subject matter expert (SME)</strong> before quoting an IUL.
             </p>
           </div>
 
