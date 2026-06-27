@@ -19,13 +19,13 @@ const WHOLE_LIFE = [
 ]
 
 const GIWL = [
-  { carrier: 'Corebridge',   product: 'GIWL',                       instant: false },
-  { carrier: 'UHL',          product: 'GIWL',                       instant: false },
+  { carrier: 'Corebridge',   product: 'GIWL',                       instant: true  },
+  { carrier: 'UHL',          product: 'GIWL',                       instant: true  },
 ]
 
 const ACCIDENTAL = [
-  { carrier: 'MOO',          product: 'Guaranteed ADvantage',       instant: false },
-  { carrier: 'Foresters',    product: 'Prepared II',                instant: false },
+  { carrier: 'MOO',          product: 'Guaranteed ADvantage',       instant: true  },
+  { carrier: 'Foresters',    product: 'Prepared II',                instant: true  },
 ]
 
 function ProductList({ items }) {
