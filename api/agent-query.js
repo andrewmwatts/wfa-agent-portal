@@ -8,6 +8,9 @@ loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Headers', 'x-agent-secret')
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   const secret = process.env.AGENT_QUERY_SECRET
