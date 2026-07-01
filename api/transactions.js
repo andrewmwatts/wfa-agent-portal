@@ -18,6 +18,11 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  * POST /api/transactions?bulk=1                     → insert array, skip conflicts silently
  * PATCH  /api/transactions?id=<uuid>               → update transaction
  * DELETE /api/transactions?id=<uuid>               → delete transaction
+ *
+ * Service-auth (internal scripts only):
+ *   All POST/GET methods are also accessible via x-wfa-secret header, which bypasses
+ *   session auth. Used by the Sheets sync script. PATCH and DELETE require session
+ *   auth regardless (no bulk-edit via service key).
  */
 
 // Hash uses the signed amount (positive=income, negative=expense) so a
@@ -27,24 +32,58 @@ function txHash(date, amount, description) {
   return createHash('sha256').update(str).digest('hex')
 }
 
+// ── Service-auth helper ────────────────────────────────────────────────────────
+// Returns true if the request is authenticated via service secret.
+// Returns false (and sends 401) if the header is present but wrong.
+// Returns null if no service header is present (fall through to requireAuth).
+function checkServiceAuth(req, res) {
+  const secret = req.headers['x-wfa-secret']
+  if (!secret) return null
+  if (secret !== process.env.WFA_INGEST_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return false
+  }
+  return true
+}
+
 export default async function handler(req, res) {
-  const caller = await requireAuth(req, res)
-  if (!caller) return
+  // ── Auth ─────────────────────────────────────────────────────────────────────
+  const serviceAuth = checkServiceAuth(req, res)
+  if (serviceAuth === false) return   // wrong secret — already responded
+
+  // PATCH and DELETE always require a real session (no service-key bulk edits)
+  if ((req.method === 'PATCH' || req.method === 'DELETE') && serviceAuth) {
+    return res.status(403).json({ error: 'PATCH/DELETE not available via service auth' })
+  }
 
   const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
 
-  const sfgId = caller.sfg_id
-  if (!sfgId) return res.status(403).json({ error: 'No SFG ID associated with this account' })
+  let caller = null
+  let sfgId  = null
+
+  if (!serviceAuth) {
+    caller = await requireAuth(req, res)
+    if (!caller) return
+    sfgId = caller.sfg_id
+    if (!sfgId) return res.status(403).json({ error: 'No SFG ID associated with this account' })
+  }
 
   // ── GET ───────────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
-    // Super admins may pass ?view_as=<sfg_id> to read another user's transactions
-    let targetSfgId = sfgId
-    if (req.query.view_as && caller.role === 'super_admin') {
-      targetSfgId = req.query.view_as.trim().toUpperCase()
+    // Service-auth GET requires explicit sfg_id param
+    let targetSfgId
+    if (serviceAuth) {
+      if (!req.query.sfg_id) return res.status(400).json({ error: 'sfg_id required' })
+      targetSfgId = req.query.sfg_id.trim().toUpperCase()
+    } else {
+      targetSfgId = sfgId
+      // Super admins may pass ?view_as=<sfg_id> to read another user's transactions
+      if (req.query.view_as && caller.role === 'super_admin') {
+        targetSfgId = req.query.view_as.trim().toUpperCase()
+      }
     }
 
     // Hashes-only mode: used by bulk import to detect duplicates client-side
@@ -93,17 +132,27 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'transactions array required' })
       }
 
-      // Super admins may write on behalf of another user
-      let bulkSfgId = sfgId
-      if (req.query.view_as && caller.role === 'super_admin') {
-        bulkSfgId = req.query.view_as.trim().toUpperCase()
+      // Service-auth bulk: sfg_id must be in the body rows themselves (each row
+      // carries its own sfg_id so one call can cover multiple agents).
+      // Session-auth bulk: super admins may pass ?view_as= to write for another user.
+      let bulkSfgIdOverride = null
+      if (!serviceAuth) {
+        bulkSfgIdOverride = sfgId
+        if (req.query.view_as && caller.role === 'super_admin') {
+          bulkSfgIdOverride = req.query.view_as.trim().toUpperCase()
+        }
       }
 
       const enriched = rows.map(r => {
+        const rowSfgId = serviceAuth
+          ? r.sfg_id?.trim().toUpperCase()
+          : bulkSfgIdOverride
+        if (!rowSfgId) throw new Error('sfg_id missing on row')
+
         // r.amount is already signed (positive=income, negative=expense)
         const signedAmt = r.type === 'expense' ? -Math.abs(Number(r.amount)) : Math.abs(Number(r.amount))
         return {
-          sfg_id:         bulkSfgId,
+          sfg_id:         rowSfgId,
           date:           r.date,
           description:    r.description,
           amount:         signedAmt,
@@ -143,10 +192,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'type must be income or expense' })
     }
 
-    // Super admins may write on behalf of another user
-    let writeSfgId = sfgId
-    if (req.query.view_as && caller.role === 'super_admin') {
-      writeSfgId = req.query.view_as.trim().toUpperCase()
+    // Service-auth single insert requires sfg_id in body
+    let writeSfgId
+    if (serviceAuth) {
+      if (!body.sfg_id) return res.status(400).json({ error: 'sfg_id required in body' })
+      writeSfgId = body.sfg_id.trim().toUpperCase()
+    } else {
+      writeSfgId = sfgId
+      if (req.query.view_as && caller.role === 'super_admin') {
+        writeSfgId = req.query.view_as.trim().toUpperCase()
+      }
     }
 
     const signedAmt = type === 'expense' ? -Math.abs(Number(amount)) : Math.abs(Number(amount))
