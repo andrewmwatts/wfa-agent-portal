@@ -22,6 +22,10 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *
  * Qualifications (type=qualifications):
  *   GET  /api/activity?type=qualifications  → { qualifications }
+ *
+ * Service-auth (internal scripts only):
+ *   Any method above is also accessible via x-wfa-secret header, which bypasses
+ *   session auth and authorizeScope checks. Used by the Sheets sync script.
  */
 
 // ── Qualifications cache (1 hour) ─────────────────────────────────────────────
@@ -46,9 +50,33 @@ function parseOptionalNum(val) {
   return isNaN(n) ? null : Math.max(0, n)
 }
 
+// ── Service-auth helper ────────────────────────────────────────────────────────
+// Returns true if the request is authenticated via service secret.
+// Returns false (and sends 401) if the header is present but wrong.
+// Returns null if no service header is present (fall through to requireAuth).
+function checkServiceAuth(req, res) {
+  const secret = req.headers['x-wfa-secret']
+  if (!secret) return null
+  if (secret !== process.env.WFA_INGEST_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return false
+  }
+  return true
+}
+
 export default async function handler(req, res) {
-  const caller = await requireAuth(req, res)
-  if (!caller) return
+  // ── Auth ─────────────────────────────────────────────────────────────────────
+  const serviceAuth = checkServiceAuth(req, res)
+  if (serviceAuth === false) return   // wrong secret — already responded
+
+  let caller = null
+  if (!serviceAuth) {
+    caller = await requireAuth(req, res)
+    if (!caller) return
+  }
+
+  // Convenience: skip authorizeScope for service-auth requests
+  const skipScopeCheck = !!serviceAuth
 
   const { type } = req.query
 
@@ -88,7 +116,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { sfg_id, month } = req.query
       if (!sfg_id || !month) return res.status(400).json({ error: 'sfg_id and month required' })
-      if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
+      if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
       const { data, error } = await supabase
         .from('activity_goals')
@@ -105,7 +133,7 @@ export default async function handler(req, res) {
       const { sfg_id, year_month, weekly_dials, weekly_appts, monthly_apv_submitted, monthly_apv_issued } = req.body ?? {}
 
       if (!sfg_id || !year_month) return res.status(400).json({ error: 'sfg_id and year_month required' })
-      if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
+      if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
       const { data, error } = await supabase
         .from('activity_goals')
@@ -135,7 +163,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { sfg_id, start, end } = req.query
     if (!sfg_id) return res.status(400).json({ error: 'sfg_id required' })
-    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
+    if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
     let query = supabase
       .from('activity_logs')
@@ -161,7 +189,7 @@ export default async function handler(req, res) {
     if (!sfg_id || !log_date) {
       return res.status(400).json({ error: 'sfg_id and log_date are required' })
     }
-    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
+    if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
     const { data, error } = await supabase
       .from('activity_logs')
