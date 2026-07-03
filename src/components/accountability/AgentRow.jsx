@@ -68,7 +68,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
   }
 
   const cs = collapsedStats
-  const name = `${agent.preferred_name ?? ''} ${agent.opt_name ?? ''}`.trim()
+  const name = agent.preferred_name ?? agent.opt_name ?? ''
 
   return (
     <div className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth }    from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import AgentRow from '../components/accountability/AgentRow'
-import { toYMD, subDays, subWeeks, getCollapsedPeriod } from '../components/accountability/utils/accountabilityCalc'
+import { toYMD, subDays, getCollapsedPeriod } from '../components/accountability/utils/accountabilityCalc'
 
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -77,7 +77,7 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
               onMouseDown={() => pick(agent)}
               className={`w-full text-left px-3 py-2 flex items-center gap-1.5 transition-colors ${i === highlighted ? 'bg-gray-50 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
             >
-              <span className="text-[13px] text-gray-800 dark:text-white">{agent.preferred_name} {agent.opt_name}</span>
+              <span className="text-[13px] text-gray-800 dark:text-white">{agent.preferred_name}</span>
             </button>
           ))}
         </div>
@@ -122,6 +122,7 @@ export default function AccountabilityPage() {
   }, [])
 
   const [loading, setLoading]               = useState(true)
+  const [rosterError, setRosterError]       = useState(null)
   const [roster, setRoster]                 = useState([])     // sfg_id[]
   const [allAgents, setAllAgents]           = useState([])     // all active personnel (for search)
   const [agentMap, setAgentMap]             = useState({})     // sfg_id → personnel row
@@ -141,20 +142,35 @@ export default function AccountabilityPage() {
 
   async function load() {
     setLoading(true)
+    setRosterError(null)
     try {
       const enc = encodeURIComponent(activeSubject.sfg_id)
       const [rosterRes, agentsRes] = await Promise.all([
         supabase.from('accountability_rosters').select('agent_sfg_id').eq('owner_sfg_id', activeSubject.sfg_id),
-        fetch(`/api/personnel?root=${enc}&mode=master&fields=sfg_id,preferred_name,opt_name`, {
+        fetch(`/api/personnel?root=${enc}&mode=master&fields=sfg_id,preferred_name,opt_name,status`, {
           headers: { Authorization: `Bearer ${token}` },
         }).then(r => r.json()),
       ])
+
+      if (rosterRes.error) {
+        console.error('Roster load error:', rosterRes.error)
+        setRosterError(rosterRes.error.message)
+      }
+
       const ids = (rosterRes.data ?? []).map(r => r.agent_sfg_id)
       setRoster(ids)
+
       // API returns { personnel: [...] } or a flat array
       const raw = agentsRes.personnel ?? (Array.isArray(agentsRes) ? agentsRes : [])
-      setAllAgents(raw.filter(a => a.status?.trim().toLowerCase() === 'active')
-                      .sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? '')))
+      const active = raw.filter(a => a.status?.trim().toLowerCase() === 'active')
+                        .sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? ''))
+      setAllAgents(active)
+
+      // Pre-populate agentMap from the personnel list we already fetched
+      const map = {}
+      for (const a of active) map[a.sfg_id] = a
+      setAgentMap(map)
+
       if (ids.length > 0) await fetchRosterData(ids)
     } finally {
       setLoading(false)
@@ -162,59 +178,46 @@ export default function AccountabilityPage() {
   }
 
   async function fetchRosterData(ids) {
-    const yesterday = toYMD(subDays(today, 1))
-    const start14   = toYMD(subDays(today, 14))
-    const start35   = toYMD(subWeeks(today, 5))
-
-    const [actRes, sparkRes, goalsRes, personnelRes] = await Promise.all([
-      supabase.from('activity_tracking')
-        .select('sfg_id, date, dials, contacts, appts_set, appts_run, apps_submitted, apv_submitted, lead_spend')
-        .in('sfg_id', ids).gte('date', start14).lte('date', yesterday),
-      supabase.from('activity_tracking')
-        .select('sfg_id, date, appts_run, apv_submitted')
-        .in('sfg_id', ids).gte('date', start35),
-      supabase.from('agent_goals')
-        .select('sfg_id, goal_type, goal_value, effective_date')
-        .in('sfg_id', ids).order('effective_date', { ascending: false }),
-      supabase.from('personnel')
-        .select('sfg_id, preferred_name, opt_name')
-        .in('sfg_id', ids).eq('status', 'Active'),
-    ])
-
-    setActivity(actRes.data ?? [])
-    setSparkActivity(sparkRes.data ?? [])
-    setGoals(goalsRes.data ?? [])
-    const map = {}
-    for (const a of (personnelRes.data ?? [])) map[a.sfg_id] = a
-    setAgentMap(map)
+    const start14YMD = toYMD(subDays(today, 14))
+    const res = await fetch(
+      `/api/accountability-activity?sfg_ids=${encodeURIComponent(ids.join(','))}&days=35`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) {
+      console.error('accountability-activity error:', await res.text())
+      return
+    }
+    const { activity: rows, goals: goalRows } = await res.json()
+    // Split full 35-day result into the 14-day window (table/ratios) and full range (sparklines)
+    setActivity(rows.filter(r => r.date >= start14YMD))
+    setSparkActivity(rows)
+    setGoals(goalRows)
   }
 
   // ── Add agent ───────────────────────────────────────────────────────────────
   async function handleAdd(agent) {
-    await supabase.from('accountability_rosters').insert({
+    const { error } = await supabase.from('accountability_rosters').insert({
       owner_sfg_id: activeSubject.sfg_id,
       agent_sfg_id: agent.sfg_id,
     })
+    if (error) {
+      console.error('Roster insert error:', error)
+      setRosterError(error.message)
+      return
+    }
     setRoster(prev => [...prev, agent.sfg_id])
     setAgentMap(prev => ({ ...prev, [agent.sfg_id]: agent }))
 
-    const yesterday = toYMD(subDays(today, 1))
-    const start14   = toYMD(subDays(today, 14))
-    const start35   = toYMD(subWeeks(today, 5))
-    const [actRes, sparkRes, goalsRes] = await Promise.all([
-      supabase.from('activity_tracking')
-        .select('sfg_id, date, dials, contacts, appts_set, appts_run, apps_submitted, apv_submitted, lead_spend')
-        .eq('sfg_id', agent.sfg_id).gte('date', start14).lte('date', yesterday),
-      supabase.from('activity_tracking')
-        .select('sfg_id, date, appts_run, apv_submitted')
-        .eq('sfg_id', agent.sfg_id).gte('date', start35),
-      supabase.from('agent_goals')
-        .select('sfg_id, goal_type, goal_value, effective_date')
-        .eq('sfg_id', agent.sfg_id).order('effective_date', { ascending: false }),
-    ])
-    setActivity(prev => [...prev, ...(actRes.data ?? [])])
-    setSparkActivity(prev => [...prev, ...(sparkRes.data ?? [])])
-    setGoals(prev => [...prev, ...(goalsRes.data ?? [])])
+    const start14YMD = toYMD(subDays(today, 14))
+    const res = await fetch(
+      `/api/accountability-activity?sfg_ids=${encodeURIComponent(agent.sfg_id)}&days=35`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) { console.error('accountability-activity error:', await res.text()); return }
+    const { activity: rows, goals: goalRows } = await res.json()
+    setActivity(prev => [...prev, ...rows.filter(r => r.date >= start14YMD)])
+    setSparkActivity(prev => [...prev, ...rows])
+    setGoals(prev => [...prev, ...goalRows])
   }
 
   // ── Remove agent ───────────────────────────────────────────────────────────
@@ -277,6 +280,13 @@ export default function AccountabilityPage() {
           </button>
         </div>
       </div>
+
+      {/* Roster error banner */}
+      {rosterError && (
+        <div className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-[12px] text-amber-800 dark:text-amber-300">
+          <strong>Roster error:</strong> {rosterError}. If this is your first time using this page, run the migration SQL in the Supabase dashboard (see <code>scripts/migration-accountability-roster.sql</code>).
+        </div>
+      )}
 
       {/* Roster toolbar */}
       <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800 mb-4">
