@@ -29,7 +29,7 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
       const q = query.toLowerCase()
       setResults(
         allAgents
-          .filter(a => !rosterIds.has(a.sfg_id) && `${a.first_name} ${a.last_name}`.toLowerCase().includes(q))
+          .filter(a => !rosterIds.has(a.sfg_id) && `${a.preferred_name} ${a.opt_name}`.toLowerCase().includes(q))
           .slice(0, 8)
       )
       setHighlight(0)
@@ -77,8 +77,7 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
               onMouseDown={() => pick(agent)}
               className={`w-full text-left px-3 py-2 flex items-center gap-1.5 transition-colors ${i === highlighted ? 'bg-gray-50 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
             >
-              <span className="text-[13px] text-gray-800 dark:text-white">{agent.first_name} {agent.last_name}</span>
-              {agent.team && <span className="text-[11px] text-gray-400 dark:text-gray-500">· {agent.team}</span>}
+              <span className="text-[13px] text-gray-800 dark:text-white">{agent.preferred_name} {agent.opt_name}</span>
             </button>
           ))}
         </div>
@@ -113,7 +112,8 @@ function EmptyRoster() {
 
 export default function AccountabilityPage() {
   const { permissions, activeSubject } = useViewing()
-  const { userProfile } = useAuth()
+  const { userProfile, session } = useAuth()
+  const token = session?.access_token
 
   const today = useMemo(() => {
     const d = new Date()
@@ -135,20 +135,26 @@ export default function AccountabilityPage() {
 
   // ── Mount: load roster + all agents ────────────────────────────────────────
   useEffect(() => {
-    if (!activeSubject?.sfg_id) return
+    if (!activeSubject?.sfg_id || !token) return
     load()
-  }, [activeSubject?.sfg_id])
+  }, [activeSubject?.sfg_id, token])
 
   async function load() {
     setLoading(true)
     try {
+      const enc = encodeURIComponent(activeSubject.sfg_id)
       const [rosterRes, agentsRes] = await Promise.all([
         supabase.from('accountability_rosters').select('agent_sfg_id').eq('owner_sfg_id', activeSubject.sfg_id),
-        supabase.from('personnel').select('sfg_id, first_name, last_name, team').eq('status', 'Active').order('last_name'),
+        fetch(`/api/personnel?root=${enc}&mode=master&fields=sfg_id,preferred_name,opt_name`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => r.json()),
       ])
       const ids = (rosterRes.data ?? []).map(r => r.agent_sfg_id)
       setRoster(ids)
-      setAllAgents(agentsRes.data ?? [])
+      // API returns { personnel: [...] } or a flat array
+      const raw = agentsRes.personnel ?? (Array.isArray(agentsRes) ? agentsRes : [])
+      setAllAgents(raw.filter(a => a.status?.trim().toLowerCase() === 'active')
+                      .sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? '')))
       if (ids.length > 0) await fetchRosterData(ids)
     } finally {
       setLoading(false)
@@ -171,7 +177,7 @@ export default function AccountabilityPage() {
         .select('sfg_id, goal_type, goal_value, effective_date')
         .in('sfg_id', ids).order('effective_date', { ascending: false }),
       supabase.from('personnel')
-        .select('sfg_id, first_name, last_name, team')
+        .select('sfg_id, preferred_name, opt_name')
         .in('sfg_id', ids).eq('status', 'Active'),
     ])
 
@@ -232,7 +238,7 @@ export default function AccountabilityPage() {
   }
 
   const sortedAgents = useMemo(
-    () => roster.map(id => agentMap[id]).filter(Boolean).sort((a, b) => a.last_name.localeCompare(b.last_name)),
+    () => roster.map(id => agentMap[id]).filter(Boolean).sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? '')),
     [roster, agentMap],
   )
 

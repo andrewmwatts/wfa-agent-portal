@@ -68,7 +68,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
   }
 
   const cs = collapsedStats
-  const name = `${agent.first_name} ${agent.last_name}`
+  const name = `${agent.preferred_name ?? ''} ${agent.opt_name ?? ''}`.trim()
 
   return (
     <div className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
@@ -80,9 +80,6 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
         {/* Agent name + team */}
         <div className="w-36 shrink-0 pr-4">
           <div className="text-[13px] font-medium text-gray-900 dark:text-white leading-tight truncate">{name}</div>
-          {agent.team && (
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">{agent.team}</div>
-          )}
         </div>
 
         {/* Activity stats */}
