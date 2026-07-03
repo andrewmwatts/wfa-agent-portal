@@ -112,7 +112,7 @@ function EmptyRoster() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AccountabilityPage() {
-  const { permissions } = useViewing()
+  const { permissions, activeSubject } = useViewing()
   const { userProfile } = useAuth()
 
   const today = useMemo(() => {
@@ -135,15 +135,15 @@ export default function AccountabilityPage() {
 
   // ── Mount: load roster + all agents ────────────────────────────────────────
   useEffect(() => {
-    if (!userProfile?.sfg_id) return
+    if (!activeSubject?.sfg_id) return
     load()
-  }, [userProfile?.sfg_id])
+  }, [activeSubject?.sfg_id])
 
   async function load() {
     setLoading(true)
     try {
       const [rosterRes, agentsRes] = await Promise.all([
-        supabase.from('accountability_rosters').select('agent_sfg_id'),
+        supabase.from('accountability_rosters').select('agent_sfg_id').eq('owner_sfg_id', activeSubject.sfg_id),
         supabase.from('personnel').select('sfg_id, first_name, last_name, team').eq('status', 'Active').order('last_name'),
       ])
       const ids = (rosterRes.data ?? []).map(r => r.agent_sfg_id)
@@ -186,7 +186,7 @@ export default function AccountabilityPage() {
   // ── Add agent ───────────────────────────────────────────────────────────────
   async function handleAdd(agent) {
     await supabase.from('accountability_rosters').insert({
-      owner_sfg_id: userProfile.sfg_id,
+      owner_sfg_id: activeSubject.sfg_id,
       agent_sfg_id: agent.sfg_id,
     })
     setRoster(prev => [...prev, agent.sfg_id])
@@ -228,7 +228,7 @@ export default function AccountabilityPage() {
     setGoals([])
     setAgentMap({})
     setClearState('idle')
-    supabase.from('accountability_rosters').delete().neq('agent_sfg_id', '').then(() => {})
+    supabase.from('accountability_rosters').delete().eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
   const sortedAgents = useMemo(
