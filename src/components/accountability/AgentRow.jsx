@@ -83,7 +83,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
         {/* Activity stats */}
         <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-4 overflow-hidden">
-          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mr-3 shrink-0">{periodLabel}</span>
+          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-400 mr-3 shrink-0">{periodLabel}</span>
 
           {[
             { label: 'Dials',    val: cs.dials    },
@@ -92,26 +92,26 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
             { label: 'Ran',      val: cs.appts_run },
           ].map(({ label, val }, i) => (
             <div key={label} className="flex items-center shrink-0">
-              {i > 0 && <div className="h-[26px] border-r border-gray-200 dark:border-gray-700 mx-2" />}
+              {i > 0 && <div className="h-[26px] border-r border-gray-200 dark:border-gray-600 mx-2" />}
               <div className="flex flex-col items-center px-2">
-                <span className="text-[15px] font-semibold text-gray-900 dark:text-primary leading-none tabular-nums">{val}</span>
-                <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5">{label}</span>
+                <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 leading-none tabular-nums">{val}</span>
+                <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">{label}</span>
               </div>
             </div>
           ))}
 
           {/* Apps · APV */}
           <div className="flex items-center shrink-0">
-            <div className="h-[26px] border-r border-gray-200 dark:border-gray-700 mx-2" />
+            <div className="h-[26px] border-r border-gray-200 dark:border-gray-600 mx-2" />
             <div className="flex flex-col items-center px-2">
               {cs.apps > 0 || cs.apv > 0 ? (
-                <span className="text-[11px] font-semibold text-gray-900 dark:text-primary leading-none whitespace-nowrap tabular-nums">
+                <span className="text-[11px] font-semibold text-gray-900 dark:text-gray-100 leading-none whitespace-nowrap tabular-nums">
                   {cs.apps} · {fmtCompactAPV(cs.apv)}
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-600 leading-none">0 · —</span>
+                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">0 · —</span>
               )}
-              <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5">Apps · APV</span>
+              <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Apps · APV</span>
             </div>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
         {/* Remove */}
         <button
           onClick={e => { e.stopPropagation(); onRemove(agent.sfg_id) }}
-          className="ml-3 p-1 text-gray-300 hover:text-red-400 dark:text-gray-600 dark:hover:text-red-400 transition-colors shrink-0"
+          className="ml-3 p-1 text-gray-300 hover:text-red-400 dark:text-gray-500 dark:hover:text-red-400 transition-colors shrink-0"
           title={`Remove ${name} from call`}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -142,7 +142,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
         {/* Chevron */}
         <div
-          className="ml-1 text-gray-400 dark:text-gray-500 shrink-0 transition-transform duration-150"
+          className="ml-1 text-gray-400 dark:text-gray-400 shrink-0 transition-transform duration-150"
           style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -161,7 +161,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
               <table className="w-full text-[11px] border-collapse">
                 <thead>
                   <tr>
-                    <th className="text-left pb-2 pr-3 text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium w-20" />
+                    <th className="text-left pb-2 pr-3 text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium w-20" />
                     {rolling7Days.map((d, i) => (
                       <th key={i} className="pb-2 text-center text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium min-w-[30px]">
                         {DAY_ABB[d.getDay()]}
@@ -179,7 +179,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                       {rolling7Days.map((d, i) => {
                         const v = cellVal(d, key)
                         return (
-                          <td key={i} className={`py-1.5 text-center tabular-nums ${v === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-800 dark:text-gray-200'}`}>
+                          <td key={i} className={`py-1.5 text-center tabular-nums ${v === 0 ? 'text-gray-300 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
                             {v}
                           </td>
                         )
@@ -197,7 +197,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                       const apps = cellVal(d, 'apps_submitted')
                       const apv  = cellVal(d, 'apv_submitted')
                       if (!apps && !apv) {
-                        return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-600">—</td>
+                        return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-500">—</td>
                       }
                       return (
                         <td key={i} className="py-1.5 text-center text-gray-800 dark:text-gray-200 whitespace-nowrap">
@@ -215,7 +215,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                     <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">Lead spend</td>
                     {rolling7Days.map((d, i) => {
                       const v = cellVal(d, 'lead_spend')
-                      if (!v) return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-600">—</td>
+                      if (!v) return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-500">—</td>
                       return <td key={i} className="py-1.5 text-center text-gray-800 dark:text-gray-200 tabular-nums">${Math.round(v)}</td>
                     })}
                     <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 tabular-nums">

@@ -30,7 +30,8 @@ export default async function handler(req, res) {
   if (!sfg_ids?.trim()) return res.status(400).json({ error: 'sfg_ids required' })
   if (!owner_sfg_id?.trim()) return res.status(400).json({ error: 'owner_sfg_id required' })
 
-  const ids = sfg_ids.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  // Preserve original case from the roster — activity_tracking.sfg_id may not be uppercase
+  const ids = sfg_ids.split(',').map(s => s.trim()).filter(Boolean)
   if (!ids.length) return res.status(400).json({ error: 'sfg_ids required' })
 
   const ownerKey = owner_sfg_id.trim().toUpperCase()
