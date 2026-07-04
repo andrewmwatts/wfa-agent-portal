@@ -62,11 +62,11 @@ export default async function handler(req, res) {
 
   const [actRes, goalsRes] = await Promise.all([
     supabase
-      .from('activity_tracking')
-      .select('sfg_id, date, dials, contacts, appts_set, appts_run, apps_submitted, apv_submitted, lead_spend')
+      .from('activity_logs')
+      .select('sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued')
       .in('sfg_id', ids)
-      .gte('date', startYMD)
-      .lte('date', yesterdayYMD),
+      .gte('log_date', startYMD)
+      .lte('log_date', yesterdayYMD),
     supabase
       .from('agent_goals')
       .select('sfg_id, goal_type, goal_value, effective_date')
@@ -74,11 +74,23 @@ export default async function handler(req, res) {
       .order('effective_date', { ascending: false }),
   ])
 
-  if (actRes.error)   return res.status(500).json({ error: actRes.error.message })
-  if (goalsRes.error) return res.status(500).json({ error: goalsRes.error.message })
+  if (actRes.error) return res.status(500).json({ error: actRes.error.message })
 
-  return res.status(200).json({
-    activity: actRes.data  ?? [],
-    goals:    goalsRes.data ?? [],
-  })
+  // Normalize activity_logs column names to what the frontend expects
+  const activity = (actRes.data ?? []).map(r => ({
+    sfg_id:         r.sfg_id,
+    date:           r.log_date,
+    dials:          r.dials,
+    contacts:       r.contacts,
+    appts_set:      r.appts_set,
+    appts_run:      r.appts_kept,
+    apps_submitted: r.apps_written,
+    apv_submitted:  0,
+    lead_spend:     0,
+  }))
+
+  // agent_goals may not exist yet — return empty array if so
+  const goals = goalsRes.error ? [] : (goalsRes.data ?? [])
+
+  return res.status(200).json({ activity, goals })
 }
