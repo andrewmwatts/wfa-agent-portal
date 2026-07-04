@@ -12,7 +12,7 @@ function fmtHeaderDate(date) {
   return `${DAY_NAMES[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`
 }
 
-// ── Search input ──────────────────────────────────────────────────────────────
+// ── Agent search input (used inside MembersDialog) ────────────────────────────
 
 function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
   const [query, setQuery]           = useState('')
@@ -20,7 +20,6 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
   const [highlighted, setHighlight] = useState(0)
   const [results, setResults]       = useState([])
   const debounceRef = useRef(null)
-  const inputRef    = useRef(null)
 
   useEffect(() => {
     clearTimeout(debounceRef.current)
@@ -52,30 +51,29 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
   }
 
   return (
-    <div className="relative">
-      <div className="flex items-center gap-2 h-8 px-3 w-64 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div className="relative w-full">
+      <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 shrink-0">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input
-          ref={inputRef}
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={handleKeyDown}
-          placeholder="Add agent to call…"
+          placeholder="Search to add agent…"
           className="flex-1 bg-transparent text-[13px] text-gray-800 dark:text-white placeholder-gray-400 outline-none"
         />
       </div>
 
       {open && results.length > 0 && (
-        <div className="absolute top-9 left-0 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30 overflow-hidden">
+        <div className="absolute top-10 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30 overflow-hidden">
           {results.map((agent, i) => (
             <button
               key={agent.sfg_id}
               onMouseDown={() => pick(agent)}
-              className={`w-full text-left px-3 py-2 flex items-center gap-1.5 transition-colors ${i === highlighted ? 'bg-gray-50 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
+              className={`w-full text-left px-3 py-2.5 flex items-center transition-colors ${i === highlighted ? 'bg-gray-50 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'}`}
             >
               <span className="text-[13px] text-gray-800 dark:text-white">{agent.preferred_name}</span>
             </button>
@@ -84,10 +82,123 @@ function AgentSearchInput({ allAgents, rosterIds, onAdd }) {
       )}
 
       {open && query.trim() && results.length === 0 && (
-        <div className="absolute top-9 left-0 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30 px-3 py-2.5">
+        <div className="absolute top-10 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30 px-3 py-2.5">
           <span className="text-[12px] text-gray-400 dark:text-gray-500">No agents found</span>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Manage Members dialog ─────────────────────────────────────────────────────
+
+function MembersDialog({ open, onClose, allAgents, rosterIds, agentMap, roster, onAdd, onRemove, onClearAll }) {
+  const [clearConfirm, setClearConfirm] = useState(false)
+
+  useEffect(() => {
+    if (!open) setClearConfirm(false)
+  }, [open])
+
+  if (!open) return null
+
+  const sortedRoster = [...roster].sort((a, b) => {
+    const na = agentMap[a]?.preferred_name ?? ''
+    const nb = agentMap[b]?.preferred_name ?? ''
+    return na.localeCompare(nb)
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 dark:bg-black/70" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] border border-gray-200 dark:border-gray-700">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+          <h2 className="text-[15px] font-semibold text-gray-900 dark:text-white">
+            Manage members
+            <span className="ml-2 text-[12px] font-normal text-gray-400 dark:text-gray-500">
+              {roster.length} on call
+            </span>
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 shrink-0">
+          <AgentSearchInput allAgents={allAgents} rosterIds={rosterIds} onAdd={onAdd} />
+        </div>
+
+        {/* Member list */}
+        <div className="overflow-y-auto flex-1 px-5 py-1">
+          {sortedRoster.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-gray-400 dark:text-gray-500">No agents on this call yet.</p>
+          ) : (
+            sortedRoster.map(id => {
+              const agent = agentMap[id]
+              if (!agent) return null
+              return (
+                <div key={id} className="flex items-center justify-between py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+                  <span className="text-[13px] text-gray-800 dark:text-gray-200">{agent.preferred_name}</span>
+                  <button
+                    onClick={() => onRemove(id)}
+                    className="p-1 text-gray-300 hover:text-red-400 dark:text-gray-600 dark:hover:text-red-400 transition-colors"
+                    title={`Remove ${agent.preferred_name}`}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 shrink-0 flex items-center justify-between">
+          {clearConfirm ? (
+            <span className="flex items-center gap-2 text-[12px]">
+              <span className="text-gray-500 dark:text-gray-400">Remove everyone?</span>
+              <button
+                onClick={() => { onClearAll(); setClearConfirm(false); onClose() }}
+                className="text-red-500 font-medium hover:text-red-600"
+              >
+                Yes, clear all
+              </button>
+              <button
+                onClick={() => setClearConfirm(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setClearConfirm(true)}
+              disabled={roster.length === 0}
+              className="text-[12px] text-red-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-default transition-colors"
+            >
+              Remove all
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-[12px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -103,7 +214,7 @@ function EmptyRoster() {
         <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
       </svg>
       <p className="text-[13px] font-medium text-gray-500 dark:text-gray-400">No agents on this call yet</p>
-      <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Search above to add agents to your call roster.</p>
+      <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Click "Manage members" to add agents to your call roster.</p>
     </div>
   )
 }
@@ -121,16 +232,18 @@ export default function AccountabilityPage() {
     return d
   }, [])
 
-  const [loading, setLoading]               = useState(true)
-  const [rosterError, setRosterError]       = useState(null)
-  const [roster, setRoster]                 = useState([])     // sfg_id[]
-  const [allAgents, setAllAgents]           = useState([])     // all active personnel (for search)
-  const [agentMap, setAgentMap]             = useState({})     // sfg_id → personnel row
-  const [activity, setActivity]             = useState([])     // 14-day window
-  const [sparkActivity, setSparkActivity]   = useState([])     // 5-week window
-  const [goals, setGoals]                   = useState([])
-  const [expandCount, setExpandCount]       = useState(0)
-  const [clearState, setClearState]         = useState('idle') // 'idle' | 'confirm'
+  const [loading, setLoading]             = useState(true)
+  const [rosterError, setRosterError]     = useState(null)
+  const [activityError, setActivityError] = useState(null)
+  const [roster, setRoster]               = useState([])   // sfg_id[]
+  const [allAgents, setAllAgents]         = useState([])   // all active personnel
+  const [agentMap, setAgentMap]           = useState({})   // sfg_id → personnel row
+  const [activity, setActivity]           = useState([])   // 14-day window
+  const [sparkActivity, setSparkActivity] = useState([])   // 5-week window
+  const [goals, setGoals]                 = useState([])
+  const [expandCount, setExpandCount]     = useState(0)
+  const [collapseCount, setCollapseCount] = useState(0)
+  const [membersOpen, setMembersOpen]     = useState(false)
 
   const rosterSet = useMemo(() => new Set(roster), [roster])
 
@@ -143,6 +256,7 @@ export default function AccountabilityPage() {
   async function load() {
     setLoading(true)
     setRosterError(null)
+    setActivityError(null)
     try {
       const enc = encodeURIComponent(activeSubject.sfg_id)
       const [rosterRes, agentsRes] = await Promise.all([
@@ -153,20 +267,18 @@ export default function AccountabilityPage() {
       ])
 
       if (rosterRes.error) {
-        console.error('Roster load error:', rosterRes.error)
         setRosterError(rosterRes.error.message)
+        return
       }
 
       const ids = (rosterRes.data ?? []).map(r => r.agent_sfg_id)
       setRoster(ids)
 
-      // API returns { personnel: [...] } or a flat array
       const raw = agentsRes.personnel ?? (Array.isArray(agentsRes) ? agentsRes : [])
       const active = raw.filter(a => a.status?.trim().toLowerCase() === 'active')
                         .sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? ''))
       setAllAgents(active)
 
-      // Pre-populate agentMap from the personnel list we already fetched
       const map = {}
       for (const a of active) map[a.sfg_id] = a
       setAgentMap(map)
@@ -178,17 +290,21 @@ export default function AccountabilityPage() {
   }
 
   async function fetchRosterData(ids) {
+    setActivityError(null)
     const start14YMD = toYMD(subDays(today, 14))
+    const ownerEnc   = encodeURIComponent(activeSubject.sfg_id)
+    const idsEnc     = encodeURIComponent(ids.join(','))
     const res = await fetch(
-      `/api/accountability-activity?sfg_ids=${encodeURIComponent(ids.join(','))}&days=35`,
+      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${idsEnc}&days=35`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) {
-      console.error('accountability-activity error:', await res.text())
+      const body = await res.text()
+      console.error('accountability-activity error:', body)
+      setActivityError(`Activity data unavailable (${res.status})`)
       return
     }
     const { activity: rows, goals: goalRows } = await res.json()
-    // Split full 35-day result into the 14-day window (table/ratios) and full range (sparklines)
     setActivity(rows.filter(r => r.date >= start14YMD))
     setSparkActivity(rows)
     setGoals(goalRows)
@@ -201,7 +317,6 @@ export default function AccountabilityPage() {
       agent_sfg_id: agent.sfg_id,
     })
     if (error) {
-      console.error('Roster insert error:', error)
       setRosterError(error.message)
       return
     }
@@ -209,8 +324,9 @@ export default function AccountabilityPage() {
     setAgentMap(prev => ({ ...prev, [agent.sfg_id]: agent }))
 
     const start14YMD = toYMD(subDays(today, 14))
+    const ownerEnc   = encodeURIComponent(activeSubject.sfg_id)
     const res = await fetch(
-      `/api/accountability-activity?sfg_ids=${encodeURIComponent(agent.sfg_id)}&days=35`,
+      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${encodeURIComponent(agent.sfg_id)}&days=35`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) { console.error('accountability-activity error:', await res.text()); return }
@@ -226,7 +342,7 @@ export default function AccountabilityPage() {
     setActivity(prev => prev.filter(r => r.sfg_id !== sfgId))
     setSparkActivity(prev => prev.filter(r => r.sfg_id !== sfgId))
     setGoals(prev => prev.filter(r => r.sfg_id !== sfgId))
-    supabase.from('accountability_rosters').delete().eq('agent_sfg_id', sfgId).then(() => {})
+    supabase.from('accountability_rosters').delete().eq('agent_sfg_id', sfgId).eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
   // ── Clear all ──────────────────────────────────────────────────────────────
@@ -235,13 +351,11 @@ export default function AccountabilityPage() {
     setActivity([])
     setSparkActivity([])
     setGoals([])
-    setAgentMap({})
-    setClearState('idle')
     supabase.from('accountability_rosters').delete().eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
   const sortedAgents = useMemo(
-    () => roster.map(id => agentMap[id]).filter(Boolean).sort((a, b) => (a.opt_name ?? '').localeCompare(b.opt_name ?? '')),
+    () => roster.map(id => agentMap[id]).filter(Boolean).sort((a, b) => (a.preferred_name ?? '').localeCompare(b.preferred_name ?? '')),
     [roster, agentMap],
   )
 
@@ -258,6 +372,18 @@ export default function AccountabilityPage() {
   return (
     <main className="px-6 py-6" style={{ maxWidth: 1440, margin: '0 auto' }}>
 
+      <MembersDialog
+        open={membersOpen}
+        onClose={() => setMembersOpen(false)}
+        allAgents={allAgents}
+        rosterIds={rosterSet}
+        agentMap={agentMap}
+        roster={roster}
+        onAdd={handleAdd}
+        onRemove={handleRemove}
+        onClearAll={handleClearAll}
+      />
+
       {/* Page header */}
       <div className="flex items-start justify-between mb-5">
         <div>
@@ -273,45 +399,50 @@ export default function AccountabilityPage() {
             Collapsed: {periodLabel.replace(':', '')}
           </span>
           <button
+            onClick={() => setCollapseCount(c => c + 1)}
+            disabled={roster.length === 0}
+            className="text-[12px] text-primary hover:underline disabled:opacity-30 disabled:cursor-default"
+          >
+            Collapse all
+          </button>
+          <button
             onClick={() => setExpandCount(c => c + 1)}
-            className="text-[12px] text-primary hover:underline"
+            disabled={roster.length === 0}
+            className="text-[12px] text-primary hover:underline disabled:opacity-30 disabled:cursor-default"
           >
             Expand all
           </button>
         </div>
       </div>
 
-      {/* Roster error banner */}
+      {/* Error banners */}
       {rosterError && (
         <div className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-[12px] text-amber-800 dark:text-amber-300">
-          <strong>Roster error:</strong> {rosterError}. If this is your first time using this page, run the migration SQL in the Supabase dashboard (see <code>scripts/migration-accountability-roster.sql</code>).
+          <strong>Roster error:</strong> {rosterError}. If this is your first time using this page, run the migration SQL in the Supabase dashboard (<code>scripts/migration-accountability-roster.sql</code>).
+        </div>
+      )}
+      {activityError && (
+        <div className="mb-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-[12px] text-red-700 dark:text-red-300">
+          <strong>Activity error:</strong> {activityError}
         </div>
       )}
 
-      {/* Roster toolbar */}
-      <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800 mb-4">
-        <AgentSearchInput allAgents={allAgents} rosterIds={rosterSet} onAdd={handleAdd} />
-        <div className="flex items-center gap-4">
-          <span className="text-[12px] text-gray-400 dark:text-gray-500">
-            {roster.length} agent{roster.length !== 1 ? 's' : ''} on call
-          </span>
-
-          {clearState === 'idle' ? (
-            <button
-              onClick={() => setClearState('confirm')}
-              disabled={roster.length === 0}
-              className="text-[12px] text-red-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-default"
-            >
-              Clear all
-            </button>
-          ) : (
-            <span className="flex items-center gap-2 text-[12px]">
-              <span className="text-gray-500 dark:text-gray-400">Confirm clear?</span>
-              <button onClick={handleClearAll} className="text-red-500 font-medium hover:text-red-600">Yes</button>
-              <button onClick={() => setClearState('idle')} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
-            </span>
-          )}
-        </div>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between py-3 border-b border-gray-200 dark:border-gray-700 mb-4">
+        <button
+          onClick={() => setMembersOpen(true)}
+          className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[13px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          Manage members
+        </button>
+        <span className="text-[12px] text-gray-400 dark:text-gray-500">
+          {roster.length} agent{roster.length !== 1 ? 's' : ''} on call
+        </span>
       </div>
 
       {/* Agent list */}
@@ -320,7 +451,7 @@ export default function AccountabilityPage() {
       ) : roster.length === 0 ? (
         <EmptyRoster />
       ) : (
-        <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden">
+        <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
           {sortedAgents.map(agent => (
             <AgentRow
               key={agent.sfg_id}
@@ -330,6 +461,7 @@ export default function AccountabilityPage() {
               sparklineActivity={sparkActivity.filter(r => r.sfg_id === agent.sfg_id)}
               today={today}
               globalExpandCount={expandCount}
+              globalCollapseCount={collapseCount}
               onRemove={handleRemove}
             />
           ))}

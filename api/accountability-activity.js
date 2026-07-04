@@ -2,17 +2,17 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireAuth, getAllowedSfgIds, scopeAllowed } from './_auth.js'
+import { requireAuth } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
 /**
- * GET /api/accountability-activity?sfg_ids=A,B,C&days=35
+ * GET /api/accountability-activity?owner_sfg_id=X&sfg_ids=A,B,C&days=35
  *
  * Returns activity_tracking rows + agent_goals for a set of agents.
- * Caller must have scope access to all requested sfg_ids.
+ * Authorization: caller must be the roster owner or an active delegate.
  * days defaults to 35 (covers 7-day rolling window + 5-week sparkline).
  */
 export default async function handler(req, res) {
@@ -26,16 +26,28 @@ export default async function handler(req, res) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
 
-  const { sfg_ids, days = '35' } = req.query
+  const { sfg_ids, owner_sfg_id, days = '35' } = req.query
   if (!sfg_ids?.trim()) return res.status(400).json({ error: 'sfg_ids required' })
+  if (!owner_sfg_id?.trim()) return res.status(400).json({ error: 'owner_sfg_id required' })
 
   const ids = sfg_ids.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
   if (!ids.length) return res.status(400).json({ error: 'sfg_ids required' })
 
-  // Verify caller has scope access to all requested agents
-  const allowed = await getAllowedSfgIds(caller, supabase)
-  if (!scopeAllowed(allowed, ids)) {
-    return res.status(403).json({ error: 'Forbidden: one or more agents outside your scope' })
+  const ownerKey = owner_sfg_id.trim().toUpperCase()
+  const callerKey = caller.sfg_id?.toUpperCase() ?? ''
+
+  // Authorize: caller must be the owner, a super_admin, or an active delegate
+  if (caller.role !== 'super_admin' && callerKey !== ownerKey) {
+    const { data: delegation } = await supabase
+      .from('agent_assistants')
+      .select('id')
+      .eq('agent_sfg_id', ownerKey)
+      .eq('assistant_sfg_id', callerKey)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (!delegation) {
+      return res.status(403).json({ error: 'Forbidden: not the roster owner or a delegate' })
+    }
   }
 
   const daysNum = Math.min(Math.max(parseInt(days) || 35, 1), 90)

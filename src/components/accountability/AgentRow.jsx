@@ -17,12 +17,11 @@ const TABLE_ROWS = [
   { label: 'Appts run', key: 'appts_run' },
 ]
 
-export default function AgentRow({ agent, activity, goals, sparklineActivity, today, globalExpandCount, onRemove }) {
+export default function AgentRow({ agent, activity, goals, sparklineActivity, today, globalExpandCount, globalCollapseCount, onRemove }) {
   const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    if (globalExpandCount > 0) setOpen(true)
-  }, [globalExpandCount])
+  useEffect(() => { if (globalExpandCount  > 0) setOpen(true)  }, [globalExpandCount])
+  useEffect(() => { if (globalCollapseCount > 0) setOpen(false) }, [globalCollapseCount])
 
   // ── Collapsed stats ─────────────────────────────────────────────────────────
   const { label: periodLabel, dates: periodDates } = useMemo(() => getCollapsedPeriod(today), [today])
@@ -71,10 +70,10 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
   const name = agent.preferred_name ?? agent.opt_name ?? ''
 
   return (
-    <div className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+    <div className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
       {/* ── Collapsed row ──────────────────────────────────────────────────── */}
       <div
-        className="flex items-center h-14 px-4 cursor-pointer hover:bg-gray-50/70 dark:hover:bg-gray-800/40 select-none"
+        className="flex items-center h-14 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 select-none"
         onClick={() => setOpen(o => !o)}
       >
         {/* Agent name + team */}
@@ -83,7 +82,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
         </div>
 
         {/* Activity stats */}
-        <div className="flex-1 flex items-center border-l border-gray-100 dark:border-gray-800 pl-4 overflow-hidden">
+        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-4 overflow-hidden">
           <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mr-3 shrink-0">{periodLabel}</span>
 
           {[
@@ -95,7 +94,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
             <div key={label} className="flex items-center shrink-0">
               {i > 0 && <div className="h-[26px] border-r border-gray-200 dark:border-gray-700 mx-2" />}
               <div className="flex flex-col items-center px-2">
-                <span className="text-[15px] font-medium text-gray-900 dark:text-white leading-none tabular-nums">{val}</span>
+                <span className="text-[15px] font-semibold text-gray-900 dark:text-primary leading-none tabular-nums">{val}</span>
                 <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5">{label}</span>
               </div>
             </div>
@@ -106,11 +105,11 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
             <div className="h-[26px] border-r border-gray-200 dark:border-gray-700 mx-2" />
             <div className="flex flex-col items-center px-2">
               {cs.apps > 0 || cs.apv > 0 ? (
-                <span className="text-[11px] font-medium text-gray-900 dark:text-white leading-none whitespace-nowrap tabular-nums">
+                <span className="text-[11px] font-semibold text-gray-900 dark:text-primary leading-none whitespace-nowrap tabular-nums">
                   {cs.apps} · {fmtCompactAPV(cs.apv)}
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">0 · —</span>
+                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-600 leading-none">0 · —</span>
               )}
               <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5">Apps · APV</span>
             </div>
@@ -118,7 +117,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
         </div>
 
         {/* Goals */}
-        <div className="w-52 shrink-0 border-l border-gray-100 dark:border-gray-800 pl-3 flex flex-col gap-1.5">
+        <div className="w-52 shrink-0 border-l border-gray-200 dark:border-gray-700 pl-3 flex flex-col gap-1.5">
           {agentGoals.map(goal => (
             <GoalProgress
               key={goal.goal_type}
@@ -154,7 +153,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
       {/* ── Expanded panel ──────────────────────────────────────────────────── */}
       {open && (
-        <div className="px-4 pb-5 pt-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-800/20">
+        <div className="px-4 pb-5 pt-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30">
           <div className="grid grid-cols-2 gap-5">
 
             {/* Rolling 7-day table */}
