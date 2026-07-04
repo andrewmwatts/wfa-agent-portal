@@ -299,9 +299,10 @@ export default function AccountabilityPage() {
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) {
-      const body = await res.text()
-      console.error('accountability-activity error:', body)
-      setActivityError(`Activity data unavailable (${res.status})`)
+      let detail = ''
+      try { detail = (await res.json()).error ?? '' } catch { detail = await res.text() }
+      console.error('accountability-activity error:', detail)
+      setActivityError(`Activity data unavailable (${res.status})${detail ? ': ' + detail : ''}`)
       return
     }
     const { activity: rows, goals: goalRows } = await res.json()
