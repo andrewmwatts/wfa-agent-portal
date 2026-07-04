@@ -60,10 +60,10 @@ export default async function handler(req, res) {
   yesterday.setDate(yesterday.getDate() - 1)
   const yesterdayYMD = yesterday.toISOString().slice(0, 10)
 
-  const [actRes, goalsRes] = await Promise.all([
+  const [actRes, goalsRes, txRes] = await Promise.all([
     supabase
       .from('activity_logs')
-      .select('sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued')
+      .select('sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued, apv_submitted')
       .in('sfg_id', ids)
       .gte('log_date', startYMD)
       .lte('log_date', yesterdayYMD),
@@ -72,9 +72,24 @@ export default async function handler(req, res) {
       .select('sfg_id, goal_type, goal_value, effective_date')
       .in('sfg_id', ids)
       .order('effective_date', { ascending: false }),
+    supabase
+      .from('transactions')
+      .select('sfg_id, date, amount')
+      .in('sfg_id', ids)
+      .eq('description', 'Lead Spend')
+      .eq('type', 'expense')
+      .gte('date', startYMD)
+      .lte('date', yesterdayYMD),
   ])
 
   if (actRes.error) return res.status(500).json({ error: actRes.error.message })
+
+  // Aggregate lead spend per sfg_id + date
+  const leadSpendMap = {}
+  for (const tx of txRes.data ?? []) {
+    const key = `${tx.sfg_id}|${tx.date}`
+    leadSpendMap[key] = (leadSpendMap[key] ?? 0) + Number(tx.amount)
+  }
 
   // Normalize activity_logs column names to what the frontend expects
   const activity = (actRes.data ?? []).map(r => ({
@@ -85,8 +100,8 @@ export default async function handler(req, res) {
     appts_set:      r.appts_set,
     appts_run:      r.appts_kept,
     apps_submitted: r.apps_written,
-    apv_submitted:  0,
-    lead_spend:     0,
+    apv_submitted:  r.apv_submitted ?? 0,
+    lead_spend:     leadSpendMap[`${r.sfg_id}|${r.log_date}`] ?? 0,
   }))
 
   // agent_goals may not exist yet — return empty array if so
