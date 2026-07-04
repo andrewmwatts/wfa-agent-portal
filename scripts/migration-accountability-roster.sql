@@ -14,6 +14,8 @@ CREATE INDEX IF NOT EXISTS idx_accountability_rosters_owner
 
 ALTER TABLE accountability_rosters ENABLE ROW LEVEL SECURITY;
 
+GRANT ALL ON accountability_rosters TO authenticated;
+
 CREATE POLICY "Owner and delegates manage roster"
 ON accountability_rosters
 FOR ALL
