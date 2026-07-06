@@ -53,21 +53,22 @@ export function getMostRecentSaturday(date) {
   return d
 }
 
-// Returns { label, dates[] } for the collapsed activity block
+// Returns { label, dates[] } for the collapsed activity block.
+// Sat/Sun/Mon all show the full Fri–Sun weekend window (whatever days have passed).
 export function getCollapsedPeriod(today) {
-  const dow = today.getDay()
-  if (dow === 1) {
-    return {
-      label: 'Fri–Sun:',
-      dates: [subDays(today, 3), subDays(today, 2), subDays(today, 1)],
-    }
+  const dow = today.getDay() // 0=Sun … 6=Sat
+  if (dow === 6) { // Saturday — only Friday has passed
+    return { label: 'Fri–Sun:', dates: [subDays(today, 1)] }
+  }
+  if (dow === 0) { // Sunday — Friday and Saturday have passed
+    return { label: 'Fri–Sun:', dates: [subDays(today, 2), subDays(today, 1)] }
+  }
+  if (dow === 1) { // Monday — full weekend has passed
+    return { label: 'Fri–Sun:', dates: [subDays(today, 3), subDays(today, 2), subDays(today, 1)] }
   }
   const yesterday = subDays(today, 1)
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  return {
-    label: dayNames[yesterday.getDay()] + ':',
-    dates: [yesterday],
-  }
+  return { label: dayNames[yesterday.getDay()] + ':', dates: [yesterday] }
 }
 
 // Returns 7 Date objects, oldest→newest, ending yesterday

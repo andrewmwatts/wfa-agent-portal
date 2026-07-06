@@ -17,6 +17,45 @@ const TABLE_ROWS = [
   { label: 'Appts run', key: 'appts_run' },
 ]
 
+// ── Stoplight dots for collapsed row ─────────────────────────────────────────
+
+const STOPLIGHT_ROWS = [
+  { label: 'Set',  numKey: 'appts_set',      denKey: 'contacts'   },
+  { label: 'Sit',  numKey: 'appts_run',      denKey: 'appts_set'  },
+  { label: 'Sale', numKey: 'apps_submitted', denKey: 'appts_run'  },
+]
+
+function stoplightColor(ratio) {
+  if (ratio === null) return '#6b7280'  // gray — no data
+  if (ratio >= 0.5)   return '#22c55e'  // green — on target
+  if (ratio >= 0.25)  return '#f59e0b'  // amber — below target
+  return '#ef4444'                       // red — well below target
+}
+
+function StoplightDots({ rows }) {
+  const dots = STOPLIGHT_ROWS.map(({ label, numKey, denKey }) => {
+    const num = sumRows(rows, numKey)
+    const den = sumRows(rows, denKey)
+    const ratio = den > 0 ? num / den : null
+    return { label, color: stoplightColor(ratio) }
+  })
+
+  return (
+    <div className="flex items-center gap-3 shrink-0 border-l border-gray-200 dark:border-gray-600 pl-4">
+      {dots.map(({ label, color }) => (
+        <div key={label} className="flex flex-col items-center gap-0.5">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+          <span className="text-[8px] font-medium uppercase tracking-wide" style={{ color }}>
+            {label}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Agent row ─────────────────────────────────────────────────────────────────
+
 export default function AgentRow({ agent, activity, goals, sparklineActivity, today, globalExpandCount, globalCollapseCount, onRemove }) {
   const [open, setOpen] = useState(false)
 
@@ -41,20 +80,31 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
   const agentGoals = useMemo(() => getGoalsForAgent(goals), [goals])
 
-  // ── Expanded: rolling 7 days ────────────────────────────────────────────────
+  // ── Date windows ────────────────────────────────────────────────────────────
   const rolling7Days = useMemo(() => getRolling7Days(today), [today])
 
+  // Rolling 7 for the table + chart
   const rolling7Rows = useMemo(() => {
     const start = toYMD(subDays(today, 7))
     const end   = toYMD(subDays(today, 1))
     return activity.filter(r => r.date >= start && r.date <= end)
   }, [activity, today])
 
-  const prior7Rows = useMemo(() => {
+  // Two 14-day halves of the 28-day ratio window
+  const recent14Rows = useMemo(() => {
     const start = toYMD(subDays(today, 14))
-    const end   = toYMD(subDays(today, 8))
+    const end   = toYMD(subDays(today, 1))
     return activity.filter(r => r.date >= start && r.date <= end)
   }, [activity, today])
+
+  const older14Rows = useMemo(() => {
+    const start = toYMD(subDays(today, 28))
+    const end   = toYMD(subDays(today, 15))
+    return activity.filter(r => r.date >= start && r.date <= end)
+  }, [activity, today])
+
+  // Full 28 days for stoplights
+  const rolling28Rows = useMemo(() => [...older14Rows, ...recent14Rows], [older14Rows, recent14Rows])
 
   const totals = useMemo(() => {
     const keys = ['dials','contacts','appts_set','appts_run','apps_submitted','apv_submitted','lead_spend']
@@ -76,14 +126,14 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
         className="flex items-center h-14 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 select-none"
         onClick={() => setOpen(o => !o)}
       >
-        {/* Agent name + team */}
+        {/* Agent name */}
         <div className="w-36 shrink-0 pr-4">
-          <div className="text-[13px] font-medium text-gray-900 dark:text-white leading-tight truncate">{name}</div>
+          <div className="text-[13px] font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">{name}</div>
         </div>
 
         {/* Activity stats */}
-        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-4 overflow-hidden">
-          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-400 mr-3 shrink-0">{periodLabel}</span>
+        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-600 pl-4 overflow-hidden">
+          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-300 mr-3 shrink-0">{periodLabel}</span>
 
           {[
             { label: 'Dials',    val: cs.dials    },
@@ -109,15 +159,18 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                   {cs.apps} · {fmtCompactAPV(cs.apv)}
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">0 · —</span>
+                <span className="text-[11px] font-medium text-gray-300 dark:text-gray-500 leading-none">0 · —</span>
               )}
               <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Apps · APV</span>
             </div>
           </div>
         </div>
 
+        {/* 28-day ratio stoplights */}
+        <StoplightDots rows={rolling28Rows} />
+
         {/* Goals */}
-        <div className="w-52 shrink-0 border-l border-gray-200 dark:border-gray-700 pl-3 flex flex-col gap-1.5">
+        <div className="w-52 shrink-0 border-l border-gray-200 dark:border-gray-600 pl-3 ml-4 flex flex-col gap-1.5">
           {agentGoals.map(goal => (
             <GoalProgress
               key={goal.goal_type}
@@ -163,19 +216,19 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                   <tr>
                     <th className="text-left pb-2 pr-3 text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium w-20" />
                     {rolling7Days.map((d, i) => (
-                      <th key={i} className="pb-2 text-center text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium min-w-[30px]">
+                      <th key={i} className="pb-2 text-center text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium min-w-[30px]">
                         {DAY_ABB[d.getDay()]}
                       </th>
                     ))}
-                    <th className="pb-2 text-center text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium min-w-[36px]">
+                    <th className="pb-2 text-center text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium min-w-[36px]">
                       Total
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {TABLE_ROWS.map(({ label, key }) => (
-                    <tr key={key} className="border-t border-gray-100 dark:border-gray-700/60">
-                      <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">{label}</td>
+                    <tr key={key} className="border-t border-gray-100 dark:border-gray-700">
+                      <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">{label}</td>
                       {rolling7Days.map((d, i) => {
                         const v = cellVal(d, key)
                         return (
@@ -184,15 +237,15 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                           </td>
                         )
                       })}
-                      <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 tabular-nums">
+                      <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 tabular-nums">
                         {totals[key] ?? 0}
                       </td>
                     </tr>
                   ))}
 
                   {/* Apps · APV row */}
-                  <tr className="border-t border-gray-100 dark:border-gray-700/60">
-                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">Apps · APV</td>
+                  <tr className="border-t border-gray-100 dark:border-gray-700">
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">Apps · APV</td>
                     {rolling7Days.map((d, i) => {
                       const apps = cellVal(d, 'apps_submitted')
                       const apv  = cellVal(d, 'apv_submitted')
@@ -205,20 +258,20 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                         </td>
                       )
                     })}
-                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 whitespace-nowrap">
+                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 whitespace-nowrap">
                       {totals.apps_submitted}·{fmtCompactAPV(totals.apv_submitted)}
                     </td>
                   </tr>
 
                   {/* Lead spend row */}
-                  <tr className="border-t border-gray-100 dark:border-gray-700/60">
-                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">Lead spend</td>
+                  <tr className="border-t border-gray-100 dark:border-gray-700">
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">Lead spend</td>
                     {rolling7Days.map((d, i) => {
                       const v = cellVal(d, 'lead_spend')
                       if (!v) return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-500">—</td>
                       return <td key={i} className="py-1.5 text-center text-gray-800 dark:text-gray-200 tabular-nums">${Math.round(v)}</td>
                     })}
-                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 tabular-nums">
+                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 tabular-nums">
                       {totals.lead_spend ? `$${Math.round(totals.lead_spend)}` : '—'}
                     </td>
                   </tr>
@@ -226,8 +279,8 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
               </table>
             </div>
 
-            {/* Coaching ratios */}
-            <RatioPanel current7={rolling7Rows} prior7={prior7Rows} />
+            {/* Coaching ratios — 28-day rolling window */}
+            <RatioPanel recent14={recent14Rows} older14={older14Rows} />
 
             {/* Trend chart */}
             <div className="col-span-2">

@@ -306,7 +306,7 @@ export default function AccountabilityPage() {
       return
     }
     const { activity: rows, goals: goalRows } = await res.json()
-    setActivity(rows.filter(r => r.date >= start14YMD))
+    setActivity(rows)       // store all 35 days; components filter as needed
     setSparkActivity(rows)
     setGoals(goalRows)
   }
@@ -332,7 +332,7 @@ export default function AccountabilityPage() {
     )
     if (!res.ok) { console.error('accountability-activity error:', await res.text()); return }
     const { activity: rows, goals: goalRows } = await res.json()
-    setActivity(prev => [...prev, ...rows.filter(r => r.date >= start14YMD)])
+    setActivity(prev => [...prev, ...rows])
     setSparkActivity(prev => [...prev, ...rows])
     setGoals(prev => [...prev, ...goalRows])
   }
@@ -396,20 +396,20 @@ export default function AccountabilityPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <span className="text-[12px] text-gray-400 dark:text-gray-500">
+          <span className="text-[12px] text-gray-400 dark:text-gray-300">
             Collapsed: {periodLabel.replace(':', '')}
           </span>
           <button
             onClick={() => setCollapseCount(c => c + 1)}
             disabled={roster.length === 0}
-            className="text-[12px] text-primary hover:underline disabled:opacity-30 disabled:cursor-default"
+            className="text-[12px] text-primary dark:text-sky-400 hover:underline disabled:opacity-30 disabled:cursor-default"
           >
             Collapse all
           </button>
           <button
             onClick={() => setExpandCount(c => c + 1)}
             disabled={roster.length === 0}
-            className="text-[12px] text-primary hover:underline disabled:opacity-30 disabled:cursor-default"
+            className="text-[12px] text-primary dark:text-sky-400 hover:underline disabled:opacity-30 disabled:cursor-default"
           >
             Expand all
           </button>
@@ -432,7 +432,7 @@ export default function AccountabilityPage() {
       <div className="flex items-center justify-between py-3 border-b border-gray-200 dark:border-gray-700 mb-4">
         <button
           onClick={() => setMembersOpen(true)}
-          className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[13px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700/60 text-[13px] text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
@@ -441,7 +441,7 @@ export default function AccountabilityPage() {
           </svg>
           Manage members
         </button>
-        <span className="text-[12px] text-gray-400 dark:text-gray-500">
+        <span className="text-[12px] text-gray-400 dark:text-gray-300">
           {roster.length} agent{roster.length !== 1 ? 's' : ''} on call
         </span>
       </div>
