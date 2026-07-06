@@ -60,6 +60,11 @@ export default async function handler(req, res) {
   yesterday.setDate(yesterday.getDate() - 1)
   const yesterdayYMD = yesterday.toISOString().slice(0, 10)
 
+  // 7-day window for the lead spend point-in-time check
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const sevenDaysAgoYMD = sevenDaysAgo.toISOString().slice(0, 10)
+
   const [actRes, goalsRes, txRes] = await Promise.all([
     supabase
       .from('activity_logs')
@@ -84,11 +89,21 @@ export default async function handler(req, res) {
 
   if (actRes.error) return res.status(500).json({ error: actRes.error.message })
 
-  // Aggregate lead spend per sfg_id + date
+  const txRows = txRes.data ?? []
+
+  // Per-day map for merging into activity rows (best-effort; misses days with no log entry)
   const leadSpendMap = {}
-  for (const tx of txRes.data ?? []) {
+  for (const tx of txRows) {
     const key = `${tx.sfg_id}|${tx.date}`
     leadSpendMap[key] = (leadSpendMap[key] ?? 0) + Number(tx.amount)
+  }
+
+  // Authoritative 7-day total per agent — counts ALL transactions regardless of activity log presence
+  const leadSpend7 = {}
+  for (const tx of txRows) {
+    if (tx.date >= sevenDaysAgoYMD) {
+      leadSpend7[tx.sfg_id] = (leadSpend7[tx.sfg_id] ?? 0) + Number(tx.amount)
+    }
   }
 
   // Normalize activity_logs column names to what the frontend expects
@@ -107,5 +122,5 @@ export default async function handler(req, res) {
   // agent_goals may not exist yet — return empty array if so
   const goals = goalsRes.error ? [] : (goalsRes.data ?? [])
 
-  return res.status(200).json({ activity, goals })
+  return res.status(200).json({ activity, goals, leadSpend7 })
 }

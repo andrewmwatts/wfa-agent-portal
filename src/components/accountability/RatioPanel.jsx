@@ -33,37 +33,29 @@ function safeRatio(num, den) {
   return den > 0 ? num / den : null
 }
 
-// Props: recent14 = last 14 days, older14 = days 15–28.
-// Combined they form the 28-day rolling window for ratio values.
-// Trend compares recent14 vs older14.
-export default function RatioPanel({ recent14, older14 }) {
+// current = rolling 28-day rows, prior = previous 28-day rows (for trend arrows)
+export default function RatioPanel({ current = [], prior = [] }) {
   const ratios = useMemo(() => RATIO_ROWS.map(({ key, label, numKey, denKey }) => {
-    // Full 28-day totals for the displayed ratio value
-    const totalNum = sumRows(recent14, numKey) + sumRows(older14, numKey)
-    const totalDen = sumRows(recent14, denKey) + sumRows(older14, denKey)
+    const curNum = sumRows(current, numKey)
+    const curDen = sumRows(current, denKey)
+    const preNum = sumRows(prior, numKey)
+    const preDen = sumRows(prior, denKey)
 
-    // Halves for trend direction
-    const rNum = sumRows(recent14, numKey)
-    const rDen = sumRows(recent14, denKey)
-    const oNum = sumRows(older14, numKey)
-    const oDen = sumRows(older14, denKey)
-
-    const cur  = safeRatio(totalNum, totalDen)
-    const prev = safeRatio(oNum, oDen)
-    const curr = safeRatio(rNum, rDen)
+    const cur    = safeRatio(curNum, curDen)
+    const pre    = safeRatio(preNum, preDen)
     const target = RATIO_TARGETS[key]
 
     let trend = 'flat'
-    if (curr !== null && prev !== null) {
-      const diff = curr - prev
+    if (cur !== null && pre !== null) {
+      const diff = cur - pre
       if (Math.abs(diff) > RATIO_FLAT_THRESHOLD) trend = diff > 0 ? 'up' : 'down'
     }
 
-    const isLowSample = key === 'sale_rate' && totalDen < LOW_SAMPLE_THRESHOLD
+    const isLowSample = key === 'sale_rate' && curDen < LOW_SAMPLE_THRESHOLD
     const onTarget = cur !== null && cur >= target
 
     return { key, label, cur, target, onTarget, trend, isLowSample }
-  }), [recent14, older14])
+  }), [current, prior])
 
   const targetPct = RATIO_TARGETS.set_rate * 100
 

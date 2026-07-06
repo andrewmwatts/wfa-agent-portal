@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth }    from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import AgentRow from '../components/accountability/AgentRow'
-import { toYMD, subDays, getCollapsedPeriod } from '../components/accountability/utils/accountabilityCalc'
+import { toYMD, subDays } from '../components/accountability/utils/accountabilityCalc'
 
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -235,12 +235,13 @@ export default function AccountabilityPage() {
   const [loading, setLoading]             = useState(true)
   const [rosterError, setRosterError]     = useState(null)
   const [activityError, setActivityError] = useState(null)
-  const [roster, setRoster]               = useState([])   // sfg_id[]
-  const [allAgents, setAllAgents]         = useState([])   // all active personnel
-  const [agentMap, setAgentMap]           = useState({})   // sfg_id → personnel row
-  const [activity, setActivity]           = useState([])   // 14-day window
-  const [sparkActivity, setSparkActivity] = useState([])   // 5-week window
+  const [roster, setRoster]               = useState([])
+  const [allAgents, setAllAgents]         = useState([])
+  const [agentMap, setAgentMap]           = useState({})
+  const [activity, setActivity]           = useState([])   // 60-day window
+  const [sparkActivity, setSparkActivity] = useState([])   // same 60-day, passed as sparkline source
   const [goals, setGoals]                 = useState([])
+  const [leadSpend7, setLeadSpend7]       = useState({})   // sfg_id → 7-day lead spend total
   const [expandCount, setExpandCount]     = useState(0)
   const [collapseCount, setCollapseCount] = useState(0)
   const [membersOpen, setMembersOpen]     = useState(false)
@@ -291,11 +292,10 @@ export default function AccountabilityPage() {
 
   async function fetchRosterData(ids) {
     setActivityError(null)
-    const start14YMD = toYMD(subDays(today, 14))
-    const ownerEnc   = encodeURIComponent(activeSubject.sfg_id)
-    const idsEnc     = encodeURIComponent(ids.join(','))
+    const ownerEnc = encodeURIComponent(activeSubject.sfg_id)
+    const idsEnc   = encodeURIComponent(ids.join(','))
     const res = await fetch(
-      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${idsEnc}&days=35`,
+      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${idsEnc}&days=60`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) {
@@ -305,10 +305,11 @@ export default function AccountabilityPage() {
       setActivityError(`Activity data unavailable (${res.status})${detail ? ': ' + detail : ''}`)
       return
     }
-    const { activity: rows, goals: goalRows } = await res.json()
-    setActivity(rows)       // store all 35 days; components filter as needed
+    const { activity: rows, goals: goalRows, leadSpend7: ls7 } = await res.json()
+    setActivity(rows)
     setSparkActivity(rows)
     setGoals(goalRows)
+    setLeadSpend7(ls7 ?? {})
   }
 
   // ── Add agent ───────────────────────────────────────────────────────────────
@@ -324,17 +325,17 @@ export default function AccountabilityPage() {
     setRoster(prev => [...prev, agent.sfg_id])
     setAgentMap(prev => ({ ...prev, [agent.sfg_id]: agent }))
 
-    const start14YMD = toYMD(subDays(today, 14))
-    const ownerEnc   = encodeURIComponent(activeSubject.sfg_id)
+    const ownerEnc = encodeURIComponent(activeSubject.sfg_id)
     const res = await fetch(
-      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${encodeURIComponent(agent.sfg_id)}&days=35`,
+      `/api/accountability-activity?owner_sfg_id=${ownerEnc}&sfg_ids=${encodeURIComponent(agent.sfg_id)}&days=60`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) { console.error('accountability-activity error:', await res.text()); return }
-    const { activity: rows, goals: goalRows } = await res.json()
+    const { activity: rows, goals: goalRows, leadSpend7: ls7 } = await res.json()
     setActivity(prev => [...prev, ...rows])
     setSparkActivity(prev => [...prev, ...rows])
     setGoals(prev => [...prev, ...goalRows])
+    setLeadSpend7(prev => ({ ...prev, ...(ls7 ?? {}) }))
   }
 
   // ── Remove agent ───────────────────────────────────────────────────────────
@@ -343,6 +344,7 @@ export default function AccountabilityPage() {
     setActivity(prev => prev.filter(r => r.sfg_id !== sfgId))
     setSparkActivity(prev => prev.filter(r => r.sfg_id !== sfgId))
     setGoals(prev => prev.filter(r => r.sfg_id !== sfgId))
+    setLeadSpend7(prev => { const n = { ...prev }; delete n[sfgId]; return n })
     supabase.from('accountability_rosters').delete().eq('agent_sfg_id', sfgId).eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
@@ -352,6 +354,7 @@ export default function AccountabilityPage() {
     setActivity([])
     setSparkActivity([])
     setGoals([])
+    setLeadSpend7({})
     supabase.from('accountability_rosters').delete().eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
@@ -359,8 +362,6 @@ export default function AccountabilityPage() {
     () => roster.map(id => agentMap[id]).filter(Boolean).sort((a, b) => (a.preferred_name ?? '').localeCompare(b.preferred_name ?? '')),
     [roster, agentMap],
   )
-
-  const { label: periodLabel } = useMemo(() => getCollapsedPeriod(today), [today])
 
   if (!permissions?.accountability?.read) {
     return (
@@ -391,25 +392,22 @@ export default function AccountabilityPage() {
           <h1 className="text-[17px] font-medium text-gray-900 dark:text-white leading-tight">
             Accountability call
           </h1>
-          <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">
-            {fmtHeaderDate(today)} · {roster.length} agent{roster.length !== 1 ? 's' : ''}
+          <p className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5">
+            {fmtHeaderDate(today)}
           </p>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <span className="text-[12px] text-gray-400 dark:text-gray-300">
-            Collapsed: {periodLabel.replace(':', '')}
-          </span>
           <button
             onClick={() => setCollapseCount(c => c + 1)}
             disabled={roster.length === 0}
-            className="text-[12px] text-primary dark:text-sky-400 hover:underline disabled:opacity-30 disabled:cursor-default"
+            className="text-[12px] text-accent hover:underline disabled:opacity-30 disabled:cursor-default"
           >
             Collapse all
           </button>
           <button
             onClick={() => setExpandCount(c => c + 1)}
             disabled={roster.length === 0}
-            className="text-[12px] text-primary dark:text-sky-400 hover:underline disabled:opacity-30 disabled:cursor-default"
+            className="text-[12px] text-accent hover:underline disabled:opacity-30 disabled:cursor-default"
           >
             Expand all
           </button>
@@ -461,6 +459,7 @@ export default function AccountabilityPage() {
               goals={goals.filter(r => r.sfg_id === agent.sfg_id)}
               sparklineActivity={sparkActivity.filter(r => r.sfg_id === agent.sfg_id)}
               today={today}
+              leadSpend7={leadSpend7[agent.sfg_id] ?? 0}
               globalExpandCount={expandCount}
               globalCollapseCount={collapseCount}
               onRemove={handleRemove}

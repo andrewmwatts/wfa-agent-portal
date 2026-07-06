@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import GoalProgress from './GoalProgress'
 import RatioPanel from './RatioPanel'
 import TrendChart from './TrendChart'
 import LeadSpendNote from './LeadSpendNote'
 import {
-  getRolling7Days, getCollapsedPeriod, getGoalsForAgent,
-  sumRows, toYMD, subDays, fmtCompactAPV,
+  getRolling7Days, getCollapsedPeriod, sumRows,
+  toYMD, subDays, fmtCompactAPV, computeGoalCurrentValue,
+  buildWeeklyBuckets,
 } from './utils/accountabilityCalc'
 
 const DAY_ABB = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -17,46 +17,57 @@ const TABLE_ROWS = [
   { label: 'Appts run', key: 'appts_run' },
 ]
 
-// ── Stoplight dots for collapsed row ─────────────────────────────────────────
-
-const STOPLIGHT_ROWS = [
-  { label: 'Set',  numKey: 'appts_set',      denKey: 'contacts'   },
-  { label: 'Sit',  numKey: 'appts_run',      denKey: 'appts_set'  },
-  { label: 'Sale', numKey: 'apps_submitted', denKey: 'appts_run'  },
-]
-
-function stoplightColor(ratio) {
-  if (ratio === null) return '#6b7280'  // gray — no data
-  if (ratio >= 0.5)   return '#22c55e'  // green — on target
-  if (ratio >= 0.25)  return '#f59e0b'  // amber — below target
-  return '#ef4444'                       // red — well below target
+// ── Mini sparkline (5-week weekly appts) ─────────────────────────────────────
+function Sparkline({ data }) {
+  if (!data || data.length < 2) return <div style={{ width: 34, height: 13 }} />
+  const max = Math.max(...data, 0.01)
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * 32
+    const y = 11 - (v / max) * 11
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  return (
+    <svg width={34} height={13} style={{ display: 'block', flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke="#9ca3af" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
 }
 
-function StoplightDots({ rows }) {
-  const dots = STOPLIGHT_ROWS.map(({ label, numKey, denKey }) => {
-    const num = sumRows(rows, numKey)
-    const den = sumRows(rows, denKey)
-    const ratio = den > 0 ? num / den : null
-    return { label, color: stoplightColor(ratio) }
-  })
+// ── Stoplight dot ─────────────────────────────────────────────────────────────
+const STOPLIGHT = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444', gray: '#6b7280' }
 
+function Dot({ color, title }) {
   return (
-    <div className="flex items-center gap-3 shrink-0 border-l border-gray-200 dark:border-gray-600 pl-4">
-      {dots.map(({ label, color }) => (
-        <div key={label} className="flex flex-col items-center gap-0.5">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-          <span className="text-[8px] font-medium uppercase tracking-wide" style={{ color }}>
-            {label}
-          </span>
-        </div>
-      ))}
-    </div>
+    <div
+      title={title}
+      style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }}
+    />
   )
+}
+
+function ratioColor(ratio) {
+  if (ratio === null) return STOPLIGHT.gray
+  if (ratio >= 0.50) return STOPLIGHT.green
+  if (ratio >= 0.30) return STOPLIGHT.amber
+  return STOPLIGHT.red
+}
+
+function leadSpendColor(amount) {
+  if (amount >= 300) return STOPLIGHT.green
+  if (amount > 0)    return STOPLIGHT.amber
+  return STOPLIGHT.red
+}
+
+function fmtPct(ratio) {
+  return ratio === null ? '—' : `${Math.round(ratio * 100)}%`
 }
 
 // ── Agent row ─────────────────────────────────────────────────────────────────
 
-export default function AgentRow({ agent, activity, goals, sparklineActivity, today, globalExpandCount, globalCollapseCount, onRemove }) {
+export default function AgentRow({
+  agent, activity, goals, sparklineActivity, today,
+  leadSpend7, globalExpandCount, globalCollapseCount, onRemove,
+}) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => { if (globalExpandCount  > 0) setOpen(true)  }, [globalExpandCount])
@@ -78,33 +89,51 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
     }
   }, [activity, periodDates])
 
-  const agentGoals = useMemo(() => getGoalsForAgent(goals), [goals])
+  // ── Right section: weekly appts + sparkline + stoplights ───────────────────
+  const weekAppts = useMemo(
+    () => computeGoalCurrentValue('appts_week', activity, today),
+    [activity, today],
+  )
 
-  // ── Date windows ────────────────────────────────────────────────────────────
+  const sparkBuckets = useMemo(() => {
+    const buckets = buildWeeklyBuckets(sparklineActivity, 5, today)
+    return buckets.map(b => b.appts_run)
+  }, [sparklineActivity, today])
+
+  // 28-day rolling ratios (for stoplights + expanded RatioPanel)
+  const rows28 = useMemo(() => {
+    const start = toYMD(subDays(today, 28))
+    const end   = toYMD(subDays(today, 1))
+    return sparklineActivity.filter(r => r.date >= start && r.date <= end)
+  }, [sparklineActivity, today])
+
+  // Prior 28 days (days 29-56) — for trend comparison in expanded panel
+  const priorRows28 = useMemo(() => {
+    const start = toYMD(subDays(today, 56))
+    const end   = toYMD(subDays(today, 29))
+    return sparklineActivity.filter(r => r.date >= start && r.date <= end)
+  }, [sparklineActivity, today])
+
+  const ratios28 = useMemo(() => {
+    const contacts  = sumRows(rows28, 'contacts')
+    const appts_set = sumRows(rows28, 'appts_set')
+    const appts_run = sumRows(rows28, 'appts_run')
+    const apps      = sumRows(rows28, 'apps_submitted')
+    return {
+      set_rate:  contacts  > 0 ? appts_set / contacts  : null,
+      sit_rate:  appts_set > 0 ? appts_run / appts_set : null,
+      sale_rate: appts_run > 0 ? apps      / appts_run : null,
+    }
+  }, [rows28])
+
+  // ── Expanded: rolling 7 days ────────────────────────────────────────────────
   const rolling7Days = useMemo(() => getRolling7Days(today), [today])
 
-  // Rolling 7 for the table + chart
   const rolling7Rows = useMemo(() => {
     const start = toYMD(subDays(today, 7))
     const end   = toYMD(subDays(today, 1))
     return activity.filter(r => r.date >= start && r.date <= end)
   }, [activity, today])
-
-  // Two 14-day halves of the 28-day ratio window
-  const recent14Rows = useMemo(() => {
-    const start = toYMD(subDays(today, 14))
-    const end   = toYMD(subDays(today, 1))
-    return activity.filter(r => r.date >= start && r.date <= end)
-  }, [activity, today])
-
-  const older14Rows = useMemo(() => {
-    const start = toYMD(subDays(today, 28))
-    const end   = toYMD(subDays(today, 15))
-    return activity.filter(r => r.date >= start && r.date <= end)
-  }, [activity, today])
-
-  // Full 28 days for stoplights
-  const rolling28Rows = useMemo(() => [...older14Rows, ...recent14Rows], [older14Rows, recent14Rows])
 
   const totals = useMemo(() => {
     const keys = ['dials','contacts','appts_set','appts_run','apps_submitted','apv_submitted','lead_spend']
@@ -116,7 +145,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
     return row ? (Number(row[key]) || 0) : 0
   }
 
-  const cs = collapsedStats
+  const cs   = collapsedStats
   const name = agent.preferred_name ?? agent.opt_name ?? ''
 
   return (
@@ -128,12 +157,12 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
       >
         {/* Agent name */}
         <div className="w-36 shrink-0 pr-4">
-          <div className="text-[13px] font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">{name}</div>
+          <div className="text-[13px] font-medium text-gray-900 dark:text-white leading-tight truncate">{name}</div>
         </div>
 
         {/* Activity stats */}
-        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-600 pl-4 overflow-hidden">
-          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-300 mr-3 shrink-0">{periodLabel}</span>
+        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-4 overflow-hidden">
+          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-400 mr-3 shrink-0">{periodLabel}</span>
 
           {[
             { label: 'Dials',    val: cs.dials    },
@@ -159,27 +188,33 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                   {cs.apps} · {fmtCompactAPV(cs.apv)}
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-gray-300 dark:text-gray-500 leading-none">0 · —</span>
+                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">0 · —</span>
               )}
               <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Apps · APV</span>
             </div>
           </div>
         </div>
 
-        {/* 28-day ratio stoplights */}
-        <StoplightDots rows={rolling28Rows} />
+        {/* Right section: Week summary + stoplights */}
+        <div className="shrink-0 border-l border-gray-200 dark:border-gray-700 pl-4 flex items-center gap-3">
+          <span className="text-[10px] text-gray-400 dark:text-gray-400 shrink-0">Week:</span>
 
-        {/* Goals */}
-        <div className="w-52 shrink-0 border-l border-gray-200 dark:border-gray-600 pl-3 ml-4 flex flex-col gap-1.5">
-          {agentGoals.map(goal => (
-            <GoalProgress
-              key={goal.goal_type}
-              goal={goal}
-              activityRows={activity}
-              sparklineActivity={sparklineActivity}
-              today={today}
+          <div className="flex flex-col items-center shrink-0">
+            <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 tabular-nums leading-none">{weekAppts}</span>
+            <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Appts</span>
+          </div>
+
+          <Sparkline data={sparkBuckets} />
+
+          <div className="flex items-center gap-1.5">
+            <Dot
+              color={leadSpendColor(leadSpend7)}
+              title={`Lead spend (7d): $${Math.round(leadSpend7)}`}
             />
-          ))}
+            <Dot color={ratioColor(ratios28.set_rate)}  title={`Set rate (28d): ${fmtPct(ratios28.set_rate)}`} />
+            <Dot color={ratioColor(ratios28.sit_rate)}  title={`Sit rate (28d): ${fmtPct(ratios28.sit_rate)}`} />
+            <Dot color={ratioColor(ratios28.sale_rate)} title={`Sale rate (28d): ${fmtPct(ratios28.sale_rate)}`} />
+          </div>
         </div>
 
         {/* Remove */}
@@ -228,7 +263,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                 <tbody>
                   {TABLE_ROWS.map(({ label, key }) => (
                     <tr key={key} className="border-t border-gray-100 dark:border-gray-700">
-                      <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">{label}</td>
+                      <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">{label}</td>
                       {rolling7Days.map((d, i) => {
                         const v = cellVal(d, key)
                         return (
@@ -237,7 +272,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                           </td>
                         )
                       })}
-                      <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 tabular-nums">
+                      <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 tabular-nums">
                         {totals[key] ?? 0}
                       </td>
                     </tr>
@@ -245,7 +280,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
                   {/* Apps · APV row */}
                   <tr className="border-t border-gray-100 dark:border-gray-700">
-                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">Apps · APV</td>
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">Apps · APV</td>
                     {rolling7Days.map((d, i) => {
                       const apps = cellVal(d, 'apps_submitted')
                       const apv  = cellVal(d, 'apv_submitted')
@@ -258,29 +293,29 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
                         </td>
                       )
                     })}
-                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 whitespace-nowrap">
+                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 whitespace-nowrap">
                       {totals.apps_submitted}·{fmtCompactAPV(totals.apv_submitted)}
                     </td>
                   </tr>
 
                   {/* Lead spend row */}
                   <tr className="border-t border-gray-100 dark:border-gray-700">
-                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-300">Lead spend</td>
+                    <td className="py-1.5 pr-3 text-gray-500 dark:text-gray-400">Lead spend</td>
                     {rolling7Days.map((d, i) => {
                       const v = cellVal(d, 'lead_spend')
                       if (!v) return <td key={i} className="py-1.5 text-center text-gray-300 dark:text-gray-500">—</td>
                       return <td key={i} className="py-1.5 text-center text-gray-800 dark:text-gray-200 tabular-nums">${Math.round(v)}</td>
                     })}
-                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-gray-100 bg-gray-100/60 dark:bg-gray-700/50 tabular-nums">
-                      {totals.lead_spend ? `$${Math.round(totals.lead_spend)}` : '—'}
+                    <td className="py-1.5 text-center font-medium text-gray-900 dark:text-white bg-gray-100/60 dark:bg-gray-700/40 tabular-nums">
+                      {leadSpend7 ? `$${Math.round(leadSpend7)}` : '—'}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* Coaching ratios — 28-day rolling window */}
-            <RatioPanel recent14={recent14Rows} older14={older14Rows} />
+            {/* Coaching ratios — 28-day rolling */}
+            <RatioPanel current={rows28} prior={priorRows28} />
 
             {/* Trend chart */}
             <div className="col-span-2">
@@ -289,7 +324,7 @@ export default function AgentRow({ agent, activity, goals, sparklineActivity, to
 
             {/* Lead spend note */}
             <div className="col-span-2">
-              <LeadSpendNote leadSpend={totals.lead_spend ?? 0} dials={totals.dials ?? 0} />
+              <LeadSpendNote leadSpend={leadSpend7} dials={totals.dials ?? 0} />
             </div>
           </div>
         </div>
