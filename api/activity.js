@@ -183,6 +183,7 @@ export default async function handler(req, res) {
       sfg_id, log_date,
       dials, hours_dialed, reachouts, posts,
       contacts, appts_set, appts_kept, apps_written, resets,
+      apv_submitted, apv_issued,
       notes,
     } = req.body ?? {}
 
@@ -204,9 +205,11 @@ export default async function handler(req, res) {
           contacts:     Math.max(0, parseInt(contacts)       || 0),
           appts_set:    Math.max(0, parseInt(appts_set)      || 0),
           appts_kept:   Math.max(0, parseInt(appts_kept)     || 0),
-          apps_written: Math.max(0, parseInt(apps_written)   || 0),
-          resets:       Math.max(0, parseInt(resets)         || 0),
-          notes:        notes?.trim() || null,
+          apps_written:  Math.max(0, parseInt(apps_written)    || 0),
+          resets:        Math.max(0, parseInt(resets)          || 0),
+          apv_submitted: Math.max(0, parseFloat(apv_submitted) || 0),
+          apv_issued:    Math.max(0, parseFloat(apv_issued)    || 0),
+          notes:         notes?.trim() || null,
           updated_at:   new Date().toISOString(),
         },
         { onConflict: 'sfg_id,log_date' },
