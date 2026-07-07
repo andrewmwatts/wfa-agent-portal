@@ -72,17 +72,6 @@ function fmtPct(ratio) {
   return ratio === null ? '—' : `${Math.round(ratio * 100)}%`
 }
 
-// ── Section divider ───────────────────────────────────────────────────────────
-function SectionDivider({ label }) {
-  return (
-    <div className="flex flex-col justify-center items-center shrink-0 border-l border-gray-200 dark:border-gray-600 pl-3 mr-2">
-      <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
-    </div>
-  )
-}
-
 // ── Agent row ─────────────────────────────────────────────────────────────────
 
 export default function AgentRow({
@@ -191,8 +180,8 @@ export default function AgentRow({
           <div className="text-[13px] font-medium text-gray-900 dark:text-white leading-tight truncate">{name}</div>
         </div>
 
-        {/* ── [Day]: activity stats ─────────────────────────────────────── */}
-        <div className="flex items-center border-l border-gray-200 dark:border-gray-700 pl-3 overflow-hidden">
+        {/* ── [Day]: activity stats — expands to fill available space ──── */}
+        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-3 overflow-hidden min-w-0">
           <span className="text-[10px] font-medium text-gray-400 dark:text-gray-400 mr-2 shrink-0">{periodLabel}</span>
 
           {[
@@ -226,42 +215,45 @@ export default function AgentRow({
           </div>
         </div>
 
-        {/* ── Week: appts progress + lead spend stoplight ───────────────── */}
-        <SectionDivider label="Week:" />
+        {/* ── Week + 4 Wk: right-justified group ───────────────────────── */}
+        <div className="flex items-center shrink-0 ml-4">
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Bar + X/10 + badge */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
-              <div className="h-full rounded-full" style={{ width: `${weekPct}%`, background: weekBarColor }} />
+          {/* Week: */}
+          <div className="flex items-center gap-2.5 border-l border-gray-200 dark:border-gray-600 pl-4 pr-4">
+            <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+              Week:
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
+                <div className="h-full rounded-full" style={{ width: `${weekPct}%`, background: weekBarColor }} />
+              </div>
+              <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
+                {weekAppts}/{apptGoal.goal_value}
+              </span>
+              <span className={`text-[8px] px-1.5 py-px rounded-full font-medium shrink-0 ${weekBadge}`}>
+                {PACE_LABELS[weekPace]}
+              </span>
             </div>
-            <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
-              {weekAppts}/{apptGoal.goal_value}
-            </span>
-            <span className={`text-[8px] px-1.5 py-px rounded-full font-medium shrink-0 ${weekBadge}`}>
-              {PACE_LABELS[weekPace]}
-            </span>
+            <LabeledDot
+              color={leadSpendColor(leadSpend7)}
+              label="Leads"
+              title={`Lead spend (7d): $${Math.round(leadSpend7)}`}
+            />
           </div>
 
-          {/* Lead spend stoplight */}
-          <LabeledDot
-            color={leadSpendColor(leadSpend7)}
-            label="Leads"
-            title={`Lead spend (7d): $${Math.round(leadSpend7)}`}
-          />
-        </div>
-
-        {/* ── 4 Wk: sparkline + ratio stoplights ───────────────────────── */}
-        <SectionDivider label="4 Wk:" />
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Sparkline data={sparkBuckets} color={weekBarColor} />
-
-          <div className="flex items-center gap-2">
-            <LabeledDot color={ratioColor(ratios28.set_rate)}  label="Set"  title={`Set rate (28d): ${fmtPct(ratios28.set_rate)}`} />
-            <LabeledDot color={ratioColor(ratios28.sit_rate)}  label="Sit"  title={`Sit rate (28d): ${fmtPct(ratios28.sit_rate)}`} />
-            <LabeledDot color={ratioColor(ratios28.sale_rate)} label="Sale" title={`Sale rate (28d): ${fmtPct(ratios28.sale_rate)}`} />
+          {/* 4 Wk: */}
+          <div className="flex items-center gap-2.5 border-l border-gray-200 dark:border-gray-600 pl-4">
+            <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+              4 Wk:
+            </span>
+            <Sparkline data={sparkBuckets} color={weekBarColor} />
+            <div className="flex items-center gap-2">
+              <LabeledDot color={ratioColor(ratios28.set_rate)}  label="Set"  title={`Set rate (28d): ${fmtPct(ratios28.set_rate)}`} />
+              <LabeledDot color={ratioColor(ratios28.sit_rate)}  label="Sit"  title={`Sit rate (28d): ${fmtPct(ratios28.sit_rate)}`} />
+              <LabeledDot color={ratioColor(ratios28.sale_rate)} label="Sale" title={`Sale rate (28d): ${fmtPct(ratios28.sale_rate)}`} />
+            </div>
           </div>
+
         </div>
 
         {/* Remove */}
