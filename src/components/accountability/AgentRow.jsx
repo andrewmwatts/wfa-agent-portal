@@ -58,7 +58,7 @@ function LabeledDot({ color, label, title }) {
 function ratioColor(ratio) {
   if (ratio === null) return STOPLIGHT.gray
   if (ratio >= 0.50) return STOPLIGHT.green
-  if (ratio >= 0.30) return STOPLIGHT.amber
+  if (ratio >= 0.25) return STOPLIGHT.amber
   return STOPLIGHT.red
 }
 
