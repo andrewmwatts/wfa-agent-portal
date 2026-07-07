@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   const now = new Date()
   const monthStartYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-  const [actRes, goalsRes, txRes, policiesRes] = await Promise.all([
+  const [actRes, goalsRes, txRes, policiesRes, actGoalsRes] = await Promise.all([
     supabase
       .from('activity_logs')
       .select('sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued, apv_submitted')
@@ -95,14 +95,24 @@ export default async function handler(req, res) {
       .in('sfg_id', ids)
       .gte('issue_date', monthStartYMD)
       .lte('issue_date', yesterdayYMD),
+    supabase
+      .from('activity_goals')
+      .select('sfg_id, monthly_apv_issued')
+      .in('sfg_id', ids),
   ])
 
   if (actRes.error) return res.status(500).json({ error: actRes.error.message })
 
-  // Monthly issued APV per agent
+  // Monthly issued APV per agent (from policies table)
   const monthlyIssuedApv = {}
   for (const p of (policiesRes.data ?? [])) {
     monthlyIssuedApv[p.sfg_id] = (monthlyIssuedApv[p.sfg_id] ?? 0) + (Number(p.issued_apv) || 0)
+  }
+
+  // Monthly APV goal per agent (from activity_goals table)
+  const monthlyApvGoal = {}
+  for (const g of (actGoalsRes.data ?? [])) {
+    if (g.monthly_apv_issued != null) monthlyApvGoal[g.sfg_id] = Number(g.monthly_apv_issued)
   }
 
   const txRows = txRes.data ?? []
@@ -137,5 +147,5 @@ export default async function handler(req, res) {
   // agent_goals may not exist yet — return empty array if so
   const goals = goalsRes.error ? [] : (goalsRes.data ?? [])
 
-  return res.status(200).json({ activity, goals, leadSpend7, monthlyIssuedApv })
+  return res.status(200).json({ activity, goals, leadSpend7, monthlyIssuedApv, monthlyApvGoal })
 }
