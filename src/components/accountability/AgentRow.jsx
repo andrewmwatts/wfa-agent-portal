@@ -419,50 +419,41 @@ export default function AgentRow({
               </table>
             </div>
 
-            {/* Coaching ratios + monthly APV + policy button */}
-            <div className="flex flex-col gap-4">
-              <RatioPanel current={rows28} prior={priorRows28} />
+            {/* Coaching ratios */}
+            <RatioPanel current={rows28} prior={priorRows28} />
 
-              {/* Monthly issued APV vs goal */}
-              {(() => {
-                const apvGoal = agentGoals.find(g => g.goal_type === 'apv_month')
-                return (
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium pb-2 border-b border-gray-200 dark:border-gray-600 mb-2">
-                      Issued APV · month to date
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-[18px] font-semibold text-gray-900 dark:text-white tabular-nums leading-none">
-                        {fmtFullApv(monthlyIssuedApv)}
-                      </span>
-                      {apvGoal && (
-                        <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">
-                          / {fmtFullApv(apvGoal.goal_value)} goal
-                        </span>
-                      )}
-                    </div>
-                    {apvGoal && (
-                      <div className="mt-2 w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min((monthlyIssuedApv / apvGoal.goal_value) * 100, 100)}%`,
-                            background: monthlyIssuedApv >= apvGoal.goal_value ? '#22c55e' : monthlyIssuedApv >= apvGoal.goal_value * 0.5 ? '#f59e0b' : '#ef4444',
-                          }}
-                        />
-                      </div>
-                    )}
+            {/* Monthly APV goal row — full width, between ratios and chart */}
+            {(() => {
+              const apvGoal = agentGoals.find(g => g.goal_type === 'apv_month')
+              const issued  = monthlyIssuedApv
+              const goal    = apvGoal?.goal_value ?? 0
+              const pct     = goal > 0 ? Math.min((issued / goal) * 100, 100) : 0
+              const barColor = issued >= goal ? '#22c55e' : issued >= goal * 0.5 ? '#f59e0b' : '#ef4444'
+              return (
+                <div className="col-span-2 flex items-center gap-4 py-2 border-t border-b border-gray-100 dark:border-gray-700">
+                  {/* Bar */}
+                  <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: goal > 0 ? barColor : '#d1d5db' }} />
                   </div>
-                )
-              })()}
-
-              <button
-                onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
-                className="self-start text-[11px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
-              >
-                Policy details
-              </button>
-            </div>
+                  {/* Label + values */}
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap shrink-0">Monthly APV Goal:</span>
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 tabular-nums whitespace-nowrap shrink-0">
+                    {goal > 0 ? fmtFullApv(goal) : '—'}
+                  </span>
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap shrink-0">Issued:</span>
+                  <span className="text-[11px] font-medium text-gray-900 dark:text-white tabular-nums whitespace-nowrap shrink-0">
+                    {fmtFullApv(issued)}
+                  </span>
+                  {/* Policy details button */}
+                  <button
+                    onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
+                    className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
+                  >
+                    Policy details
+                  </button>
+                </div>
+              )
+            })()}
 
             {/* Trend chart */}
             <div className="col-span-2">
