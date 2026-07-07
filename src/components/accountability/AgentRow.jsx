@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import RatioPanel from './RatioPanel'
 import TrendChart from './TrendChart'
 import LeadSpendNote from './LeadSpendNote'
+import PolicyModal from './PolicyModal'
+import { useViewing } from '../../context/ViewingContext'
 import {
   getRolling7Days, getCollapsedPeriod, sumRows,
   toYMD, subDays, fmtCompactAPV, computeGoalCurrentValue,
@@ -78,7 +80,9 @@ export default function AgentRow({
   agent, activity, goals, sparklineActivity, today,
   leadSpend7, globalExpandCount, globalCollapseCount, onRemove,
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen]             = useState(false)
+  const [policyModal, setPolicyModal] = useState(false)
+  const { activeSubject } = useViewing()
 
   useEffect(() => { if (globalExpandCount  > 0) setOpen(true)  }, [globalExpandCount])
   useEffect(() => { if (globalCollapseCount > 0) setOpen(false) }, [globalCollapseCount])
@@ -223,16 +227,16 @@ export default function AgentRow({
             <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
               Week:
             </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
-                <div className="h-full rounded-full" style={{ width: `${weekPct}%`, background: weekBarColor }} />
+            <div className="flex flex-col gap-0.5 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
+                  <div className="h-full rounded-full" style={{ width: `${weekPct}%`, background: weekBarColor }} />
+                </div>
+                <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
+                  {weekAppts}/{apptGoal.goal_value}
+                </span>
               </div>
-              <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
-                {weekAppts}/{apptGoal.goal_value}
-              </span>
-              <span className={`text-[8px] px-1.5 py-px rounded-full font-medium shrink-0 ${weekBadge}`}>
-                {PACE_LABELS[weekPace]}
-              </span>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-500">Appts run</span>
             </div>
             <LabeledDot
               color={leadSpendColor(leadSpend7)}
@@ -277,6 +281,16 @@ export default function AgentRow({
           </svg>
         </div>
       </div>
+
+      {/* ── Policy modal ────────────────────────────────────────────────────── */}
+      {policyModal && (
+        <PolicyModal
+          agentName={name}
+          sfgId={agent.sfg_id}
+          ownerSfgId={activeSubject?.sfg_id}
+          onClose={() => setPolicyModal(false)}
+        />
+      )}
 
       {/* ── Expanded panel ──────────────────────────────────────────────────── */}
       {open && (
@@ -354,7 +368,15 @@ export default function AgentRow({
             </div>
 
             {/* Coaching ratios — 28-day rolling */}
-            <RatioPanel current={rows28} prior={priorRows28} />
+            <div className="flex flex-col gap-4">
+              <RatioPanel current={rows28} prior={priorRows28} />
+              <button
+                onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
+                className="self-start text-[11px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
+              >
+                Policy details
+              </button>
+            </div>
 
             {/* Trend chart */}
             <div className="col-span-2">
