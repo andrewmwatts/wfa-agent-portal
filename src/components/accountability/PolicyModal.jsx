@@ -9,8 +9,7 @@ function fmtDate(d) {
 
 function fmtAPV(v) {
   if (!v) return '—'
-  if (v >= 1000) return `$${Math.round(v / 1000)}k`
-  return `$${Math.round(v)}`
+  return `$${Math.round(v).toLocaleString()}`
 }
 
 const OPEN_STATUSES = new Set(['Pending', 'Incomplete'])

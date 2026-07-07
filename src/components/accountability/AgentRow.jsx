@@ -7,7 +7,7 @@ import { useViewing } from '../../context/ViewingContext'
 import {
   getRolling7Days, getCollapsedPeriod, sumRows,
   toYMD, subDays, fmtCompactAPV, computeGoalCurrentValue,
-  buildWeeklyBuckets, getGoalsForAgent, calculatePace,
+  buildWeeklyBuckets, getGoalsForAgent, calculatePace, getMostRecentSaturday,
 } from './utils/accountabilityCalc'
 
 const DAY_ABB = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -111,6 +111,13 @@ export default function AgentRow({
     () => computeGoalCurrentValue('appts_week', activity, today),
     [activity, today],
   )
+
+  const weekApptSet = useMemo(() => {
+    const weekStartYMD = toYMD(getMostRecentSaturday(today))
+    const todayYMD     = toYMD(today)
+    const rows = activity.filter(r => r.date >= weekStartYMD && r.date <= todayYMD)
+    return sumRows(rows, 'appts_set')
+  }, [activity, today])
 
   const weekPace = useMemo(
     () => calculatePace('appts_week', apptGoal.goal_value, weekAppts, today),
@@ -227,6 +234,20 @@ export default function AgentRow({
             <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
               Week:
             </span>
+            {/* SET */}
+            <div className="flex flex-col gap-0.5 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
+                  <div className="h-full rounded-full" style={{ width: `${Math.min((weekApptSet / 15) * 100, 100)}%`, background: weekBarColor }} />
+                </div>
+                <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
+                  {weekApptSet}/15
+                </span>
+              </div>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-500">Appts set</span>
+            </div>
+
+            {/* RUN */}
             <div className="flex flex-col gap-0.5 shrink-0">
               <div className="flex items-center gap-1.5">
                 <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
