@@ -459,7 +459,7 @@ export default function AccountabilityPage() {
               goals={goals.filter(r => r.sfg_id === agent.sfg_id)}
               sparklineActivity={sparkActivity.filter(r => r.sfg_id === agent.sfg_id)}
               today={today}
-              leadSpend7={leadSpend7[agent.sfg_id?.toUpperCase()] ?? leadSpend7[agent.sfg_id] ?? 0}
+              leadSpend7={leadSpend7[agent.sfg_id] ?? 0}
               globalExpandCount={expandCount}
               globalCollapseCount={collapseCount}
               onRemove={handleRemove}

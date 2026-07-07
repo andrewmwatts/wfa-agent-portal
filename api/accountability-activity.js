@@ -65,9 +65,6 @@ export default async function handler(req, res) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const sevenDaysAgoYMD = sevenDaysAgo.toISOString().slice(0, 10)
 
-  // Transactions may store sfg_ids in uppercase — query with deduplicated uppercase IDs
-  const idsUpper = [...new Set(ids.map(s => s.toUpperCase()))]
-
   const [actRes, goalsRes, txRes] = await Promise.all([
     supabase
       .from('activity_logs')
@@ -83,7 +80,7 @@ export default async function handler(req, res) {
     supabase
       .from('transactions')
       .select('sfg_id, date, amount')
-      .in('sfg_id', idsUpper)
+      .in('sfg_id', ids)
       .eq('description', 'Lead Spend')
       .eq('type', 'expense')
       .gte('date', startYMD)
@@ -94,19 +91,17 @@ export default async function handler(req, res) {
 
   const txRows = txRes.data ?? []
 
-  // Per-day map keyed by uppercase sfg_id for merging into activity rows
+  // Lead spend is stored as a negative expense — negate to get a positive dollar amount
   const leadSpendMap = {}
   for (const tx of txRows) {
-    const key = `${tx.sfg_id.toUpperCase()}|${tx.date}`
-    leadSpendMap[key] = (leadSpendMap[key] ?? 0) + Number(tx.amount)
+    const key = `${tx.sfg_id}|${tx.date}`
+    leadSpendMap[key] = (leadSpendMap[key] ?? 0) + (-Number(tx.amount))
   }
 
-  // Authoritative 7-day total per agent — keyed by uppercase sfg_id for consistent lookup
   const leadSpend7 = {}
   for (const tx of txRows) {
     if (tx.date >= sevenDaysAgoYMD) {
-      const k = tx.sfg_id.toUpperCase()
-      leadSpend7[k] = (leadSpend7[k] ?? 0) + Number(tx.amount)
+      leadSpend7[tx.sfg_id] = (leadSpend7[tx.sfg_id] ?? 0) + (-Number(tx.amount))
     }
   }
 
@@ -120,7 +115,7 @@ export default async function handler(req, res) {
     appts_run:      r.appts_kept,
     apps_submitted: r.apps_written,
     apv_submitted:  r.apv_submitted ?? 0,
-    lead_spend:     leadSpendMap[`${r.sfg_id.toUpperCase()}|${r.log_date}`] ?? 0,
+    lead_spend:     leadSpendMap[`${r.sfg_id}|${r.log_date}`] ?? 0,
   }))
 
   // agent_goals may not exist yet — return empty array if so
