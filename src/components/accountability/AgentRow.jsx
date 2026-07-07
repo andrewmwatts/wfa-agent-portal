@@ -5,7 +5,7 @@ import LeadSpendNote from './LeadSpendNote'
 import {
   getRolling7Days, getCollapsedPeriod, sumRows,
   toYMD, subDays, fmtCompactAPV, computeGoalCurrentValue,
-  buildWeeklyBuckets,
+  buildWeeklyBuckets, getGoalsForAgent, calculatePace,
 } from './utils/accountabilityCalc'
 
 const DAY_ABB = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -17,31 +17,41 @@ const TABLE_ROWS = [
   { label: 'Appts run', key: 'appts_run' },
 ]
 
-// ── Mini sparkline (5-week weekly appts) ─────────────────────────────────────
-function Sparkline({ data }) {
-  if (!data || data.length < 2) return <div style={{ width: 34, height: 13 }} />
+// ── Pace colors (matches GoalProgress) ───────────────────────────────────────
+const PACE_STYLES = {
+  ahead:   { bar: '#3b82f6', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'   },
+  on_pace: { bar: '#22c55e', badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  behind:  { bar: '#f59e0b', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+}
+const PACE_LABELS = { ahead: 'ahead', on_pace: 'on pace', behind: 'behind' }
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+function Sparkline({ data, color = '#9ca3af' }) {
+  if (!data || data.length < 2) return <div style={{ width: 40, height: 14 }} />
   const max = Math.max(...data, 0.01)
   const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * 32
-    const y = 11 - (v / max) * 11
+    const x = (i / (data.length - 1)) * 38
+    const y = 12 - (v / max) * 12
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
   return (
-    <svg width={34} height={13} style={{ display: 'block', flexShrink: 0 }}>
-      <polyline points={pts} fill="none" stroke="#9ca3af" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    <svg width={40} height={14} style={{ display: 'block', flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   )
 }
 
-// ── Stoplight dot ─────────────────────────────────────────────────────────────
+// ── Stoplight dot with label ──────────────────────────────────────────────────
 const STOPLIGHT = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444', gray: '#6b7280' }
 
-function Dot({ color, title }) {
+function LabeledDot({ color, label, title }) {
   return (
-    <div
-      title={title}
-      style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }}
-    />
+    <div className="flex flex-col items-center gap-0.5" title={title} style={{ flexShrink: 0 }}>
+      <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: color }} />
+      <span style={{ fontSize: 8, lineHeight: 1, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </div>
   )
 }
 
@@ -62,6 +72,17 @@ function fmtPct(ratio) {
   return ratio === null ? '—' : `${Math.round(ratio * 100)}%`
 }
 
+// ── Section divider ───────────────────────────────────────────────────────────
+function SectionDivider({ label }) {
+  return (
+    <div className="flex flex-col justify-center items-center shrink-0 border-l border-gray-200 dark:border-gray-600 pl-3 mr-2">
+      <span style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </div>
+  )
+}
+
 // ── Agent row ─────────────────────────────────────────────────────────────────
 
 export default function AgentRow({
@@ -73,7 +94,7 @@ export default function AgentRow({
   useEffect(() => { if (globalExpandCount  > 0) setOpen(true)  }, [globalExpandCount])
   useEffect(() => { if (globalCollapseCount > 0) setOpen(false) }, [globalCollapseCount])
 
-  // ── Collapsed stats ─────────────────────────────────────────────────────────
+  // ── Day: period stats ────────────────────────────────────────────────────────
   const { label: periodLabel, dates: periodDates } = useMemo(() => getCollapsedPeriod(today), [today])
 
   const collapsedStats = useMemo(() => {
@@ -89,25 +110,35 @@ export default function AgentRow({
     }
   }, [activity, periodDates])
 
-  // ── Right section: weekly appts + sparkline + stoplights ───────────────────
+  // ── Week: appts vs goal ──────────────────────────────────────────────────────
+  const agentGoals = useMemo(() => getGoalsForAgent(goals), [goals])
+  const apptGoal   = useMemo(() => agentGoals.find(g => g.goal_type === 'appts_week') ?? { goal_type: 'appts_week', goal_value: 10 }, [agentGoals])
+
   const weekAppts = useMemo(
     () => computeGoalCurrentValue('appts_week', activity, today),
     [activity, today],
   )
 
+  const weekPace = useMemo(
+    () => calculatePace('appts_week', apptGoal.goal_value, weekAppts, today),
+    [apptGoal.goal_value, weekAppts, today],
+  )
+
+  const weekPct = apptGoal.goal_value > 0 ? Math.min((weekAppts / apptGoal.goal_value) * 100, 100) : 0
+  const { bar: weekBarColor, badge: weekBadge } = PACE_STYLES[weekPace]
+
+  // ── 4 Wk: sparkline + ratios ─────────────────────────────────────────────────
   const sparkBuckets = useMemo(() => {
-    const buckets = buildWeeklyBuckets(sparklineActivity, 5, today)
+    const buckets = buildWeeklyBuckets(sparklineActivity, 4, today)
     return buckets.map(b => b.appts_run)
   }, [sparklineActivity, today])
 
-  // 28-day rolling ratios (for stoplights + expanded RatioPanel)
   const rows28 = useMemo(() => {
     const start = toYMD(subDays(today, 28))
     const end   = toYMD(subDays(today, 1))
     return sparklineActivity.filter(r => r.date >= start && r.date <= end)
   }, [sparklineActivity, today])
 
-  // Prior 28 days (days 29-56) — for trend comparison in expanded panel
   const priorRows28 = useMemo(() => {
     const start = toYMD(subDays(today, 56))
     const end   = toYMD(subDays(today, 29))
@@ -126,7 +157,7 @@ export default function AgentRow({
     }
   }, [rows28])
 
-  // ── Expanded: rolling 7 days ────────────────────────────────────────────────
+  // ── Expanded: rolling 7 days ─────────────────────────────────────────────────
   const rolling7Days = useMemo(() => getRolling7Days(today), [today])
 
   const rolling7Rows = useMemo(() => {
@@ -152,7 +183,7 @@ export default function AgentRow({
     <div className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
       {/* ── Collapsed row ──────────────────────────────────────────────────── */}
       <div
-        className="flex items-center h-14 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 select-none"
+        className="flex items-center h-16 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 select-none"
         onClick={() => setOpen(o => !o)}
       >
         {/* Agent name */}
@@ -160,9 +191,9 @@ export default function AgentRow({
           <div className="text-[13px] font-medium text-gray-900 dark:text-white leading-tight truncate">{name}</div>
         </div>
 
-        {/* Activity stats */}
-        <div className="flex-1 flex items-center border-l border-gray-200 dark:border-gray-700 pl-4 overflow-hidden">
-          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-400 mr-3 shrink-0">{periodLabel}</span>
+        {/* ── [Day]: activity stats ─────────────────────────────────────── */}
+        <div className="flex items-center border-l border-gray-200 dark:border-gray-700 pl-3 overflow-hidden">
+          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-400 mr-2 shrink-0">{periodLabel}</span>
 
           {[
             { label: 'Dials',    val: cs.dials    },
@@ -171,49 +202,65 @@ export default function AgentRow({
             { label: 'Ran',      val: cs.appts_run },
           ].map(({ label, val }, i) => (
             <div key={label} className="flex items-center shrink-0">
-              {i > 0 && <div className="h-[26px] border-r border-gray-200 dark:border-gray-600 mx-2" />}
-              <div className="flex flex-col items-center px-2">
-                <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 leading-none tabular-nums">{val}</span>
-                <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">{label}</span>
+              {i > 0 && <div className="h-6 border-r border-gray-200 dark:border-gray-600 mx-1.5" />}
+              <div className="flex flex-col items-center px-1.5">
+                <span className="text-[14px] font-semibold text-gray-900 dark:text-gray-100 leading-none tabular-nums">{val}</span>
+                <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">{label}</span>
               </div>
             </div>
           ))}
 
           {/* Apps · APV */}
           <div className="flex items-center shrink-0">
-            <div className="h-[26px] border-r border-gray-200 dark:border-gray-600 mx-2" />
-            <div className="flex flex-col items-center px-2">
+            <div className="h-6 border-r border-gray-200 dark:border-gray-600 mx-1.5" />
+            <div className="flex flex-col items-center px-1.5">
               {cs.apps > 0 || cs.apv > 0 ? (
                 <span className="text-[11px] font-semibold text-gray-900 dark:text-gray-100 leading-none whitespace-nowrap tabular-nums">
                   {cs.apps} · {fmtCompactAPV(cs.apv)}
                 </span>
               ) : (
-                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">0 · —</span>
+                <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 leading-none">—</span>
               )}
-              <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Apps · APV</span>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Apps · APV</span>
             </div>
           </div>
         </div>
 
-        {/* Right section: Week summary + stoplights */}
-        <div className="shrink-0 border-l border-gray-200 dark:border-gray-700 pl-4 flex items-center gap-3">
-          <span className="text-[10px] text-gray-400 dark:text-gray-400 shrink-0">Week:</span>
+        {/* ── Week: appts progress + lead spend stoplight ───────────────── */}
+        <SectionDivider label="Week:" />
 
-          <div className="flex flex-col items-center shrink-0">
-            <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 tabular-nums leading-none">{weekAppts}</span>
-            <span className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 mt-0.5">Appts</span>
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Bar + X/10 + badge */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-12 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
+              <div className="h-full rounded-full" style={{ width: `${weekPct}%`, background: weekBarColor }} />
+            </div>
+            <span className="text-[10px] text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap">
+              {weekAppts}/{apptGoal.goal_value}
+            </span>
+            <span className={`text-[8px] px-1.5 py-px rounded-full font-medium shrink-0 ${weekBadge}`}>
+              {PACE_LABELS[weekPace]}
+            </span>
           </div>
 
-          <Sparkline data={sparkBuckets} />
+          {/* Lead spend stoplight */}
+          <LabeledDot
+            color={leadSpendColor(leadSpend7)}
+            label="Leads"
+            title={`Lead spend (7d): $${Math.round(leadSpend7)}`}
+          />
+        </div>
 
-          <div className="flex items-center gap-1.5">
-            <Dot
-              color={leadSpendColor(leadSpend7)}
-              title={`Lead spend (7d): $${Math.round(leadSpend7)}`}
-            />
-            <Dot color={ratioColor(ratios28.set_rate)}  title={`Set rate (28d): ${fmtPct(ratios28.set_rate)}`} />
-            <Dot color={ratioColor(ratios28.sit_rate)}  title={`Sit rate (28d): ${fmtPct(ratios28.sit_rate)}`} />
-            <Dot color={ratioColor(ratios28.sale_rate)} title={`Sale rate (28d): ${fmtPct(ratios28.sale_rate)}`} />
+        {/* ── 4 Wk: sparkline + ratio stoplights ───────────────────────── */}
+        <SectionDivider label="4 Wk:" />
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Sparkline data={sparkBuckets} color={weekBarColor} />
+
+          <div className="flex items-center gap-2">
+            <LabeledDot color={ratioColor(ratios28.set_rate)}  label="Set"  title={`Set rate (28d): ${fmtPct(ratios28.set_rate)}`} />
+            <LabeledDot color={ratioColor(ratios28.sit_rate)}  label="Sit"  title={`Sit rate (28d): ${fmtPct(ratios28.sit_rate)}`} />
+            <LabeledDot color={ratioColor(ratios28.sale_rate)} label="Sale" title={`Sale rate (28d): ${fmtPct(ratios28.sale_rate)}`} />
           </div>
         </div>
 
