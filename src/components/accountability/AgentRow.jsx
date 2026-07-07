@@ -244,7 +244,7 @@ export default function AgentRow({
                   {weekApptSet}/15
                 </span>
               </div>
-              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-500">Appts set</span>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400">Appts set</span>
             </div>
 
             {/* RUN */}
@@ -257,7 +257,7 @@ export default function AgentRow({
                   {weekAppts}/{apptGoal.goal_value}
                 </span>
               </div>
-              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-500">Appts run</span>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400">Appts run</span>
             </div>
             <LabeledDot
               color={leadSpendColor(leadSpend7)}
