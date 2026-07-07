@@ -65,7 +65,11 @@ export default async function handler(req, res) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const sevenDaysAgoYMD = sevenDaysAgo.toISOString().slice(0, 10)
 
-  const [actRes, goalsRes, txRes] = await Promise.all([
+  // Calendar month window for issued APV
+  const now = new Date()
+  const monthStartYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+
+  const [actRes, goalsRes, txRes, policiesRes] = await Promise.all([
     supabase
       .from('activity_logs')
       .select('sfg_id, log_date, dials, contacts, appts_set, appts_kept, apps_written, issued, apv_submitted')
@@ -85,9 +89,21 @@ export default async function handler(req, res) {
       .eq('type', 'expense')
       .gte('date', startYMD)
       .lte('date', yesterdayYMD),
+    supabase
+      .from('policies')
+      .select('sfg_id, issued_apv')
+      .in('sfg_id', ids)
+      .gte('issue_date', monthStartYMD)
+      .lte('issue_date', yesterdayYMD),
   ])
 
   if (actRes.error) return res.status(500).json({ error: actRes.error.message })
+
+  // Monthly issued APV per agent
+  const monthlyIssuedApv = {}
+  for (const p of (policiesRes.data ?? [])) {
+    monthlyIssuedApv[p.sfg_id] = (monthlyIssuedApv[p.sfg_id] ?? 0) + (Number(p.issued_apv) || 0)
+  }
 
   const txRows = txRes.data ?? []
 
@@ -121,5 +137,5 @@ export default async function handler(req, res) {
   // agent_goals may not exist yet — return empty array if so
   const goals = goalsRes.error ? [] : (goalsRes.data ?? [])
 
-  return res.status(200).json({ activity, goals, leadSpend7 })
+  return res.status(200).json({ activity, goals, leadSpend7, monthlyIssuedApv })
 }

@@ -241,7 +241,8 @@ export default function AccountabilityPage() {
   const [activity, setActivity]           = useState([])   // 60-day window
   const [sparkActivity, setSparkActivity] = useState([])   // same 60-day, passed as sparkline source
   const [goals, setGoals]                 = useState([])
-  const [leadSpend7, setLeadSpend7]       = useState({})   // sfg_id → 7-day lead spend total
+  const [leadSpend7, setLeadSpend7]           = useState({})   // sfg_id → 7-day lead spend total
+  const [monthlyIssuedApv, setMonthlyIssuedApv] = useState({}) // sfg_id → calendar-month issued APV
   const [expandCount, setExpandCount]     = useState(0)
   const [collapseCount, setCollapseCount] = useState(0)
   const [membersOpen, setMembersOpen]     = useState(false)
@@ -305,11 +306,12 @@ export default function AccountabilityPage() {
       setActivityError(`Activity data unavailable (${res.status})${detail ? ': ' + detail : ''}`)
       return
     }
-    const { activity: rows, goals: goalRows, leadSpend7: ls7 } = await res.json()
+    const { activity: rows, goals: goalRows, leadSpend7: ls7, monthlyIssuedApv: mia } = await res.json()
     setActivity(rows)
     setSparkActivity(rows)
     setGoals(goalRows)
     setLeadSpend7(ls7 ?? {})
+    setMonthlyIssuedApv(mia ?? {})
   }
 
   // ── Add agent ───────────────────────────────────────────────────────────────
@@ -331,11 +333,12 @@ export default function AccountabilityPage() {
       { headers: { Authorization: `Bearer ${token}` } },
     )
     if (!res.ok) { console.error('accountability-activity error:', await res.text()); return }
-    const { activity: rows, goals: goalRows, leadSpend7: ls7 } = await res.json()
+    const { activity: rows, goals: goalRows, leadSpend7: ls7, monthlyIssuedApv: mia } = await res.json()
     setActivity(prev => [...prev, ...rows])
     setSparkActivity(prev => [...prev, ...rows])
     setGoals(prev => [...prev, ...goalRows])
     setLeadSpend7(prev => ({ ...prev, ...(ls7 ?? {}) }))
+    setMonthlyIssuedApv(prev => ({ ...prev, ...(mia ?? {}) }))
   }
 
   // ── Remove agent ───────────────────────────────────────────────────────────
@@ -345,6 +348,7 @@ export default function AccountabilityPage() {
     setSparkActivity(prev => prev.filter(r => r.sfg_id !== sfgId))
     setGoals(prev => prev.filter(r => r.sfg_id !== sfgId))
     setLeadSpend7(prev => { const n = { ...prev }; delete n[sfgId]; return n })
+    setMonthlyIssuedApv(prev => { const n = { ...prev }; delete n[sfgId]; return n })
     supabase.from('accountability_rosters').delete().eq('agent_sfg_id', sfgId).eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
@@ -355,6 +359,7 @@ export default function AccountabilityPage() {
     setSparkActivity([])
     setGoals([])
     setLeadSpend7({})
+    setMonthlyIssuedApv({})
     supabase.from('accountability_rosters').delete().eq('owner_sfg_id', activeSubject.sfg_id).then(() => {})
   }
 
@@ -460,6 +465,7 @@ export default function AccountabilityPage() {
               sparklineActivity={sparkActivity.filter(r => r.sfg_id === agent.sfg_id)}
               today={today}
               leadSpend7={leadSpend7[agent.sfg_id] ?? 0}
+              monthlyIssuedApv={monthlyIssuedApv[agent.sfg_id] ?? 0}
               globalExpandCount={expandCount}
               globalCollapseCount={collapseCount}
               onRemove={handleRemove}

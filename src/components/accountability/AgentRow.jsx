@@ -12,6 +12,22 @@ import {
 
 const DAY_ABB = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
+// Rounds to nearest hundred, displays as $X.Xk; under $1k shows exact dollars
+function fmtWeekApv(v) {
+  if (!v) return '—'
+  if (v >= 1000) {
+    const rounded = Math.round(v / 100) * 100
+    return `$${(rounded / 1000).toFixed(1)}k`
+  }
+  return `$${Math.round(v)}`
+}
+
+// Full dollar amount with commas for the expanded view
+function fmtFullApv(v) {
+  if (!v) return '—'
+  return `$${Math.round(v).toLocaleString()}`
+}
+
 const TABLE_ROWS = [
   { label: 'Dials',     key: 'dials'     },
   { label: 'Contacts',  key: 'contacts'  },
@@ -78,7 +94,7 @@ function fmtPct(ratio) {
 
 export default function AgentRow({
   agent, activity, goals, sparklineActivity, today,
-  leadSpend7, globalExpandCount, globalCollapseCount, onRemove,
+  leadSpend7, monthlyIssuedApv, globalExpandCount, globalCollapseCount, onRemove,
 }) {
   const [open, setOpen]             = useState(false)
   const [policyModal, setPolicyModal] = useState(false)
@@ -117,6 +133,13 @@ export default function AgentRow({
     const todayYMD     = toYMD(today)
     const rows = activity.filter(r => r.date >= weekStartYMD && r.date <= todayYMD)
     return sumRows(rows, 'appts_set')
+  }, [activity, today])
+
+  const weekApv = useMemo(() => {
+    const weekStartYMD = toYMD(getMostRecentSaturday(today))
+    const todayYMD     = toYMD(today)
+    const rows = activity.filter(r => r.date >= weekStartYMD && r.date <= todayYMD)
+    return sumRows(rows, 'apv_submitted')
   }, [activity, today])
 
   const weekPace = useMemo(
@@ -259,6 +282,14 @@ export default function AgentRow({
               </div>
               <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400">Appts run</span>
             </div>
+            {/* APV */}
+            <div className="flex flex-col gap-0.5 shrink-0">
+              <span className="text-[14px] font-semibold text-gray-900 dark:text-gray-100 tabular-nums leading-none">
+                {fmtWeekApv(weekApv)}
+              </span>
+              <span className="text-[8px] uppercase tracking-wider text-gray-400 dark:text-gray-400">APV</span>
+            </div>
+
             <LabeledDot
               color={leadSpendColor(leadSpend7)}
               label="Leads"
@@ -388,9 +419,43 @@ export default function AgentRow({
               </table>
             </div>
 
-            {/* Coaching ratios — 28-day rolling */}
+            {/* Coaching ratios + monthly APV + policy button */}
             <div className="flex flex-col gap-4">
               <RatioPanel current={rows28} prior={priorRows28} />
+
+              {/* Monthly issued APV vs goal */}
+              {(() => {
+                const apvGoal = agentGoals.find(g => g.goal_type === 'apv_month')
+                return (
+                  <div>
+                    <div className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium pb-2 border-b border-gray-200 dark:border-gray-600 mb-2">
+                      Issued APV · month to date
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[18px] font-semibold text-gray-900 dark:text-white tabular-nums leading-none">
+                        {fmtFullApv(monthlyIssuedApv)}
+                      </span>
+                      {apvGoal && (
+                        <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">
+                          / {fmtFullApv(apvGoal.goal_value)} goal
+                        </span>
+                      )}
+                    </div>
+                    {apvGoal && (
+                      <div className="mt-2 w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min((monthlyIssuedApv / apvGoal.goal_value) * 100, 100)}%`,
+                            background: monthlyIssuedApv >= apvGoal.goal_value ? '#22c55e' : monthlyIssuedApv >= apvGoal.goal_value * 0.5 ? '#f59e0b' : '#ef4444',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               <button
                 onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
                 className="self-start text-[11px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
