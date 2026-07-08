@@ -4,6 +4,7 @@
 export const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
 export const OWNER_ROLES  = new Set(['owner', 'director', 'super_admin'])
 export const ADMIN_ROLES  = new Set(['super_admin'])
+export const AGENT_ROLES  = new Set(['agent', 'super_admin'])
 
 export const NAV_SECTIONS = [
   {
@@ -19,7 +20,7 @@ export const NAV_SECTIONS = [
       { path: '/portal/activity',   label: 'Activity Tracking' },
       { path: '/portal/leads',      label: 'Leads'             },
       { path: '/portal/recruiting',  label: 'Recruiting'        },
-      { path: '/portal/project-100', label: 'Project 100'       },
+      { path: '/portal/project-100', label: 'Project 100', roles: AGENT_ROLES },
     ],
   },
   {
