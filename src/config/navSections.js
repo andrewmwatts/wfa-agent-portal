@@ -18,7 +18,8 @@ export const NAV_SECTIONS = [
       { path: '/portal/engagement', label: 'Client Engagement' },
       { path: '/portal/activity',   label: 'Activity Tracking' },
       { path: '/portal/leads',      label: 'Leads'             },
-      { path: '/portal/recruiting', label: 'Recruiting'        },
+      { path: '/portal/recruiting',  label: 'Recruiting'        },
+      { path: '/portal/project-100', label: 'Project 100'       },
     ],
   },
   {
