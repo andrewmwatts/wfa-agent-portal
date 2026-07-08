@@ -79,7 +79,7 @@ function Field({ label, children }) {
 function EntryFields({ form, setForm, nameRef, autoFocusName }) {
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
   return (
-    <div className="flex flex-wrap gap-2 items-end">
+    <>
       <Field label="Name *">
         <input ref={nameRef} type="text" value={form.name} onChange={e => set('name', e.target.value)}
           placeholder="Full name" className={INPUT + ' min-w-[140px]'} autoFocus={autoFocusName} />
@@ -108,7 +108,7 @@ function EntryFields({ form, setForm, nameRef, autoFocusName }) {
           <option value="low">Low</option>
         </select>
       </Field>
-    </div>
+    </>
   )
 }
 
@@ -408,14 +408,16 @@ export default function Project100Page() {
 
         {/* Quick-add */}
         <form onSubmit={handleAdd} className="mb-3">
-          <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 space-y-2">
-            <EntryFields form={addForm} setForm={setAddForm} nameRef={nameRef} />
-            <div className="flex items-center gap-2">
-              <button type="submit" disabled={adding || !addForm.name.trim()}
-                className="px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
-                {adding ? 'Adding…' : '+ Add'}
-              </button>
-              {addErr && <p className="text-xs text-red-500 dark:text-red-400">{addErr}</p>}
+          <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3">
+            <div className="flex flex-wrap gap-2 items-end">
+              <EntryFields form={addForm} setForm={setAddForm} nameRef={nameRef} />
+              <div className="flex items-center gap-2 self-end pb-0.5">
+                <button type="submit" disabled={adding || !addForm.name.trim()}
+                  className="px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
+                  {adding ? 'Adding…' : '+ Add'}
+                </button>
+                {addErr && <p className="text-xs text-red-500 dark:text-red-400">{addErr}</p>}
+              </div>
             </div>
           </div>
         </form>
@@ -440,8 +442,8 @@ export default function Project100Page() {
               if (isEditing) {
                 return (
                   <div key={entry.id} className="bg-white dark:bg-primary/30 border border-accent/40 rounded-xl px-4 py-3 space-y-3">
-                    <EntryFields form={editForm} setForm={setEditForm} autoFocusName />
                     <div className="flex flex-wrap gap-2 items-end">
+                      <EntryFields form={editForm} setForm={setEditForm} autoFocusName />
                       <EditStatusFields form={editForm} setForm={setEditForm} />
                     </div>
                     <div className="flex items-center gap-2">
@@ -476,24 +478,6 @@ export default function Project100Page() {
                     {entry.name}
                   </span>
 
-                  {/* Inline status dropdown */}
-                  <select
-                    value={entry.status ?? 'new'}
-                    onChange={e => patchField(entry.id, { status: e.target.value })}
-                    onClick={e => e.stopPropagation()}
-                    className={`shrink-0 text-[11px] font-semibold rounded-full border px-2 py-0.5 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors ${statusCfg.cls}`}
-                  >
-                    {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-
-                  {/* Inline referral checkbox */}
-                  <label className="shrink-0 flex items-center gap-1 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={!!entry.referral_given}
-                      onChange={e => patchField(entry.id, { referral_given: e.target.checked })}
-                      className="w-3.5 h-3.5 rounded accent-accent" />
-                    <span className="text-[11px] text-gray-500 dark:text-white/40 whitespace-nowrap">Referral</span>
-                  </label>
-
                   {/* Contact details */}
                   <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 min-w-0">
                     {entry.phone ? (
@@ -515,6 +499,24 @@ export default function Project100Page() {
                     {entry.email && <a href={`mailto:${entry.email}`} onClick={e => e.stopPropagation()} className="text-xs text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 truncate transition-colors">✉ {entry.email}</a>}
                     {entry.social_handle && <span className="text-xs text-gray-400 dark:text-white/40">@ {entry.social_handle}</span>}
                   </div>
+
+                  {/* Inline status dropdown */}
+                  <select
+                    value={entry.status ?? 'new'}
+                    onChange={e => patchField(entry.id, { status: e.target.value })}
+                    onClick={e => e.stopPropagation()}
+                    className={`shrink-0 text-[11px] font-semibold rounded-full border px-2 py-0.5 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors ${statusCfg.cls}`}
+                  >
+                    {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+
+                  {/* Inline referral checkbox */}
+                  <label className="shrink-0 flex items-center gap-1 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={!!entry.referral_given}
+                      onChange={e => patchField(entry.id, { referral_given: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded accent-accent" />
+                    <span className="text-[11px] text-gray-500 dark:text-white/40 whitespace-nowrap">Referral given</span>
+                  </label>
 
                   {/* Edit */}
                   <button onClick={() => startEdit(entry)}
