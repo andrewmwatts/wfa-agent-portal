@@ -109,7 +109,8 @@ export default function App() {
             <Route path="/calendar"   element={<CalendarPage />} />
             <Route path="/guidelines" element={<UnderwritingPage />} />
 
-            {/* Unknown /portal/* paths → dashboard */}
+            {/* /portal and unknown /portal/* paths → dashboard (ProtectedRoute handles auth redirect) */}
+            <Route path="/portal"   element={<Navigate to="/portal/dashboard" replace />} />
             <Route path="/portal/*" element={<Navigate to="/portal/dashboard" replace />} />
 
             {/* Catch-all for truly unknown paths */}
