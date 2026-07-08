@@ -15,38 +15,6 @@ import {
   AddScriptModal,
 } from './LeadsPage'
 
-const REC_KANBAN_GROUPS = [
-  {
-    key: 'new',        label: 'New / No-Show',
-    statuses: new Set(['new', 'noshow']),
-    headerCls: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/20',
-  },
-  {
-    key: 'interviewed', label: 'Interviewed',
-    statuses: new Set(['interviewed']),
-    headerCls: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/20',
-  },
-  {
-    key: 'pre_lic', label: 'Pre-Licensing',
-    statuses: new Set(['pre_lic', 'pre_lic_done', 'exam_done', 'licensed']),
-    headerCls: 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-500/20',
-  },
-  {
-    key: 'app', label: 'Application',
-    statuses: new Set(['app_sent', 'app_submitted']),
-    headerCls: 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/20',
-  },
-  {
-    key: 'hired', label: 'Hired',
-    statuses: new Set(['hired', 'fully_contracted']),
-    headerCls: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/20',
-  },
-  {
-    key: 'dead', label: 'Dead',
-    statuses: new Set(['dead']),
-    headerCls: 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40 border-gray-200 dark:border-white/10',
-  },
-]
 
 // ─── Recruiting-specific statuses ──────────────────────────────────────────────
 
@@ -295,6 +263,19 @@ export default function RecruitingPage() {
       if (res.ok) { const { entry } = await res.json(); prependActivity(entry) }
     }
     patchLeadLocal(selected.id, patch)
+  }
+
+  async function patchLeadStatus(leadId, newStatus) {
+    const cfg  = REC_STATUSES.find(s => s.key === newStatus)
+    const body = `🔄 Status → ${cfg?.label ?? newStatus}`
+    const res = await fetch('/api/leads?resource=activity', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ lead_id: leadId, sfg_id: sfgId, activity_type: 'status', body, update_lead: { status: newStatus } }),
+    })
+    if (res.ok) {
+      const { entry } = await res.json()
+      patchLeadLocal(leadId, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+    }
   }
 
   async function handleAddLead(formData) {
@@ -579,7 +560,7 @@ export default function RecruitingPage() {
               leads={leads}
               statuses={REC_STATUSES}
               onOpenLead={openLead}
-              kanbanGroups={REC_KANBAN_GROUPS}
+              onStatusChange={patchLeadStatus}
             />
           )}
 

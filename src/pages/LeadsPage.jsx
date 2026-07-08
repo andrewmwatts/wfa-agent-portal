@@ -331,6 +331,18 @@ export default function LeadsPage() {
     patchLeadLocal(selected.id, patch)
   }
 
+  async function patchLeadStatus(leadId, newStatus) {
+    const body = `🔄 Status → ${statusCfg(newStatus).label}`
+    const res = await fetch('/api/leads?resource=activity', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ lead_id: leadId, sfg_id: sfgId, activity_type: 'status', body, update_lead: { status: newStatus } }),
+    })
+    if (res.ok) {
+      const { entry } = await res.json()
+      patchLeadLocal(leadId, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+    }
+  }
+
   async function handleAddLead(formData) {
     const res = await fetch('/api/leads', {
       method: 'POST', headers: authHeaders(),
@@ -642,6 +654,7 @@ export default function LeadsPage() {
             <PipelineTab
               leads={leads.filter(l => l.lead_type !== 'Recruiting' && l.category !== 'recruiting')}
               onOpenLead={openLead}
+              onStatusChange={patchLeadStatus}
             />
           )}
 
@@ -1419,45 +1432,42 @@ export function ScriptsTab({ scripts, onAdd, onDelete }) {
 
 // ─── Pipeline Tab ──────────────────────────────────────────────────────────────
 
-export const LEADS_KANBAN_GROUPS = [
-  {
-    key: 'pre_appt', label: 'Pre-Appointment',
-    statuses: new Set(['new', 'attempted', 'callback', 'contacted', 'appt', 'noshow']),
-    headerCls: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/20',
-  },
-  {
-    key: 'appt_run', label: 'Appt Run',
-    statuses: new Set(['quotes', 'thinking', 'ghost']),
-    headerCls: 'bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-500/20',
-  },
-  {
-    key: 'sold', label: 'Policy Sold',
-    statuses: new Set(['sold']),
-    headerCls: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/20',
-  },
-  {
-    key: 'dead', label: 'Dead',
-    statuses: new Set(['notint', 'dnc', 'bad']),
-    headerCls: 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40 border-gray-200 dark:border-white/10',
-  },
-]
+export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusChange }) {
+  const [draggingId, setDraggingId] = useState(null)
+  const [dragOver,   setDragOver]   = useState(null)
 
-export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, kanbanGroups = LEADS_KANBAN_GROUPS }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(statuses.map(s => [s.key, 0]))
     for (const l of leads) { if (c[l.status] !== undefined) c[l.status]++ }
     return c
   }, [leads, statuses])
 
-  const kanbanLeads = useMemo(() => {
-    const groups = Object.fromEntries(kanbanGroups.map(g => [g.key, []]))
-    for (const l of leads) {
-      for (const g of kanbanGroups) {
-        if (g.statuses.has(l.status)) { groups[g.key].push(l); break }
-      }
+  const byStatus = useMemo(() => {
+    const g = Object.fromEntries(statuses.map(s => [s.key, []]))
+    for (const l of leads) { if (g[l.status]) g[l.status].push(l) }
+    return g
+  }, [leads, statuses])
+
+  function handleDragStart(e, leadId) {
+    setDraggingId(leadId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function handleDragOver(e, statusKey) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOver(statusKey)
+  }
+
+  function handleDrop(e, statusKey) {
+    e.preventDefault()
+    if (draggingId != null) {
+      const lead = leads.find(l => l.id === draggingId)
+      if (lead && lead.status !== statusKey) onStatusChange?.(draggingId, statusKey)
     }
-    return groups
-  }, [leads, kanbanGroups])
+    setDraggingId(null)
+    setDragOver(null)
+  }
 
   return (
     <div className="px-4 sm:px-6 py-4 space-y-5">
@@ -1466,7 +1476,6 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, kanbanGrou
       <div className="flex flex-wrap gap-2">
         {statuses.map(s => {
           const count = counts[s.key] ?? 0
-          if (!count) return null
           return (
             <div key={s.key} className="flex items-center gap-1.5 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-full px-2.5 py-1">
               <div className={`w-2 h-2 rounded-full shrink-0 ${s.bar}`} />
@@ -1478,30 +1487,54 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, kanbanGrou
       </div>
 
       {/* Kanban */}
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3 min-w-max">
-          {kanbanGroups.map(g => {
-            const groupLeads = kanbanLeads[g.key] ?? []
+      <div className="overflow-x-auto pb-3">
+        <div className="flex gap-3" style={{ minWidth: `${statuses.length * 13}rem` }}>
+          {statuses.map(s => {
+            const colLeads = byStatus[s.key] ?? []
+            const isOver   = dragOver === s.key
             return (
-              <div key={g.key} className="flex flex-col w-56 shrink-0">
-                <div className={`flex items-center justify-between px-3 py-2 rounded-t-xl border border-b-0 ${g.headerCls}`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{g.label}</span>
-                  <span className="text-xs font-extrabold tabular-nums">{groupLeads.length}</span>
+              <div
+                key={s.key}
+                className="flex flex-col w-52 shrink-0"
+                onDragOver={e => handleDragOver(e, s.key)}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null) }}
+                onDrop={e => handleDrop(e, s.key)}
+              >
+                {/* Column header */}
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-t-xl border border-b-0 transition-colors ${
+                  isOver
+                    ? 'bg-accent/10 dark:bg-accent/15 border-accent/40 text-accent'
+                    : 'bg-white dark:bg-primary/30 border-gray-200 dark:border-white/10 text-gray-700 dark:text-white/70'
+                }`}>
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.bar}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider flex-1 truncate">{s.label}</span>
+                  <span className="text-xs font-extrabold tabular-nums">{colLeads.length}</span>
                 </div>
-                <div className="border border-gray-200 dark:border-white/10 rounded-b-xl bg-gray-50 dark:bg-white/[0.02] p-2 space-y-2 min-h-[120px]">
-                  {groupLeads.length === 0 ? (
-                    <p className="text-center text-xs text-gray-300 dark:text-white/20 pt-4">None</p>
-                  ) : groupLeads.map(l => (
+
+                {/* Drop zone */}
+                <div className={`flex-1 border rounded-b-xl p-2 space-y-2 min-h-[160px] transition-colors ${
+                  isOver
+                    ? 'bg-accent/5 border-accent/30'
+                    : 'bg-gray-50 dark:bg-white/[0.02] border-gray-200 dark:border-white/10'
+                }`}>
+                  {colLeads.length === 0 && !isOver && (
+                    <p className="text-center text-[10px] text-gray-300 dark:text-white/15 pt-5 select-none">Drop here</p>
+                  )}
+                  {colLeads.map(l => (
                     <div
                       key={l.id}
+                      draggable
+                      onDragStart={e => handleDragStart(e, l.id)}
+                      onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
                       onClick={() => onOpenLead?.(l)}
-                      className="bg-white dark:bg-primary/40 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-accent/40 transition-colors"
+                      className={`bg-white dark:bg-primary/40 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing hover:border-accent/40 transition-colors select-none ${
+                        draggingId === l.id ? 'opacity-40' : ''
+                      }`}
                     >
                       <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{l.name}</p>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <StatusPill status={l.status} statuses={statuses} />
-                        {l.state && <span className="text-[10px] text-gray-400 dark:text-white/30">📍 {l.state}</span>}
-                      </div>
+                      {l.state && (
+                        <p className="text-[10px] text-gray-400 dark:text-white/30 mt-0.5">📍 {l.state}</p>
+                      )}
                       {l.phone && (
                         <a
                           href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
