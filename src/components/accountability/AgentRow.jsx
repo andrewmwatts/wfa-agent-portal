@@ -424,7 +424,7 @@ export default function AgentRow({
               <RatioPanel current={rows28} prior={priorRows28} />
 
               {/* Monthly APV issued vs goal */}
-              <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
+              <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-1.5">
                 <div className="text-[9px] uppercase tracking-wider text-gray-400 dark:text-gray-400 font-medium">
                   Monthly APV Goal:
                 </div>
@@ -446,13 +446,13 @@ export default function AgentRow({
                   <span className="text-[11px] font-semibold text-gray-900 dark:text-white tabular-nums whitespace-nowrap shrink-0">
                     {fmtFullApv(monthlyIssuedApv)}
                   </span>
+                  <button
+                    onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
+                    className="shrink-0 text-[11px] px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
+                  >
+                    Policy details
+                  </button>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); setPolicyModal(true) }}
-                  className="self-start text-[11px] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
-                >
-                  Policy details
-                </button>
               </div>
             </div>
 
