@@ -108,6 +108,16 @@ function EntryFields({ form, setForm, nameRef, autoFocusName }) {
           <option value="low">Low</option>
         </select>
       </Field>
+    </div>
+  )
+}
+
+// ─── Edit-only fields (status + referral) ──────────────────────────────────────
+
+function EditStatusFields({ form, setForm }) {
+  function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
+  return (
+    <>
       <Field label="Status">
         <select value={form.status} onChange={e => set('status', e.target.value)} className={SELECT + ' w-40'}>
           {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -119,7 +129,7 @@ function EntryFields({ form, setForm, nameRef, autoFocusName }) {
           className="w-3.5 h-3.5 rounded accent-accent" />
         <span className="text-xs text-gray-600 dark:text-white/60 whitespace-nowrap">Referral given</span>
       </label>
-    </div>
+    </>
   )
 }
 
@@ -204,6 +214,16 @@ export default function Project100Page() {
       const { entry } = await res.json()
       setEntries(prev => prev.map(e => e.id === id ? entry : e))
       setEditId(null)
+    }
+  }
+
+  async function patchField(id, fields) {
+    const res = await fetch(`/api/project-100?id=${id}`, {
+      method: 'PATCH', headers: authHeaders(), body: JSON.stringify(fields),
+    })
+    if (res.ok) {
+      const { entry } = await res.json()
+      setEntries(prev => prev.map(e => e.id === id ? entry : e))
     }
   }
 
@@ -421,6 +441,9 @@ export default function Project100Page() {
                 return (
                   <div key={entry.id} className="bg-white dark:bg-primary/30 border border-accent/40 rounded-xl px-4 py-3 space-y-3">
                     <EntryFields form={editForm} setForm={setEditForm} autoFocusName />
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <EditStatusFields form={editForm} setForm={setEditForm} />
+                    </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => saveEdit(entry.id)} disabled={!editForm.name.trim()}
                         className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
@@ -453,17 +476,23 @@ export default function Project100Page() {
                     {entry.name}
                   </span>
 
-                  {/* Status */}
-                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>
-                    {statusCfg.label}
-                  </span>
+                  {/* Inline status dropdown */}
+                  <select
+                    value={entry.status ?? 'new'}
+                    onChange={e => patchField(entry.id, { status: e.target.value })}
+                    onClick={e => e.stopPropagation()}
+                    className={`shrink-0 text-[11px] font-semibold rounded-full border px-2 py-0.5 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors ${statusCfg.cls}`}
+                  >
+                    {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
 
-                  {/* Referral badge */}
-                  {entry.referral_given && (
-                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20">
-                      Referral ✓
-                    </span>
-                  )}
+                  {/* Inline referral checkbox */}
+                  <label className="shrink-0 flex items-center gap-1 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={!!entry.referral_given}
+                      onChange={e => patchField(entry.id, { referral_given: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded accent-accent" />
+                    <span className="text-[11px] text-gray-500 dark:text-white/40 whitespace-nowrap">Referral</span>
+                  </label>
 
                   {/* Contact details */}
                   <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 min-w-0">
@@ -485,16 +514,6 @@ export default function Project100Page() {
                     )}
                     {entry.email && <a href={`mailto:${entry.email}`} onClick={e => e.stopPropagation()} className="text-xs text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 truncate transition-colors">✉ {entry.email}</a>}
                     {entry.social_handle && <span className="text-xs text-gray-400 dark:text-white/40">@ {entry.social_handle}</span>}
-                  </div>
-
-                  {/* Fit indicators */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${entry.life_fit === 'high' ? 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400' : 'bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-white/30'}`}>
-                      Life {entry.life_fit === 'high' ? '▲' : '▼'}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${entry.relationship === 'high' ? 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400' : 'bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-white/30'}`}>
-                      Rel {entry.relationship === 'high' ? '▲' : '▼'}
-                    </span>
                   </div>
 
                   {/* Edit */}
