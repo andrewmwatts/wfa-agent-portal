@@ -20,7 +20,8 @@ export const NAV_SECTIONS = [
       { path: '/portal/activity',   label: 'Activity Tracking' },
       { path: '/portal/leads',      label: 'Leads'             },
       { path: '/portal/recruiting',  label: 'Recruiting'        },
-      { path: '/portal/project-100', label: 'Project 100', roles: AGENT_ROLES },
+      { path: '/portal/project-100',     label: 'Project 100', roles: AGENT_ROLES },
+      { path: '/portal/ninety-day-plan', label: '90-Day Plan', roles: AGENT_ROLES },
     ],
   },
   {

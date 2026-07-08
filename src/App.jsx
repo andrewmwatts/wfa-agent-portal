@@ -24,6 +24,7 @@ import ActivityPage from './pages/ActivityPage'
 import LeadsPage from './pages/LeadsPage'
 import RecruitingPage from './pages/RecruitingPage'
 import Project100Page from './pages/Project100Page'
+import NinetyDayPlanPage from './pages/NinetyDayPlanPage'
 import CarrierMetricsPage from './pages/CarrierMetricsPage'
 import Admin from './pages/Admin'
 import AdminToolsPage from './pages/AdminToolsPage'
@@ -73,6 +74,7 @@ export default function App() {
                 <Route path="/portal/leads"           element={<LeadsPage />} />
                 <Route path="/portal/recruiting"      element={<RecruitingPage />} />
                 <Route path="/portal/project-100"     element={<Project100Page />} />
+                <Route path="/portal/ninety-day-plan" element={<NinetyDayPlanPage />} />
               </Route>
             </Route>
 
