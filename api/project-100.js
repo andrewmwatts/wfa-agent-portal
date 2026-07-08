@@ -8,12 +8,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
 loadEnv({ path: resolve(__dirname, '../.env.local') })
 
-/**
- * GET    /api/project-100?sfg_id=X          → all entries for this agent
- * POST   /api/project-100                    → create entry
- * PATCH  /api/project-100?id=X              → update entry
- * DELETE /api/project-100?id=X              → delete entry
- */
 export default async function handler(req, res) {
   const caller = await requireAuth(req, res)
   if (!caller) return
@@ -40,20 +34,23 @@ export default async function handler(req, res) {
 
   // ── POST ───────────────────────────────────────────────────────────────────
   if (req.method === 'POST') {
-    const { sfg_id, name, phone, email, social_handle, life_fit, relationship } = req.body ?? {}
+    const { sfg_id, name, phone, email, social_handle, life_fit, relationship, status, referral_given } = req.body ?? {}
     if (!sfg_id?.trim()) return res.status(400).json({ error: 'sfg_id required' })
     if (!name?.trim())   return res.status(400).json({ error: 'name required' })
 
     const { data, error } = await supabase
       .from('project_100')
       .insert({
-        sfg_id:        sfg_id.trim(),
-        name:          name.trim(),
-        phone:         phone?.trim() || null,
-        email:         email?.trim() || null,
-        social_handle: social_handle?.trim() || null,
-        life_fit:      life_fit || 'high',
-        relationship:  relationship || 'high',
+        sfg_id:           sfg_id.trim(),
+        name:             name.trim(),
+        phone:            phone?.trim()         || null,
+        email:            email?.trim()         || null,
+        social_handle:    social_handle?.trim() || null,
+        life_fit:         life_fit              || 'high',
+        relationship:     relationship          || 'high',
+        status:           status               || 'new',
+        referral_given:   !!referral_given,
+        status_updated_at: new Date().toISOString(),
       })
       .select()
       .single()
@@ -67,11 +64,12 @@ export default async function handler(req, res) {
     const { id } = req.query
     if (!id) return res.status(400).json({ error: 'id required' })
 
-    const allowed = ['name', 'phone', 'email', 'social_handle', 'life_fit', 'relationship']
+    const allowed = ['name', 'phone', 'email', 'social_handle', 'life_fit', 'relationship', 'status', 'referral_given']
     const updates = {}
     for (const k of allowed) {
       if (k in (req.body ?? {})) updates[k] = req.body[k]
     }
+    if ('status' in updates) updates.status_updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
       .from('project_100')
@@ -89,11 +87,7 @@ export default async function handler(req, res) {
     const { id } = req.query
     if (!id) return res.status(400).json({ error: 'id required' })
 
-    const { error } = await supabase
-      .from('project_100')
-      .delete()
-      .eq('id', id)
-
+    const { error } = await supabase.from('project_100').delete().eq('id', id)
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ ok: true })
   }
