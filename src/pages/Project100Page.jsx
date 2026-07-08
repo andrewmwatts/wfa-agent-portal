@@ -510,13 +510,22 @@ export default function Project100Page() {
                   {/* Contact details */}
                   <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 min-w-0">
                     {entry.phone ? (
-                      <a
-                        href={`tel:+1${entry.phone.replace(/[^0-9]/g, '')}`}
-                        className="text-xs text-gray-500 dark:text-white/50 hover:text-green-600 dark:hover:text-green-400 transition-colors whitespace-nowrap"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        📞 {entry.phone}
-                      </a>
+                      <span className="flex items-center gap-1.5">
+                        <a
+                          href={`tel:+1${entry.phone.replace(/[^0-9]/g, '')}`}
+                          className="text-xs text-gray-500 dark:text-white/50 hover:text-green-600 dark:hover:text-green-400 transition-colors whitespace-nowrap"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          📞 {entry.phone}
+                        </a>
+                        <a
+                          href={`sms:+1${entry.phone.replace(/[^0-9]/g, '')}`}
+                          className="text-xs text-gray-400 dark:text-white/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors whitespace-nowrap"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          💬
+                        </a>
+                      </span>
                     ) : (
                       <span className="text-xs text-gray-300 dark:text-white/20">No phone</span>
                     )}

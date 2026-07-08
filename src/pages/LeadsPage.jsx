@@ -1436,12 +1436,6 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
   const [draggingId, setDraggingId] = useState(null)
   const [dragOver,   setDragOver]   = useState(null)
 
-  const counts = useMemo(() => {
-    const c = Object.fromEntries(statuses.map(s => [s.key, 0]))
-    for (const l of leads) { if (c[l.status] !== undefined) c[l.status]++ }
-    return c
-  }, [leads, statuses])
-
   const byStatus = useMemo(() => {
     const g = Object.fromEntries(statuses.map(s => [s.key, []]))
     for (const l of leads) { if (g[l.status]) g[l.status].push(l) }
@@ -1471,20 +1465,6 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
 
   return (
     <div className="px-4 sm:px-6 py-4 space-y-5">
-
-      {/* Status chips */}
-      <div className="flex flex-wrap gap-2">
-        {statuses.map(s => {
-          const count = counts[s.key] ?? 0
-          return (
-            <div key={s.key} className="flex items-center gap-1.5 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-full px-2.5 py-1">
-              <div className={`w-2 h-2 rounded-full shrink-0 ${s.bar}`} />
-              <span className="text-xs text-gray-600 dark:text-white/70">{s.label}</span>
-              <span className="text-xs font-bold tabular-nums text-gray-800 dark:text-white">{count}</span>
-            </div>
-          )
-        })}
-      </div>
 
       {/* Kanban */}
       <div className="overflow-x-auto pb-3">
