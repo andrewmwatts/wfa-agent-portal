@@ -3,45 +3,43 @@ import { useViewing } from '../context/ViewingContext'
 
 // ─── Metric definitions ────────────────────────────────────────────────────────
 
-const METRICS = [
-  { key: 'dials',        label: 'Dials',            short: 'Dials',     accent: 'text-blue-500   dark:text-blue-400'   },
-  { key: 'hours_dialed', label: 'Hours Dialed',      short: 'Hours',     accent: 'text-indigo-500 dark:text-indigo-400', step: '0.5', decimal: true },
-  { key: 'contacts',     label: 'Contacts',          short: 'Contacts',  accent: 'text-teal-600   dark:text-teal-400'   },
-  { key: 'appts_set',    label: 'Appts Set',         short: 'Set',       accent: 'text-violet-500 dark:text-violet-400' },
-  { key: 'appts_kept',   label: 'Appts Kept',        short: 'Kept',      accent: 'text-purple-500 dark:text-purple-400' },
-  { key: 'resets',       label: 'Resets',            short: 'Resets',    accent: 'text-green-600  dark:text-green-400'  },
-  { key: 'reachouts',    label: 'Reachouts',         short: 'Reachouts', accent: 'text-cyan-600   dark:text-cyan-400'   },
-  { key: 'posts',        label: 'Social Media Post', short: 'Social',    accent: 'text-pink-500   dark:text-pink-400'   },
-]
+const NEUTRAL = 'text-gray-500 dark:text-white/50'
 
-// Display-only derived rows (not logged to activity_logs)
-const DERIVED_ROWS = [
-  { key: 'apps_written', label: 'Apps Written',  accent: 'text-orange-500 dark:text-orange-400', currency: false },
-  { key: 'submitted_apv', label: 'Submitted APV', accent: 'text-green-600  dark:text-green-400',  currency: true  },
-  { key: 'lead_spend',   label: 'Lead Spend',    accent: 'text-red-500    dark:text-red-400',    currency: true  },
+const METRICS = [
+  { key: 'dials',        label: 'Dials',         short: 'Dials',      step: '1'   },
+  { key: 'hours_dialed', label: 'Hours Dialed',   short: 'Hours',      step: '0.5', decimal: true },
+  { key: 'contacts',     label: 'Contacts',       short: 'Contacts',   step: '1'   },
+  { key: 'appts_set',    label: 'Appts Set',      short: 'Set',        step: '1'   },
+  { key: 'appts_kept',   label: 'Appts Kept',     short: 'Kept',       step: '1'   },
+  { key: 'resets',       label: 'Resets',         short: 'Resets',     step: '1'   },
+  { key: 'apps_written', label: 'Apps Written',   short: 'Apps',       step: '1'   },
+  { key: 'apv_submitted',label: 'Submitted APV',  short: 'Sub APV',    step: '100', decimal: true, currency: true },
 ]
 
 const METRIC_KEYS = METRICS.map(m => m.key)
 
-const EMPTY_DRAFT = { dials: '', hours_dialed: '', reachouts: '', posts: '', contacts: '', appts_set: '', appts_kept: '', resets: '', notes: '', lead_spend: '' }
+// Lead Spend is still derived from transactions (not logged to activity_logs)
+const DERIVED_ROW = { key: 'lead_spend', label: 'Lead Spend', currency: true }
+
+const EMPTY_DRAFT = {
+  dials: '', hours_dialed: '', contacts: '', appts_set: '', appts_kept: '',
+  resets: '', apps_written: '', apv_submitted: '', notes: '', lead_spend: '',
+}
 
 // ─── Date helpers ──────────────────────────────────────────────────────────────
 
 function getWeekStart(date) {
   const d = new Date(date)
-  d.setDate(d.getDate() - d.getDay()) // back to Sunday
+  d.setDate(d.getDate() - d.getDay())
   d.setHours(0, 0, 0, 0)
   return d
 }
 
 function addDays(date, n) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + n)
-  return d
+  const d = new Date(date); d.setDate(d.getDate() + n); return d
 }
 
 function toDateStr(date) {
-  // local YYYY-MM-DD
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
@@ -49,23 +47,15 @@ function toDateStr(date) {
 }
 
 function parseDateStr(str) {
-  // parse YYYY-MM-DD as local midnight (no UTC shift)
   const [y, m, d] = str.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
-function fmtDayHeader(date) {
-  return date.toLocaleDateString('en-US', { weekday: 'short' })
-}
-
-function fmtDayDate(date) {
-  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
-}
+function fmtDayHeader(date) { return date.toLocaleDateString('en-US', { weekday: 'short' }) }
+function fmtDayDate(date)   { return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }) }
 
 function fmtFullDay(dateStr) {
-  return parseDateStr(dateStr).toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  })
+  return parseDateStr(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 function fmtWeekRange(weekStart) {
@@ -75,6 +65,10 @@ function fmtWeekRange(weekStart) {
     ' – ' +
     end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   )
+}
+
+function fmtCurrency(n) {
+  return '$' + Math.round(n).toLocaleString('en-US')
 }
 
 // ─── Stats range config ────────────────────────────────────────────────────────
@@ -89,13 +83,13 @@ const STAT_RANGES = [
 // ─── Goals config ─────────────────────────────────────────────────────────────
 
 const GOAL_FIELDS = [
-  { key: 'weekly_dials',          label: 'Dials',         period: 'per week',  currency: false },
   { key: 'weekly_appts',          label: 'Appts Run',     period: 'per week',  currency: false },
   { key: 'monthly_apv_submitted', label: 'APV Submitted', period: 'per month', currency: true  },
   { key: 'monthly_apv_issued',    label: 'APV Issued',    period: 'per month', currency: true  },
+  { key: 'monthly_income',        label: 'Income',        period: 'per month', currency: true  },
 ]
 
-const EMPTY_GOALS = { weekly_dials: '', weekly_appts: '', monthly_apv_submitted: '', monthly_apv_issued: '' }
+const EMPTY_GOALS = { weekly_appts: '', monthly_apv_submitted: '', monthly_apv_issued: '', monthly_income: '' }
 
 function fmtGoalsMonth(ym) {
   return new Date(ym.year, ym.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -130,12 +124,9 @@ function getStatDateRange(rangeKey) {
     return { start: toDateStr(start), end: toDateStr(end) }
   }
   if (rangeKey === 'year') {
-    return {
-      start: `${now.getFullYear()}-01-01`,
-      end:   `${now.getFullYear()}-12-31`,
-    }
+    return { start: `${now.getFullYear()}-01-01`, end: `${now.getFullYear()}-12-31` }
   }
-  return { start: null, end: null } // all time
+  return { start: null, end: null }
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -144,7 +135,7 @@ export default function ActivityPage() {
   const { activeSubject, permissions } = useViewing()
 
   const [weekStart,  setWeekStart]  = useState(() => getWeekStart(new Date()))
-  const [logs,       setLogs]       = useState({}) // { 'YYYY-MM-DD': row }
+  const [logs,       setLogs]       = useState({})
   const [loading,    setLoading]    = useState(false)
   const [editDate,   setEditDate]   = useState(null)
   const [draft,      setDraft]      = useState(EMPTY_DRAFT)
@@ -154,15 +145,14 @@ export default function ActivityPage() {
   const [statsLogs,  setStatsLogs]  = useState([])
   const [statsLoading, setStatsLoading] = useState(false)
 
-  // Policy and lead-spend data
-  const [policies,  setPolicies]  = useState([])
-  const [leadTxs,   setLeadTxs]   = useState([])
+  // Lead spend transactions (still derived)
+  const [leadTxs, setLeadTxs] = useState([])
 
   // Goals
   const now = new Date()
   const [goalsMonth,   setGoalsMonth]   = useState({ year: now.getFullYear(), month: now.getMonth() })
-  const [goals,        setGoals]        = useState(null)   // null = loading, {} = no goals saved
-  const [goalsDraft,   setGoalsDraft]   = useState(null)   // null = view mode
+  const [goals,        setGoals]        = useState(null)
+  const [goalsDraft,   setGoalsDraft]   = useState(null)
   const [goalsSaving,  setGoalsSaving]  = useState(false)
   const [goalsLoading, setGoalsLoading] = useState(false)
 
@@ -189,9 +179,7 @@ export default function ActivityPage() {
         for (const row of rows) byDate[row.log_date] = row
         setLogs(byDate)
       }
-    } catch { /* ignore */ } finally {
-      setLoading(false)
-    }
+    } catch { /* ignore */ } finally { setLoading(false) }
   }, [activeSubject?.sfg_id, days])
 
   useEffect(() => { loadLogs() }, [loadLogs])
@@ -206,29 +194,13 @@ export default function ActivityPage() {
       if (start) params.set('start', start)
       if (end)   params.set('end',   end)
       const res = await fetch(`/api/activity?${params}`)
-      if (res.ok) {
-        const { logs: rows } = await res.json()
-        setStatsLogs(rows ?? [])
-      }
-    } catch { /* ignore */ } finally {
-      setStatsLoading(false)
-    }
+      if (res.ok) { const { logs: rows } = await res.json(); setStatsLogs(rows ?? []) }
+    } catch { /* ignore */ } finally { setStatsLoading(false) }
   }, [activeSubject?.sfg_id, statsRange])
 
   useEffect(() => { loadStatsLogs() }, [loadStatsLogs])
 
-  // ── Load agent policies (for apps-written and submitted APV display) ──────────
-  const loadPolicies = useCallback(async () => {
-    if (!activeSubject?.sfg_id) return
-    try {
-      const res = await fetch(`/api/policies?sfg_ids=${encodeURIComponent(activeSubject.sfg_id)}`)
-      if (res.ok) { const { policies: rows } = await res.json(); setPolicies(rows ?? []) }
-    } catch { /* ignore */ }
-  }, [activeSubject?.sfg_id])
-
-  useEffect(() => { loadPolicies() }, [loadPolicies])
-
-  // ── Load all lead-spend transactions ─────────────────────────────────────────
+  // ── Load lead-spend transactions (still derived from transactions) ─────────
   const loadLeadTxs = useCallback(async () => {
     if (!activeSubject?.sfg_id) return
     try {
@@ -239,7 +211,6 @@ export default function ActivityPage() {
 
   useEffect(() => { loadLeadTxs() }, [loadLeadTxs])
 
-  // When a day is saved, refresh stats if it falls in the current stats window
   function refreshStatsAfterSave(dateStr) {
     const { start, end } = getStatDateRange(statsRange)
     const inRange = (!start || dateStr >= start) && (!end || dateStr <= end)
@@ -277,25 +248,32 @@ export default function ActivityPage() {
     } catch { /* ignore */ } finally { setGoalsSaving(false) }
   }
 
-  // Reset edit when week changes
   useEffect(() => { setEditDate(null) }, [weekStart])
 
   // ── Edit helpers ─────────────────────────────────────────────────────────────
+  const leadsByDate = useMemo(() => {
+    const map = {}
+    for (const tx of leadTxs) {
+      map[tx.date] = (map[tx.date] ?? 0) + Math.abs(tx.amount)
+    }
+    return map
+  }, [leadTxs])
+
   function openEdit(dateStr) {
-    const existing = logs[dateStr]
-    const leadAmt  = leadsByDate[dateStr] ?? ''
+    const existing  = logs[dateStr]
+    const leadAmt   = leadsByDate[dateStr] ?? ''
     if (existing) {
       setDraft({
-        dials:        existing.dials        ?? '',
-        hours_dialed: existing.hours_dialed ?? '',
-        reachouts:    existing.reachouts    ?? '',
-        posts:        existing.posts        ?? '',
-        contacts:     existing.contacts     ?? '',
-        appts_set:    existing.appts_set    ?? '',
-        appts_kept:   existing.appts_kept   ?? '',
-        resets:       existing.resets       ?? '',
-        notes:        existing.notes        ?? '',
-        lead_spend:   leadAmt,
+        dials:         existing.dials         ?? '',
+        hours_dialed:  existing.hours_dialed  ?? '',
+        contacts:      existing.contacts      ?? '',
+        appts_set:     existing.appts_set     ?? '',
+        appts_kept:    existing.appts_kept    ?? '',
+        resets:        existing.resets        ?? '',
+        apps_written:  existing.apps_written  ?? '',
+        apv_submitted: existing.apv_submitted ?? '',
+        notes:         existing.notes         ?? '',
+        lead_spend:    leadAmt,
       })
     } else {
       setDraft({ ...EMPTY_DRAFT, lead_spend: leadAmt })
@@ -305,38 +283,32 @@ export default function ActivityPage() {
   }
 
   function toggleEdit(dateStr) {
-    if (editDate === dateStr) {
-      setEditDate(null)
-    } else {
-      openEdit(dateStr)
-    }
+    if (editDate === dateStr) setEditDate(null)
+    else openEdit(dateStr)
   }
 
-  function setField(key, val) {
-    setDraft(d => ({ ...d, [key]: val }))
-  }
+  function setField(key, val) { setDraft(d => ({ ...d, [key]: val })) }
 
   // ── Save ─────────────────────────────────────────────────────────────────────
   async function handleSave() {
     if (!activeSubject?.sfg_id || !editDate) return
-    setSaving(true)
-    setSaveError('')
+    setSaving(true); setSaveError('')
     try {
       const res = await fetch('/api/activity', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sfg_id:       activeSubject.sfg_id,
-          log_date:     editDate,
-          dials:        draft.dials,
-          hours_dialed: draft.hours_dialed,
-          reachouts:    draft.reachouts,
-          posts:        draft.posts,
-          contacts:     draft.contacts,
-          appts_set:    draft.appts_set,
-          appts_kept:   draft.appts_kept,
-          resets:       draft.resets,
-          notes:        draft.notes,
+          sfg_id:        activeSubject.sfg_id,
+          log_date:      editDate,
+          dials:         draft.dials,
+          hours_dialed:  draft.hours_dialed,
+          contacts:      draft.contacts,
+          appts_set:     draft.appts_set,
+          appts_kept:    draft.appts_kept,
+          resets:        draft.resets,
+          apps_written:  draft.apps_written,
+          apv_submitted: draft.apv_submitted,
+          notes:         draft.notes,
         }),
       })
       const data = await res.json()
@@ -344,8 +316,7 @@ export default function ActivityPage() {
       setLogs(prev => ({ ...prev, [editDate]: data.log }))
       refreshStatsAfterSave(editDate)
 
-      // ── Sync lead spend transaction ─────────────────────────────────────────
-      // Delete all existing Leads transactions for this date, then create a new one if non-zero
+      // Sync lead spend transaction
       const existingLeadTxs = leadTxs.filter(tx => tx.date === editDate)
       await Promise.all(existingLeadTxs.map(tx =>
         fetch(`/api/transactions?id=${tx.id}`, { method: 'DELETE' })
@@ -356,17 +327,12 @@ export default function ActivityPage() {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            date:        editDate,
-            description: 'Lead Spend',
-            amount:      leadAmt,
-            type:        'expense',
-            category:    'Leads',
-            force:       true,
+            date: editDate, description: 'Lead Spend',
+            amount: leadAmt, type: 'expense', category: 'Leads', force: true,
           }),
         })
       }
       await loadLeadTxs()
-
       setEditDate(null)
     } catch (err) {
       setSaveError(err.message)
@@ -375,7 +341,7 @@ export default function ActivityPage() {
     }
   }
 
-  // ── Totals (for the weekly grid column) ─────────────────────────────────────
+  // ── Totals ───────────────────────────────────────────────────────────────────
   const weekTotals = useMemo(() => {
     const t = Object.fromEntries(METRIC_KEYS.map(k => [k, 0]))
     for (const log of Object.values(logs)) {
@@ -384,27 +350,6 @@ export default function ActivityPage() {
     return t
   }, [logs])
 
-  // ── Policies keyed by submit_date ────────────────────────────────────────────
-  const policiesByDate = useMemo(() => {
-    const map = {}
-    for (const p of policies) {
-      const d = p.submit_date?.slice(0, 10)
-      if (!d) continue
-      ;(map[d] ??= []).push(p)
-    }
-    return map
-  }, [policies])
-
-  // ── Lead spend keyed by date ──────────────────────────────────────────────────
-  const leadsByDate = useMemo(() => {
-    const map = {}
-    for (const tx of leadTxs) {
-      map[tx.date] = (map[tx.date] ?? 0) + Math.abs(tx.amount)
-    }
-    return map
-  }, [leadTxs])
-
-  // ── Stats-range totals (for the Conversion Ratios + Totals blocks) ───────────
   const totals = useMemo(() => {
     const t = Object.fromEntries(METRIC_KEYS.map(k => [k, 0]))
     for (const log of statsLogs) {
@@ -413,48 +358,36 @@ export default function ActivityPage() {
     return t
   }, [statsLogs])
 
-  // ── Stats-range policy + lead aggregates ─────────────────────────────────────
-  const { statsPolicyApps, statsPolicySubAPV, statsLeadSpend } = useMemo(() => {
+  // Lead spend aggregated over stats range
+  const statsLeadSpend = useMemo(() => {
     const { start, end } = getStatDateRange(statsRange)
-    let apps = 0, apv = 0, leads = 0
-    for (const p of policies) {
-      const d = p.submit_date?.slice(0, 10)
-      if (!d) continue
-      if (start && d < start) continue
-      if (end   && d > end)   continue
-      apps++
-      apv += p.submitted_apv ?? 0
-    }
+    let leads = 0
     for (const tx of leadTxs) {
       const d = tx.date
       if (start && d < start) continue
       if (end   && d > end)   continue
       leads += Math.abs(tx.amount)
     }
-    return { statsPolicyApps: apps, statsPolicySubAPV: apv, statsLeadSpend: leads }
-  }, [policies, leadTxs, statsRange])
+    return leads
+  }, [leadTxs, statsRange])
 
   // ── Ratios ───────────────────────────────────────────────────────────────────
   const ratios = useMemo(() => {
-    function pct(num, den) {
-      if (!den) return null
-      return Math.round((num / den) * 100)
-    }
+    function pct(num, den) { return den ? Math.round((num / den) * 100) : null }
     const dialRate = totals.hours_dialed > 0
-      ? (totals.dials / totals.hours_dialed).toFixed(1)
-      : null
-    const avgAPVVal = statsPolicyApps > 0 ? Math.round(statsPolicySubAPV / statsPolicyApps) : null
-    const avgAPVDisplay = avgAPVVal != null ? `$${avgAPVVal.toLocaleString()}` : null
+      ? (totals.dials / totals.hours_dialed).toFixed(1) : null
+    const avgAPVVal = totals.apps_written > 0
+      ? Math.round(totals.apv_submitted / totals.apps_written) : null
     return [
       { label: 'Dials/Hr',     display: dialRate ? `${dialRate}` : null, sub: dialRate ? `${totals.dials} dials / ${totals.hours_dialed}h` : null, title: 'Dials per hour dialed' },
-      { label: 'Contact Rate', pct: pct(totals.contacts,   totals.dials),      num: totals.contacts,   den: totals.dials,      title: 'Contacts per dial'                  },
-      { label: 'Appt Rate',    pct: pct(totals.appts_set,  totals.contacts),   num: totals.appts_set,  den: totals.contacts,   title: 'Appointments set per contact'       },
-      { label: 'Show Rate',    pct: pct(totals.appts_kept, totals.appts_set),  num: totals.appts_kept, den: totals.appts_set,  title: 'Appointments kept per set'          },
-      { label: 'Close Rate',   pct: pct(statsPolicyApps,   totals.appts_kept), num: statsPolicyApps,   den: totals.appts_kept, title: 'Apps submitted per appointment kept' },
-      { label: 'Reset Rate',   pct: pct(totals.resets,     totals.appts_kept), num: totals.resets,     den: totals.appts_kept, title: 'Resets per appointment run'         },
-      { label: 'Avg APV',      display: avgAPVDisplay, sub: avgAPVVal != null ? `${statsPolicyApps} apps` : null, title: 'Average submitted APV per application' },
+      { label: 'Contact Rate', pct: pct(totals.contacts,    totals.dials),       num: totals.contacts,    den: totals.dials,       title: 'Contacts per dial' },
+      { label: 'Appt Rate',    pct: pct(totals.appts_set,   totals.contacts),    num: totals.appts_set,   den: totals.contacts,    title: 'Appointments set per contact' },
+      { label: 'Show Rate',    pct: pct(totals.appts_kept,  totals.appts_set),   num: totals.appts_kept,  den: totals.appts_set,   title: 'Appointments kept per set' },
+      { label: 'Close Rate',   pct: pct(totals.apps_written, totals.appts_kept), num: totals.apps_written, den: totals.appts_kept, title: 'Apps written per appointment kept' },
+      { label: 'Reset Rate',   pct: pct(totals.resets,      totals.appts_kept),  num: totals.resets,      den: totals.appts_kept,  title: 'Resets per appointment run' },
+      { label: 'Avg APV',      display: avgAPVVal != null ? fmtCurrency(avgAPVVal) : null, sub: avgAPVVal != null ? `${totals.apps_written} apps` : null, title: 'Average submitted APV per application' },
     ]
-  }, [totals, statsPolicyApps, statsPolicySubAPV])
+  }, [totals])
 
   // ── Guards ───────────────────────────────────────────────────────────────────
   if (!permissions.activity.read) return (
@@ -462,45 +395,32 @@ export default function ActivityPage() {
       <p className="text-sm text-red-500">You don't have access to this section.</p>
     </main>
   )
-  if (!activeSubject) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to track activity.</p>
-      </div>
-    )
-  }
+  if (!activeSubject) return (
+    <div className="flex items-center justify-center py-24">
+      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to track activity.</p>
+    </div>
+  )
 
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-      {/* ── Page header ────────────────────────────────────────────────────────── */}
+      {/* ── Page header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1 min-w-0">
           Activity Tracking
         </h1>
-
-        {/* Week navigation */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setWeekStart(w => addDays(w, -7))}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
-            aria-label="Previous week"
-          >
-            ‹
-          </button>
-
+          >‹</button>
           <span className="text-sm font-medium text-gray-700 dark:text-white/80 min-w-[168px] text-center">
             {fmtWeekRange(weekStart)}
           </span>
-
           <button
             onClick={() => setWeekStart(w => addDays(w, 7))}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
-            aria-label="Next week"
-          >
-            ›
-          </button>
-
+          >›</button>
           <button
             onClick={() => setWeekStart(getWeekStart(new Date()))}
             className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
@@ -521,20 +441,16 @@ export default function ActivityPage() {
           <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[560px]">
-
-                {/* Day header row */}
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-white/10">
-                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-[110px]">
+                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-[130px]">
                       Metric
                     </th>
-
                     {days.map(day => {
-                      const ds       = toDateStr(day)
-                      const isToday  = ds === todayStr
-                      const isEdit   = ds === editDate
-                      const hasData  = !!logs[ds]
-
+                      const ds      = toDateStr(day)
+                      const isToday = ds === todayStr
+                      const isEdit  = ds === editDate
+                      const hasData = !!logs[ds]
                       return (
                         <th key={ds} className="px-1.5 py-2.5 text-center">
                           <div className="flex flex-col items-center gap-1.5">
@@ -560,106 +476,78 @@ export default function ActivityPage() {
                         </th>
                       )
                     })}
-
-                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-16">
+                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-20">
                       Total
                     </th>
                   </tr>
                 </thead>
 
-                {/* Metric rows */}
                 <tbody className="divide-y divide-gray-50 dark:divide-white/[0.04]">
                   {METRICS.map(metric => (
                     <tr key={metric.key} className="hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap ${metric.accent}`}>
+                      <td className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap ${NEUTRAL}`}>
                         {metric.label}
                       </td>
                       {days.map(day => {
                         const ds  = toDateStr(day)
                         const val = logs[ds]?.[metric.key]
                         const hasVal = val !== undefined && val !== null && val !== 0
+                        const display = hasVal
+                          ? (metric.currency ? fmtCurrency(val) : val)
+                          : '—'
                         return (
                           <td key={ds} className="px-1.5 py-2.5 text-center">
-                            <span className={`text-sm tabular-nums font-medium ${
-                              hasVal
-                                ? 'text-gray-900 dark:text-white'
-                                : 'text-gray-200 dark:text-white/15'
-                            }`}>
-                              {hasVal ? val : '—'}
+                            <span className={`text-sm tabular-nums font-medium ${hasVal ? 'text-gray-900 dark:text-white' : 'text-gray-200 dark:text-white/15'}`}>
+                              {display}
                             </span>
                           </td>
                         )
                       })}
                       <td className="px-4 py-2.5 text-right">
-                        <span className={`text-sm tabular-nums font-bold ${
-                          weekTotals[metric.key]
-                            ? 'text-gray-900 dark:text-white'
-                            : 'text-gray-300 dark:text-white/20'
-                        }`}>
-                          {weekTotals[metric.key] || '—'}
+                        <span className={`text-sm tabular-nums font-bold ${weekTotals[metric.key] ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'}`}>
+                          {weekTotals[metric.key]
+                            ? (metric.currency ? fmtCurrency(weekTotals[metric.key]) : weekTotals[metric.key])
+                            : '—'}
                         </span>
                       </td>
                     </tr>
                   ))}
 
-                  {/* Derived rows — sourced from policies / transactions, not activity_logs */}
-                  {DERIVED_ROWS.map(row => {
-                    const weekDerivedTotal = days.reduce((sum, day) => {
-                      const ds = toDateStr(day)
-                      if (row.key === 'apps_written') return sum + (policiesByDate[ds]?.length ?? 0)
-                      if (row.key === 'submitted_apv') return sum + (policiesByDate[ds]?.reduce((s, p) => s + (p.submitted_apv ?? 0), 0) ?? 0)
-                      if (row.key === 'lead_spend') return sum + (leadsByDate[ds] ?? 0)
-                      return sum
-                    }, 0)
-                    const fmtDerived = (val, ds) => {
-                      if (row.key === 'apps_written') return policiesByDate[ds]?.length || null
-                      if (row.key === 'submitted_apv') {
-                        const apv = policiesByDate[ds]?.reduce((s, p) => s + (p.submitted_apv ?? 0), 0) ?? 0
-                        return apv > 0 ? `$${Math.round(apv).toLocaleString()}` : null
-                      }
-                      if (row.key === 'lead_spend') return leadsByDate[ds] > 0 ? `$${Math.round(leadsByDate[ds]).toLocaleString()}` : null
-                      return null
-                    }
-                    const fmtTotal = val => {
-                      if (!val) return '—'
-                      return row.currency ? `$${Math.round(val).toLocaleString()}` : val
-                    }
+                  {/* Lead Spend — still derived from transactions */}
+                  {(() => {
+                    const weekLeadTotal = days.reduce((sum, day) => sum + (leadsByDate[toDateStr(day)] ?? 0), 0)
                     return (
-                      <tr key={row.key} className="hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors border-t border-dashed border-gray-100 dark:border-white/[0.06]">
-                        <td className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap italic ${row.accent}`}>
-                          {row.label}
+                      <tr className="hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors border-t border-dashed border-gray-100 dark:border-white/[0.06]">
+                        <td className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap italic ${NEUTRAL}`}>
+                          {DERIVED_ROW.label}
                         </td>
                         {days.map(day => {
                           const ds  = toDateStr(day)
-                          const val = fmtDerived(0, ds)
+                          const amt = leadsByDate[ds]
+                          const val = amt > 0 ? fmtCurrency(amt) : null
                           return (
                             <td key={ds} className="px-1.5 py-2.5 text-center">
-                              <span className={`text-sm tabular-nums font-medium ${
-                                val ? 'text-gray-900 dark:text-white' : 'text-gray-200 dark:text-white/15'
-                              }`}>
+                              <span className={`text-sm tabular-nums font-medium ${val ? 'text-gray-900 dark:text-white' : 'text-gray-200 dark:text-white/15'}`}>
                                 {val ?? '—'}
                               </span>
                             </td>
                           )
                         })}
                         <td className="px-4 py-2.5 text-right">
-                          <span className={`text-sm tabular-nums font-bold ${
-                            weekDerivedTotal ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'
-                          }`}>
-                            {fmtTotal(weekDerivedTotal)}
+                          <span className={`text-sm tabular-nums font-bold ${weekLeadTotal ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'}`}>
+                            {weekLeadTotal ? fmtCurrency(weekLeadTotal) : '—'}
                           </span>
                         </td>
                       </tr>
                     )
-                  })}
+                  })()}
                 </tbody>
               </table>
             </div>
 
-            {/* ── Inline day editor ─────────────────────────────────────────── */}
+            {/* ── Inline day editor ──────────────────────────────────────────── */}
             {editDate && (
               <div className="border-t border-gray-100 dark:border-white/10 bg-gray-50/50 dark:bg-white/[0.02] px-5 py-5">
-
                 <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-4">
                   {fmtFullDay(editDate)}
                 </p>
@@ -667,7 +555,7 @@ export default function ActivityPage() {
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {METRICS.map(metric => (
                     <div key={metric.key}>
-                      <label className={`block text-xs font-semibold mb-1.5 ${metric.accent}`}>
+                      <label className={`block text-xs font-semibold mb-1.5 ${NEUTRAL}`}>
                         {metric.short}
                       </label>
                       <input
@@ -684,14 +572,11 @@ export default function ActivityPage() {
                     </div>
                   ))}
                   <div>
-                    <label className="block text-xs font-semibold mb-1.5 text-red-500 dark:text-red-400">
+                    <label className={`block text-xs font-semibold mb-1.5 ${NEUTRAL}`}>
                       Lead $
                     </label>
                     <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      inputMode="decimal"
+                      type="number" min="0" step="1" inputMode="decimal"
                       value={draft.lead_spend ?? ''}
                       onChange={e => setField('lead_spend', e.target.value)}
                       onFocus={e => e.target.select()}
@@ -714,22 +599,15 @@ export default function ActivityPage() {
                   />
                 </div>
 
-                {saveError && (
-                  <p className="text-xs text-red-500 dark:text-red-400 mb-3">{saveError}</p>
-                )}
+                {saveError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{saveError}</p>}
 
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="text-sm px-5 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
+                  <button onClick={handleSave} disabled={saving}
+                    className="text-sm px-5 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                     {saving ? 'Saving…' : 'Save'}
                   </button>
-                  <button
-                    onClick={() => setEditDate(null)}
-                    className="text-sm px-4 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                  >
+                  <button onClick={() => setEditDate(null)}
+                    className="text-sm px-4 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                     Cancel
                   </button>
                 </div>
@@ -737,90 +615,12 @@ export default function ActivityPage() {
             )}
           </div>
 
-          {/* ── Stats section (shared time-frame selector) ──────────────────── */}
-          <div className="space-y-4">
-
-            {/* Shared header with range picker */}
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
-                Stats
-              </p>
-              <div className="flex gap-1">
-                {STAT_RANGES.map(r => (
-                  <button
-                    key={r.key}
-                    onClick={() => setStatsRange(r.key)}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${
-                      statsRange === r.key
-                        ? 'bg-accent text-white'
-                        : 'border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Conversion ratios */}
-            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
-                Conversion Ratios
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-6">
-                {ratios.map(r => (
-                  <RatioCard key={r.label} {...r} />
-                ))}
-              </div>
-            </div>
-
-            {/* Totals */}
-            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
-                Totals
-              </p>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 mb-4">
-                {METRICS.map(m => (
-                  <div key={m.key}>
-                    <p className={`text-xs font-semibold mb-1 ${m.accent}`}>{m.label}</p>
-                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
-                      {totals[m.key] || 0}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-dashed border-gray-100 dark:border-white/10 pt-4 grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-xs font-semibold italic mb-1 text-orange-500 dark:text-orange-400">Apps Written</p>
-                  <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{statsPolicyApps || 0}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold italic mb-1 text-green-600 dark:text-green-400">Submitted APV</p>
-                  <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
-                    {statsPolicySubAPV > 0 ? `$${Math.round(statsPolicySubAPV).toLocaleString()}` : '0'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold italic mb-1 text-red-500 dark:text-red-400">Lead Spend</p>
-                  <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
-                    {statsLeadSpend > 0 ? `$${Math.round(statsLeadSpend).toLocaleString()}` : '0'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
           {/* ── Goals section ────────────────────────────────────────────────── */}
           <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
-
-            {/* Header row */}
             <div className="flex flex-wrap items-center gap-3 mb-5">
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
                 Goals
               </p>
-
-              {/* Month navigation */}
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => { setGoalsMonth(m => addMonths(m, -1)); setGoalsDraft(null) }}
@@ -834,32 +634,25 @@ export default function ActivityPage() {
                   className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
                 >›</button>
               </div>
-
-              {/* Edit / Save / Cancel */}
               <div className="ml-auto flex gap-2">
                 {goalsDraft ? (
                   <>
-                    <button
-                      onClick={saveGoals}
-                      disabled={goalsSaving}
-                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors"
-                    >
+                    <button onClick={saveGoals} disabled={goalsSaving}
+                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
                       {goalsSaving ? 'Saving…' : 'Save'}
                     </button>
-                    <button
-                      onClick={() => setGoalsDraft(null)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                    >
+                    <button onClick={() => setGoalsDraft(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                       Cancel
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={() => setGoalsDraft({
-                      weekly_dials:          goals?.weekly_dials          ?? '',
                       weekly_appts:          goals?.weekly_appts          ?? '',
                       monthly_apv_submitted: goals?.monthly_apv_submitted ?? '',
                       monthly_apv_issued:    goals?.monthly_apv_issued    ?? '',
+                      monthly_income:        goals?.monthly_income        ?? '',
                     })}
                     className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   >
@@ -869,7 +662,6 @@ export default function ActivityPage() {
               </div>
             </div>
 
-            {/* Goals grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {GOAL_FIELDS.map(f => (
                 <div key={f.key}>
@@ -877,8 +669,7 @@ export default function ActivityPage() {
                   <p className="text-[10px] text-gray-300 dark:text-white/20 mb-2">{f.period}</p>
                   {goalsDraft ? (
                     <input
-                      type="number"
-                      min="0"
+                      type="number" min="0"
                       step={f.currency ? '100' : '1'}
                       inputMode={f.currency ? 'decimal' : 'numeric'}
                       value={goalsDraft[f.key] ?? ''}
@@ -897,6 +688,64 @@ export default function ActivityPage() {
             </div>
           </div>
 
+          {/* ── Stats section ────────────────────────────────────────────────── */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+                Stats
+              </p>
+              <div className="flex gap-1">
+                {STAT_RANGES.map(r => (
+                  <button key={r.key} onClick={() => setStatsRange(r.key)}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                      statsRange === r.key
+                        ? 'bg-accent text-white'
+                        : 'border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
+                    }`}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Conversion ratios */}
+            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
+                Conversion Ratios
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 sm:gap-6">
+                {ratios.map(r => <RatioCard key={r.label} {...r} />)}
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
+                Totals
+              </p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-4">
+                {METRICS.map(m => (
+                  <div key={m.key}>
+                    <p className={`text-xs font-semibold mb-1 ${NEUTRAL}`}>{m.label}</p>
+                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                      {m.currency
+                        ? (totals[m.key] > 0 ? fmtCurrency(totals[m.key]) : '0')
+                        : (totals[m.key] || 0)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-dashed border-gray-100 dark:border-white/10 pt-4">
+                <div>
+                  <p className={`text-xs font-semibold italic mb-1 ${NEUTRAL}`}>Lead Spend</p>
+                  <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                    {statsLeadSpend > 0 ? fmtCurrency(statsLeadSpend) : '0'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </>
       )}
     </main>
@@ -911,13 +760,9 @@ function RatioCard({ label, pct, num, den, display, sub, title }) {
   return (
     <div className="text-center" title={title}>
       <p className="text-xs text-gray-400 dark:text-white/40 mb-1.5 leading-tight">{label}</p>
-      <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
-        {value ?? '—'}
-      </p>
+      <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{value ?? '—'}</p>
       {subline && (
-        <p className="text-[10px] text-gray-400 dark:text-white/30 mt-0.5 tabular-nums">
-          {subline}
-        </p>
+        <p className="text-[10px] text-gray-400 dark:text-white/30 mt-0.5 tabular-nums">{subline}</p>
       )}
     </div>
   )

@@ -17,8 +17,8 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *
  * Activity goals (type=goals):
  *   GET  /api/activity?type=goals&sfg_id=X&month=YYYY-MM
- *   POST /api/activity?type=goals  { sfg_id, year_month, weekly_dials, weekly_appts,
- *                                    monthly_apv_submitted, monthly_apv_issued }
+ *   POST /api/activity?type=goals  { sfg_id, year_month, weekly_appts,
+ *                                    monthly_apv_submitted, monthly_apv_issued, monthly_income }
  *
  * Qualifications (type=qualifications):
  *   GET  /api/activity?type=qualifications  → { qualifications }
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { sfg_id, year_month, weekly_dials, weekly_appts, monthly_apv_submitted, monthly_apv_issued } = req.body ?? {}
+      const { sfg_id, year_month, weekly_appts, monthly_apv_submitted, monthly_apv_issued, monthly_income } = req.body ?? {}
 
       if (!sfg_id || !year_month) return res.status(400).json({ error: 'sfg_id and year_month required' })
       if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
@@ -141,10 +141,10 @@ export default async function handler(req, res) {
           {
             sfg_id:                sfg_id.trim().toUpperCase(),
             year_month:            year_month.trim(),
-            weekly_dials:          parseOptionalInt(weekly_dials),
             weekly_appts:          parseOptionalInt(weekly_appts),
             monthly_apv_submitted: parseOptionalNum(monthly_apv_submitted),
             monthly_apv_issued:    parseOptionalNum(monthly_apv_issued),
+            monthly_income:        parseOptionalNum(monthly_income),
             updated_at:            new Date().toISOString(),
           },
           { onConflict: 'sfg_id,year_month' },
