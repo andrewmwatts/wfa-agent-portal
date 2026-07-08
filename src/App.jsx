@@ -29,6 +29,22 @@ import Admin from './pages/Admin'
 import AdminToolsPage from './pages/AdminToolsPage'
 import SnapshotPage from './pages/SnapshotPage'
 import IncomePage from './pages/IncomePage'
+import Landing from './pages/public/Landing'
+import VideoLibrary from './pages/public/VideoLibrary'
+import CalendarPage from './pages/public/CalendarPage'
+import UnderwritingPage from './pages/public/UnderwritingPage'
+import PublicLayout from './components/public/PublicLayout'
+
+function ComingSoon({ title }) {
+  return (
+    <PublicLayout>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '64px 28px', textAlign: 'center' }}>
+        <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif', margin: '0 0 8px' }}>Coming soon</p>
+        <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: 0 }}>{title}</h1>
+      </div>
+    </PublicLayout>
+  )
+}
 
 export default function App() {
   return (
@@ -86,8 +102,12 @@ export default function App() {
               </Route>
             </Route>
 
-            {/* Public root — redirect to login until public site is built */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            {/* Public site */}
+            <Route path="/"           element={<Landing />} />
+            <Route path="/videos"     element={<VideoLibrary />} />
+            <Route path="/resources"  element={<ComingSoon title="Documents & guides" />} />
+            <Route path="/calendar"   element={<CalendarPage />} />
+            <Route path="/guidelines" element={<UnderwritingPage />} />
 
             {/* Unknown /portal/* paths → dashboard */}
             <Route path="/portal/*" element={<Navigate to="/portal/dashboard" replace />} />

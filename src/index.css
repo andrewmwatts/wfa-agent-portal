@@ -38,3 +38,19 @@ html.dark option {
   background-color: rgb(var(--color-secondary));
   color: #fff;
 }
+
+/* ── Public site design tokens ────────────────────────────────────────────── */
+:root {
+  --pub-bg-page:        #F4F7F8;
+  --pub-bg-surface:     #FFFFFF;
+  --pub-bg-section:     #EEF3F4;
+  --pub-teal-deep:      #003539;
+  --pub-teal-mid:       #005365;
+  --pub-teal-text:      #1A2B2E;
+  --pub-pink:           #EE2666;
+  --pub-text-primary:   #1A2B2E;
+  --pub-text-secondary: #4A6568;
+  --pub-text-tertiary:  #7A9499;
+  --pub-border:         #DDE6E8;
+  --pub-border-mid:     #C8D6D8;
+}
