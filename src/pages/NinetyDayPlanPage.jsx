@@ -217,7 +217,7 @@ export default function NinetyDayPlanPage() {
           <select
             value={selectedId ?? ''}
             onChange={e => selectPlan(e.target.value)}
-            className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white min-w-[260px]"
+            className="text-sm border border-gray-200 dark:border-white/15 rounded-lg px-3 py-2 bg-white dark:bg-white/5 text-gray-900 dark:text-white min-w-[260px] focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors"
           >
             {plans.map(p => (
               <option key={p.id} value={p.id}>
@@ -249,7 +249,7 @@ export default function NinetyDayPlanPage() {
           {canWrite && (
             <button
               onClick={() => { setShowNewModal(true); setNewStartDate(todayStr()) }}
-              className="text-sm px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              className="text-sm px-3 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors"
             >
               + New Plan
             </button>
@@ -269,9 +269,9 @@ export default function NinetyDayPlanPage() {
               <span className="font-medium">Day {day} of 90</span>
               <span>{pct}%</span>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+            <div className="w-full bg-amber-100 dark:bg-white/10 rounded-full h-3">
               <div
-                className="bg-blue-600 h-3 rounded-full transition-all"
+                className="bg-amber-500 h-3 rounded-full transition-all"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -286,13 +286,13 @@ export default function NinetyDayPlanPage() {
             {SECTIONS.map(section => (
               <div
                 key={section.num}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5"
+                className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center">
                     {section.num}
                   </span>
-                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">{section.title}</h2>
+                  <h2 className="text-base font-semibold text-accent dark:text-accent-light">{section.title}</h2>
                 </div>
                 <div className="space-y-5">
                   {section.fields.map(field => (
@@ -303,7 +303,7 @@ export default function NinetyDayPlanPage() {
                           value={draft[field.key]}
                           onChange={e => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
                           rows={3}
-                          className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full text-sm border border-gray-200 dark:border-white/15 rounded-lg px-3 py-2 bg-white dark:bg-white/5 text-gray-900 dark:text-white resize-y focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors"
                           placeholder="Write your response…"
                         />
                       ) : (
@@ -333,7 +333,7 @@ export default function NinetyDayPlanPage() {
               <button
                 onClick={save}
                 disabled={saving}
-                className="text-sm px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                className="text-sm px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -342,7 +342,7 @@ export default function NinetyDayPlanPage() {
 
           {/* Commitment block */}
           {!editing && (
-            <div className="mt-5 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center">
+            <div className="mt-5 bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-6 text-center">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide">
                 Committed to by
               </p>
@@ -360,7 +360,7 @@ export default function NinetyDayPlanPage() {
                 <button
                   onClick={signPlan}
                   disabled={saving}
-                  className="text-sm px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 print:hidden"
+                  className="text-sm px-6 py-2.5 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors disabled:opacity-50 print:hidden"
                 >
                   {saving ? 'Signing…' : 'Commit to this plan'}
                 </button>
@@ -376,7 +376,7 @@ export default function NinetyDayPlanPage() {
           {canWrite && (
             <button
               onClick={() => { setShowNewModal(true); setNewStartDate(todayStr()) }}
-              className="text-sm px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              className="text-sm px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors"
             >
               + Create your first plan
             </button>
@@ -387,7 +387,7 @@ export default function NinetyDayPlanPage() {
       {/* New Plan Modal */}
       {showNewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+          <div className="bg-white dark:bg-secondary rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">New 90-Day Plan</h3>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
               Start date
@@ -396,7 +396,7 @@ export default function NinetyDayPlanPage() {
               type="date"
               value={newStartDate}
               onChange={e => setNewStartDate(e.target.value)}
-              className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-1"
+              className="w-full text-sm border border-gray-200 dark:border-white/15 rounded-lg px-3 py-2 bg-white dark:bg-white/5 text-gray-900 dark:text-white mb-1 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors"
             />
             {newStartDate && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">
@@ -414,7 +414,7 @@ export default function NinetyDayPlanPage() {
               <button
                 onClick={createPlan}
                 disabled={!newStartDate || saving}
-                className="text-sm px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                className="text-sm px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors disabled:opacity-50"
               >
                 {saving ? 'Creating…' : 'Create'}
               </button>
