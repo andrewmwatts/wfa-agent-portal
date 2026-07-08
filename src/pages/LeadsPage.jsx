@@ -638,7 +638,12 @@ export default function LeadsPage() {
           )}
 
           {/* ── Pipeline tab ─────────────────────────────────────────────── */}
-          {tab === 'pipeline' && <PipelineTab leads={leads} />}
+          {tab === 'pipeline' && (
+            <PipelineTab
+              leads={leads.filter(l => l.lead_type !== 'Recruiting' && l.category !== 'recruiting')}
+              onOpenLead={openLead}
+            />
+          )}
 
         </div>
 
@@ -1414,58 +1419,107 @@ export function ScriptsTab({ scripts, onAdd, onDelete }) {
 
 // ─── Pipeline Tab ──────────────────────────────────────────────────────────────
 
-const DEFAULT_KPI_FN = (counts, total) => [
-  { label: 'Total Leads',  value: total,                                                                       color: 'text-accent' },
-  { label: 'Contacted',    value: (counts.contacted || 0) + (counts.attempted || 0) + (counts.callback || 0), color: 'text-amber-600 dark:text-amber-400' },
-  { label: 'Appointments', value: counts.appt || 0,                                                            color: 'text-violet-600 dark:text-violet-400' },
-  { label: 'Policy Sold',  value: counts.sold || 0,                                                            color: 'text-green-600 dark:text-green-400' },
+export const LEADS_KANBAN_GROUPS = [
+  {
+    key: 'pre_appt', label: 'Pre-Appointment',
+    statuses: new Set(['new', 'attempted', 'callback', 'contacted', 'appt', 'noshow']),
+    headerCls: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/20',
+  },
+  {
+    key: 'appt_run', label: 'Appt Run',
+    statuses: new Set(['quotes', 'thinking', 'ghost']),
+    headerCls: 'bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-500/20',
+  },
+  {
+    key: 'sold', label: 'Policy Sold',
+    statuses: new Set(['sold']),
+    headerCls: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/20',
+  },
+  {
+    key: 'dead', label: 'Dead',
+    statuses: new Set(['notint', 'dnc', 'bad']),
+    headerCls: 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40 border-gray-200 dark:border-white/10',
+  },
 ]
 
-export function PipelineTab({ leads, statuses = STATUSES, kpiFn = DEFAULT_KPI_FN }) {
+export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, kanbanGroups = LEADS_KANBAN_GROUPS }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(statuses.map(s => [s.key, 0]))
     for (const l of leads) { if (c[l.status] !== undefined) c[l.status]++ }
     return c
   }, [leads, statuses])
 
-  const total   = leads.length
-  const counted = Object.values(counts).reduce((a, b) => a + b, 0)
-  const STATS   = kpiFn(counts, total)
+  const kanbanLeads = useMemo(() => {
+    const groups = Object.fromEntries(kanbanGroups.map(g => [g.key, []]))
+    for (const l of leads) {
+      for (const g of kanbanGroups) {
+        if (g.statuses.has(l.status)) { groups[g.key].push(l); break }
+      }
+    }
+    return groups
+  }, [leads, kanbanGroups])
 
   return (
     <div className="px-4 sm:px-6 py-4 space-y-5">
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {STATS.map(s => (
-          <div key={s.label} className="bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl p-4 text-center">
-            <p className={`text-3xl font-extrabold tabular-nums ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-gray-400 dark:text-white/40 mt-1 font-medium">{s.label}</p>
-          </div>
-        ))}
+
+      {/* Status chips */}
+      <div className="flex flex-wrap gap-2">
+        {statuses.map(s => {
+          const count = counts[s.key] ?? 0
+          if (!count) return null
+          return (
+            <div key={s.key} className="flex items-center gap-1.5 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-full px-2.5 py-1">
+              <div className={`w-2 h-2 rounded-full shrink-0 ${s.bar}`} />
+              <span className="text-xs text-gray-600 dark:text-white/70">{s.label}</span>
+              <span className="text-xs font-bold tabular-nums text-gray-800 dark:text-white">{count}</span>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Status pipeline */}
-      <div className="bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">By Status</p>
-        </div>
-        <div className="divide-y divide-gray-50 dark:divide-white/5">
-          {statuses.map(s => {
-            const count = counts[s.key] ?? 0
-            const pct   = counted ? Math.round((count / counted) * 100) : 0
+      {/* Kanban */}
+      <div className="overflow-x-auto pb-2">
+        <div className="flex gap-3 min-w-max">
+          {kanbanGroups.map(g => {
+            const groupLeads = kanbanLeads[g.key] ?? []
             return (
-              <div key={s.key} className="flex items-center gap-3 px-4 py-2.5">
-                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.bar}`} />
-                <span className="text-xs text-gray-600 dark:text-white/70 w-36 shrink-0">{s.label}</span>
-                <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-500 ${s.bar}`} style={{ width: `${pct}%` }} />
+              <div key={g.key} className="flex flex-col w-56 shrink-0">
+                <div className={`flex items-center justify-between px-3 py-2 rounded-t-xl border border-b-0 ${g.headerCls}`}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider">{g.label}</span>
+                  <span className="text-xs font-extrabold tabular-nums">{groupLeads.length}</span>
                 </div>
-                <span className="text-xs font-bold tabular-nums text-gray-700 dark:text-white/70 w-7 text-right">{count}</span>
+                <div className="border border-gray-200 dark:border-white/10 rounded-b-xl bg-gray-50 dark:bg-white/[0.02] p-2 space-y-2 min-h-[120px]">
+                  {groupLeads.length === 0 ? (
+                    <p className="text-center text-xs text-gray-300 dark:text-white/20 pt-4">None</p>
+                  ) : groupLeads.map(l => (
+                    <div
+                      key={l.id}
+                      onClick={() => onOpenLead?.(l)}
+                      className="bg-white dark:bg-primary/40 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-accent/40 transition-colors"
+                    >
+                      <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{l.name}</p>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <StatusPill status={l.status} statuses={statuses} />
+                        {l.state && <span className="text-[10px] text-gray-400 dark:text-white/30">📍 {l.state}</span>}
+                      </div>
+                      {l.phone && (
+                        <a
+                          href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-[10px] text-gray-400 dark:text-white/30 hover:text-green-600 dark:hover:text-green-400 block mt-0.5"
+                        >
+                          {l.phone}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )
           })}
         </div>
       </div>
+
     </div>
   )
 }
