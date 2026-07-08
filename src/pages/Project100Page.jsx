@@ -483,7 +483,7 @@ export default function Project100Page() {
                     ) : (
                       <span className="text-xs text-gray-300 dark:text-white/20">No phone</span>
                     )}
-                    {entry.email && <span className="text-xs text-gray-400 dark:text-white/40 truncate">✉ {entry.email}</span>}
+                    {entry.email && <a href={`mailto:${entry.email}`} onClick={e => e.stopPropagation()} className="text-xs text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 truncate transition-colors">✉ {entry.email}</a>}
                     {entry.social_handle && <span className="text-xs text-gray-400 dark:text-white/40">@ {entry.social_handle}</span>}
                   </div>
 
