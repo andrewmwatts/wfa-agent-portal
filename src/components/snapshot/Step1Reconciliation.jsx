@@ -232,8 +232,31 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
     }
   }
 
-  function openEditPolicy(policyData) {
-    setEditPolicy({ ...policyData, policy_no: policyData.policy_number ?? policyData.policy_no })
+  async function openEditPolicy(policyData) {
+    const base = {
+      ...policyData,
+      id:        policyData.id ?? policyData.policy_id,
+      policy_no: policyData.policy_number ?? policyData.policy_no,
+    }
+    // Enrich with live DB fields (application_notes, policy_notes, policy_type) when
+    // opening a hypothesis candidate that didn't carry those fields in the stored JSON.
+    const policyNo = base.policy_no ?? ''
+    if (base.sfg_id && base.carrier && policyNo && base.application_notes == null) {
+      try {
+        const params = new URLSearchParams({ type: 'policies', sfg_id: base.sfg_id, carrier: base.carrier, q: policyNo })
+        const data = await fetch(`/api/snapshot?${params}`).then(r => r.json())
+        const match = Array.isArray(data)
+          ? data.find(p => (p.policy_number ?? '').toLowerCase() === policyNo.toLowerCase())
+          : null
+        if (match) {
+          base.id                = base.id                ?? match.id
+          base.application_notes = match.application_notes ?? ''
+          base.policy_notes      = match.policy_notes      ?? ''
+          base.policy_type       = base.policy_type        || match.policy_name || ''
+        }
+      } catch { /* fall through — open with what we have */ }
+    }
+    setEditPolicy(base)
   }
 
   async function handleCandidateDispute(rec, candidate) {
@@ -489,7 +512,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                       <CandidateRow
                         key={i}
                         candidate={c}
-                        onEdit={() => openEditPolicy(c)}
+                        onEdit={() => openEditPolicy({ ...c, carrier: rec.carrier, sfg_id: rec.sfg_id })}
                         onDispute={() => {
                           setDisputingCandidate({ recId: rec.id, candidate: c })
                           setCandidateDisputeNote('')
@@ -524,7 +547,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                       <CandidateRow
                         key={i}
                         candidate={{ ...p, flag: 'Search result', type: 'search', delta_contribution: p.issued_apv, policy_id: p.id }}
-                        onEdit={() => openEditPolicy(p)}
+                        onEdit={() => openEditPolicy({ ...p, sfg_id: rec.sfg_id })}
                         onDispute={() => {
                           const cand = { ...p, flag: 'Search result', type: 'search', delta_contribution: p.issued_apv, policy_id: p.id }
                           setDisputingCandidate({ recId: rec.id, candidate: cand })
