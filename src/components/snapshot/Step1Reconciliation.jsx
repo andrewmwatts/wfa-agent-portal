@@ -624,13 +624,23 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                 {!readOnly && (
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
                     {!rec.resolution ? (
-                      <button
-                        onClick={() => handleResolve(rec, 'legitimate')}
-                        disabled={savingId === rec.id}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-60"
-                      >
-                        Mark Resolved
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 dark:text-white/30">Resolve as:</span>
+                        <button
+                          onClick={() => handleResolve(rec, 'legitimate')}
+                          disabled={savingId === rec.id}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-60"
+                        >
+                          Legitimate
+                        </button>
+                        <button
+                          onClick={() => handleResolve(rec, 'disputed')}
+                          disabled={savingId === rec.id}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-60"
+                        >
+                          Sent to Disputes
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={() => handleUnresolve(rec)}
