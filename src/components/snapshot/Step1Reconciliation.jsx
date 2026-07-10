@@ -286,12 +286,6 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
         setDisputeError(body.error || `Server error ${res.status}`)
         return
       }
-      // Mark the reconciliation as resolved via dispute
-      await fetch('/api/snapshot?type=resolution', {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: rec.id, resolution: 'disputed' }),
-      })
       setDisputingCandidate(null)
       setCandidateDisputeNote('')
       setCandidateDisputeAmount('')
