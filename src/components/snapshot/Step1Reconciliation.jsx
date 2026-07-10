@@ -250,9 +250,11 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
           : null
         if (match) {
           base.id                = base.id                ?? match.id
+          base.status            = base.status            || match.status            || ''
+          base.last_update       = base.last_update       ?? match.last_update       ?? ''
           base.application_notes = match.application_notes ?? ''
           base.policy_notes      = match.policy_notes      ?? ''
-          base.policy_type       = base.policy_type        || match.policy_name || ''
+          base.policy_type       = base.policy_type        || match.policy_name      || ''
         }
       } catch { /* fall through — open with what we have */ }
     }
@@ -672,6 +674,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
             personnel={personnel}
             onClose={() => setEditPolicy(null)}
             canWrite={canWrite}
+            limitedFields
             onUpdate={updated => {
               setEditPolicy(null)
               onRefresh()

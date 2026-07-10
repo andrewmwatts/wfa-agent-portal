@@ -195,7 +195,7 @@ export class PolicyModalErrorBoundary extends Component {
 
 const NOT_IN_OPT_DELETE_STATUSES = ['declined', 'withdrawn', 'not taken']
 
-export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId }) {
+export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId, limitedFields = false }) {
   const [editing,         setEditing]         = useState(false)
   const [draft,           setDraft]           = useState(null)
   const [saving,          setSaving]          = useState(false)
@@ -512,7 +512,7 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <EditField label="Submit Date" value={toInputDate(draft.submit_date)} onChange={v => setField('submit_date', v)} type="date" />
+                {!limitedFields && <EditField label="Submit Date" value={toInputDate(draft.submit_date)} onChange={v => setField('submit_date', v)} type="date" />}
                 <EditField label="Issue Date" value={toInputDate(draft.issue_date)} onChange={v => setField('issue_date', v)} type="date" />
                 <EditField label="Last Update" value={toInputDate(draft.last_update)} onChange={v => setField('last_update', v)} type="date" />
               </div>
@@ -520,7 +520,7 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
               <DetailGrid>
                 <DetailItem label="Agent"       value={display.agent} />
                 <DetailItem label="Client"      value={display.applicant} />
-                <DetailItem label="Submit Date" value={fmtDate(display.submit_date)} />
+                {!limitedFields && <DetailItem label="Submit Date" value={fmtDate(display.submit_date)} />}
                 <DetailItem label="Issue Date"  value={fmtDate(display.issue_date)} />
                 <DetailItem label="Last Update" value={fmtDate(display.last_update)} />
               </DetailGrid>
@@ -533,7 +533,7 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
                 <EditField label="Carrier" value={draft.carrier} onChange={v => setField('carrier', v)} />
                 <EditField label="Policy Type" value={draft.policy_type} onChange={v => setField('policy_type', v)} />
                 <EditField label="Policy No." value={draft.policy_no} onChange={v => setField('policy_no', v)} />
-                <EditField label="Face Amount" value={draft.face_amt} onChange={v => setField('face_amt', v)} />
+                {!limitedFields && <EditField label="Face Amount" value={draft.face_amt} onChange={v => setField('face_amt', v)} />}
               </div>
             ) : (
               <DetailGrid>
@@ -541,9 +541,9 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
                 <DetailItem label="Raw Carrier" value={normalizeCarrier(display.carrier) !== display.carrier ? display.carrier : null} />
                 <DetailItem label="Policy Type" value={display.policy_type} />
                 <DetailItem label="Policy No."  value={display.policy_no} />
-                <DetailItem label="Face Amount" value={display.face_amt
+                {!limitedFields && <DetailItem label="Face Amount" value={display.face_amt
                   ? '$' + Number(display.face_amt.toString().replace(/[$,]/g, '')).toLocaleString()
-                  : '—'} />
+                  : '—'} />}
               </DetailGrid>
             )}
           </ModalSection>
@@ -551,12 +551,12 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
           <ModalSection title="Financials">
             {editing ? (
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                <EditField label="Submitted APV" value={draft.subm_apv ?? ''} onChange={v => setField('subm_apv', v)} type="number" />
+                {!limitedFields && <EditField label="Submitted APV" value={draft.subm_apv ?? ''} onChange={v => setField('subm_apv', v)} type="number" />}
                 <EditField label="Issued APV" value={draft.issued_apv ?? ''} onChange={v => setField('issued_apv', v)} type="number" />
               </div>
             ) : (
               <DetailGrid>
-                <DetailItem label="Submitted APV" value={fmtAmt(display.subm_apv)} accent />
+                {!limitedFields && <DetailItem label="Submitted APV" value={fmtAmt(display.subm_apv)} accent />}
                 <DetailItem label="Issued APV"    value={fmtAmt(display.issued_apv)} accent />
               </DetailGrid>
             )}
