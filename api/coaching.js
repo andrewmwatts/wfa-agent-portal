@@ -70,6 +70,8 @@ export default async function handler(req, res) {
       contractsRes,
       carriersRes,
       downlineRes,
+      project100Res,
+      ninetyDayRes,
     ] = await Promise.all([
       // Upline name
       uplineSfgId
@@ -130,6 +132,20 @@ export default async function handler(req, res) {
         .select('sfg_id, preferred_name, opt_name, hire_date, status')
         .eq('upline_sfg_id', sfgId)
         .order('hire_date', { ascending: false }),
+
+      // Project 100 entries
+      supabase
+        .from('project_100')
+        .select('id, name, status, referral_given, created_at, status_updated_at')
+        .eq('sfg_id', sfgId)
+        .order('created_at', { ascending: true }),
+
+      // 90-Day Plans
+      supabase
+        .from('ninety_day_plans')
+        .select('*')
+        .eq('sfg_id', sfgId)
+        .order('start_date', { ascending: false }),
     ])
 
     // Surface any DB errors
@@ -137,6 +153,7 @@ export default async function handler(req, res) {
       ['promotions', promotionsRes], ['policies', policiesRes], ['crosswalk', crosswalkRes],
       ['leads', leadsRes], ['activity', activityRes], ['contracts', contractsRes],
       ['carriers', carriersRes], ['downline', downlineRes],
+      ['project100', project100Res], ['ninetyDay', ninetyDayRes],
     ]) {
       if (result.error) throw new Error(`[${label}] ${result.error.message}`)
     }
@@ -233,6 +250,8 @@ export default async function handler(req, res) {
         commission_level: dlLevelMap[a.sfg_id] ?? null,
       })),
       downlinePolicies,
+      project100:  project100Res.data  ?? [],
+      ninetyDays:  ninetyDayRes.data   ?? [],
     })
   } catch (err) {
     console.error('[coaching]', err)

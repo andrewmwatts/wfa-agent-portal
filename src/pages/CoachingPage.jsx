@@ -1191,6 +1191,201 @@ function PendingPolicies({ policies }) {
   )
 }
 
+// ─── Section: Project 100 ─────────────────────────────────────────────────────
+
+const P100_PIPELINE_KEYS = new Set(['contacted', 'appt_booked', 'presentation'])
+
+function Project100Section({ entries }) {
+  const total = entries.length
+  const pct100 = Math.min(100, Math.round((total / 100) * 100))
+
+  const cutoff14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+  let inPipeline = 0, sold = 0, enrolled = 0, referralGiven = 0, needsTouch = 0
+  for (const e of entries) {
+    if (P100_PIPELINE_KEYS.has(e.status)) inPipeline++
+    if (e.status === 'sold')     sold++
+    if (e.status === 'enrolled') enrolled++
+    if (e.referral_given)        referralGiven++
+    const sinceCreated = new Date(e.created_at) < cutoff14
+    const sinceTouched = new Date(e.status_updated_at || e.created_at) < cutoff14
+    if ((e.status === 'new' && sinceCreated) || (P100_PIPELINE_KEYS.has(e.status) && sinceTouched)) needsTouch++
+  }
+
+  if (!total) {
+    return <EmptySection message="No Project 100 entries yet for this agent." />
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* X / 100 readout */}
+      <div className="flex items-center gap-4">
+        <div>
+          <span className="text-3xl font-bold text-gray-900 dark:text-white">{total}</span>
+          <span className="text-lg text-gray-400 dark:text-white/40 font-normal"> / 100</span>
+        </div>
+        <div className="flex-1 max-w-xs">
+          <div className="h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct100}%` }} />
+          </div>
+          <p className="text-xs text-gray-400 dark:text-white/40 mt-1">{pct100}% of goal</p>
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {[
+          { label: 'In Pipeline',    value: inPipeline,   color: 'text-violet-600 dark:text-violet-400' },
+          { label: 'Sold',           value: sold,         color: 'text-green-600 dark:text-green-400' },
+          { label: 'Enrolled',       value: enrolled,     color: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Referral Given', value: referralGiven,color: 'text-blue-600 dark:text-blue-400' },
+          { label: 'Needs a Touch',  value: needsTouch,   color: needsTouch > 0 ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/30' },
+        ].map(s => (
+          <CardShell key={s.label} className="p-3 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">{s.label}</p>
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+          </CardShell>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Section: 90-Day Plan ──────────────────────────────────────────────────────
+
+const PLAN_SECTIONS = [
+  { title: 'Vision', fields: [
+    { key: 'vision_said_yes',            label: 'Why did you say yes?' },
+    { key: 'vision_no_longer_settle',    label: 'What will you no longer settle for?' },
+    { key: 'vision_90_days_different',   label: 'What is different in 90 days?' },
+    { key: 'vision_doing_for_whom',      label: 'What are you doing and for whom?' },
+    { key: 'vision_one_year_looks_like', label: 'What does one year look like?' },
+  ]},
+  { title: 'Professional Path', fields: [
+    { key: 'path_milestone_90_days', label: '90-day milestone' },
+    { key: 'path_org_one_year',      label: 'Org in one year' },
+    { key: 'path_skill_change',      label: 'Skill to change' },
+  ]},
+  { title: 'Commitment', fields: [
+    { key: 'commitment_non_negotiables', label: 'Non-negotiables' },
+    { key: 'commitment_give_up',         label: 'What will you give up?' },
+    { key: 'commitment_keep_going',      label: 'What keeps you going?' },
+  ]},
+  { title: 'Support & Accountability', fields: [
+    { key: 'support_accountability_partner', label: 'Accountability partner' },
+    { key: 'support_coaching_style',         label: 'Coaching style preference' },
+  ]},
+]
+
+function planLabel(plan) {
+  if (!plan?.start_date) return 'Plan'
+  const d = new Date(plan.start_date + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'long', d: 'numeric', year: 'numeric' })
+}
+
+function NinetyDayPlanSection({ plans }) {
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [modalOpen,   setModalOpen]   = useState(false)
+
+  if (!plans.length) {
+    return <EmptySection message="No 90-Day Plans on file for this agent." />
+  }
+
+  const plan = plans[selectedIdx] ?? plans[0]
+  const dayOf = (() => {
+    if (!plan?.start_date) return null
+    const start = new Date(plan.start_date + 'T00:00:00')
+    const today = new Date()
+    const diff  = Math.floor((today - start) / 86400000) + 1
+    return Math.max(1, Math.min(diff, 90))
+  })()
+
+  return (
+    <>
+      <div className="flex items-center gap-3 flex-wrap">
+        {plans.length > 1 && (
+          <select
+            value={selectedIdx}
+            onChange={e => setSelectedIdx(Number(e.target.value))}
+            className="rounded-lg border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-sm text-gray-700 dark:text-white px-3 py-1.5 focus:outline-none"
+          >
+            {plans.map((p, i) => (
+              <option key={p.id} value={i}>{planLabel(p)}</option>
+            ))}
+          </select>
+        )}
+        {plans.length === 1 && (
+          <span className="text-sm text-gray-600 dark:text-white/60 font-medium">
+            Started {planLabel(plan)}
+          </span>
+        )}
+        {dayOf != null && (
+          <span className="text-sm text-gray-400 dark:text-white/40">Day {dayOf} of 90</span>
+        )}
+        {plan.signed_at && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 font-semibold">Signed</span>
+        )}
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 transition-colors"
+        >
+          View Plan
+        </button>
+      </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10">
+              <div>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white">90-Day Plan</h2>
+                <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">
+                  {planLabel(plan)}{dayOf != null ? ` · Day ${dayOf} of 90` : ''}
+                  {plan.signed_at ? ' · Signed' : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-6 py-5 space-y-6">
+              {PLAN_SECTIONS.map(section => (
+                <div key={section.title}>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-accent mb-3">{section.title}</h3>
+                  <div className="space-y-3">
+                    {section.fields.map(f => {
+                      const val = plan[f.key]
+                      if (!val) return null
+                      return (
+                        <div key={f.key}>
+                          <p className="text-[11px] font-semibold text-gray-400 dark:text-white/40 uppercase tracking-wide mb-0.5">{f.label}</p>
+                          <p className="text-sm text-gray-700 dark:text-white/80 whitespace-pre-wrap">{val}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {PLAN_SECTIONS.every(s => s.fields.every(f => !plan[f.key])) && (
+                <p className="text-sm text-gray-400 dark:text-white/40 text-center py-4">No responses recorded yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── Section 9: Recruiting & Downline ─────────────────────────────────────────
 
 function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], period }) {
@@ -1514,17 +1709,27 @@ export default function CoachingPage() {
             <ActivityMetrics activity={data.activity} period={period} isDark={isDark} />
           </SectionCard>
 
-          {/* 7. Contracting Status */}
+          {/* 6. Project 100 */}
+          <SectionCard title="Project 100">
+            <Project100Section entries={data.project100 ?? []} />
+          </SectionCard>
+
+          {/* 7. 90-Day Plan */}
+          <SectionCard title="90-Day Plan">
+            <NinetyDayPlanSection plans={data.ninetyDays ?? []} />
+          </SectionCard>
+
+          {/* 8. Contracting Status */}
           <SectionCard title="Contracting Status">
             <ContractingStatus agent={data.agent} contracts={data.contracts} carriers={data.carriers} />
           </SectionCard>
 
-          {/* 8. Pending Policies */}
+          {/* 9. Pending Policies */}
           <SectionCard title="Pending Policies">
             <PendingPolicies policies={data.policies} />
           </SectionCard>
 
-          {/* 9. Recruiting & Downline */}
+          {/* 10. Recruiting & Downline */}
           <SectionCard title="Recruiting & Downline">
             <RecruitingDownline
               downline={data.downline}
