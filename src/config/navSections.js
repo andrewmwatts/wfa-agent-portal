@@ -1,10 +1,11 @@
 // Single source of truth for the navigation structure.
 // Imported by both Sidebar.jsx and NavMenu.jsx — edit here only.
 
-export const LEADER_ROLES = new Set(['leader', 'owner', 'director', 'super_admin'])
-export const OWNER_ROLES  = new Set(['owner', 'director', 'super_admin'])
-export const ADMIN_ROLES  = new Set(['super_admin'])
-export const AGENT_ROLES  = new Set(['agent', 'super_admin'])
+export const LEADER_ROLES   = new Set(['leader', 'owner', 'director', 'super_admin'])
+export const OWNER_ROLES    = new Set(['owner', 'director', 'super_admin'])
+export const ADMIN_ROLES    = new Set(['super_admin'])
+export const AGENT_ROLES    = new Set(['agent', 'director', 'super_admin'])
+export const DIRECTOR_ROLES = new Set(['director', 'super_admin'])
 
 export const NAV_SECTIONS = [
   {
@@ -21,7 +22,7 @@ export const NAV_SECTIONS = [
       { path: '/portal/leads',      label: 'Leads'             },
       { path: '/portal/recruiting',  label: 'Recruiting'        },
       { path: '/portal/project-100',     label: 'Project 100', roles: AGENT_ROLES },
-      { path: '/portal/ninety-day-plan', label: '90-Day Plan', roles: AGENT_ROLES },
+      { path: '/portal/ninety-day-plan', label: '90-Day Plan', roles: DIRECTOR_ROLES },
     ],
   },
   {

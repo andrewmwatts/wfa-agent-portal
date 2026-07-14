@@ -298,6 +298,7 @@ export default function SnapshotPage() {
             <Step1Reconciliation
               cycle={cycle}
               reconciliations={cycleData.reconciliations ?? []}
+              disputes={cycleData.disputes ?? []}
               personnel={context?.personnel ?? []}
               canWrite={canWrite && !completed}
               onStepComplete={() => advanceToStep(2)}

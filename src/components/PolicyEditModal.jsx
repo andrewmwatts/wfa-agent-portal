@@ -195,7 +195,7 @@ export class PolicyModalErrorBoundary extends Component {
 
 const NOT_IN_OPT_DELETE_STATUSES = ['declined', 'withdrawn', 'not taken']
 
-export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId, limitedFields = false }) {
+export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId, limitedFields = false, initialEdit = false }) {
   const [editing,         setEditing]         = useState(false)
   const [draft,           setDraft]           = useState(null)
   const [saving,          setSaving]          = useState(false)
@@ -209,6 +209,11 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  // Open in edit mode immediately when requested (e.g. from an Edit button)
+  useEffect(() => {
+    if (initialEdit && canWrite) startEdit()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function startEdit() {
     const initialDraft = { ...p }

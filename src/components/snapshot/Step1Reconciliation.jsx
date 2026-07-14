@@ -142,7 +142,7 @@ function ResolutionBadge({ resolution }) {
 }
 
 
-export default function Step1Reconciliation({ cycle, reconciliations, personnel, canWrite, onStepComplete, onRefresh }) {
+export default function Step1Reconciliation({ cycle, reconciliations, disputes = [], personnel, canWrite, onStepComplete, onRefresh }) {
   const fileRef = useRef(null)
 
   const [file,          setFile]          = useState(null)
@@ -450,8 +450,9 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
       )}
 
       {sorted.map(rec => {
-        const isExpanded  = expanded[rec.id] ?? !rec.resolution
-        const isDisputing = disputingCandidate?.recId === rec.id
+        const isExpanded     = expanded[rec.id] ?? !rec.resolution
+        const isDisputing    = disputingCandidate?.recId === rec.id
+        const linkedDisputes = disputes.filter(d => d.reconciliation_id === rec.id)
 
         // Parse analysis from stored JSON (populated by run.js)
         let analysis = null
@@ -501,8 +502,32 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   </div>
                 )}
 
-                {/* Analysis: candidates or policy search */}
-                {analysis?.candidates?.length > 0 ? (
+                {/* Linked disputes (pinned) */}
+                {linkedDisputes.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide">Linked Disputes</p>
+                    {linkedDisputes.map(d => (
+                      <div key={d.id} className="flex items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-2.5 gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex-shrink-0">Dispute</span>
+                          <span className="text-xs text-gray-700 dark:text-white/70 truncate">{d.applicant || d.policy_number || 'Unnamed'}</span>
+                          {d.carrier && <span className="text-xs text-gray-400 dark:text-white/40 truncate">{d.carrier}</span>}
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          {d.amount != null && (
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">{fmtAmt(d.amount)}</span>
+                          )}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.status === 'resolved' ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'}`}>
+                            {d.status ?? 'open'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Analysis: AI candidates */}
+                {analysis?.candidates?.length > 0 && (
                   <div className="space-y-2">
                     {analysis.candidates.map((c, i) => (
                       <CandidateRow
@@ -519,9 +544,11 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                       />
                     ))}
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    {analysis?.unmatched && (
+                )}
+
+                {/* Policy search — shown when no clean AI candidates, or when disputes are linked (in case a second is needed) */}
+                {(!analysis?.candidates?.length || linkedDisputes.length > 0) && <div className="space-y-3">
+                    {analysis?.unmatched && !analysis?.candidates?.length && (
                       <p className="text-xs text-gray-400 dark:text-white/40 italic">
                         No automatic match found for Δ {fmtAmt(rec.delta)} — search for the policy below.
                       </p>
@@ -557,8 +584,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                     {policySearches[rec.id]?.trim() && policyResults[rec.id]?.length === 0 && searchingId !== rec.id && (
                       <p className="text-xs text-gray-400 dark:text-white/40">No policies found.</p>
                     )}
-                  </div>
-                )}
+                  </div>}
 
                 {/* Per-candidate dispute inline form */}
                 {isDisputing && (
@@ -625,21 +651,16 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
                   <div className="pt-2 border-t border-gray-100 dark:border-white/10">
                     {!rec.resolution ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 dark:text-white/30">Resolve as:</span>
                         <button
-                          onClick={() => handleResolve(rec, 'legitimate')}
+                          onClick={() => handleResolve(rec, linkedDisputes.length > 0 ? 'disputed' : 'legitimate')}
                           disabled={savingId === rec.id}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-60"
+                          className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-60"
                         >
-                          Legitimate
+                          {savingId === rec.id ? 'Saving…' : 'Mark Resolved'}
                         </button>
-                        <button
-                          onClick={() => handleResolve(rec, 'disputed')}
-                          disabled={savingId === rec.id}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-60"
-                        >
-                          Sent to Disputes
-                        </button>
+                        <span className="text-xs text-gray-400 dark:text-white/30">
+                          {linkedDisputes.length > 0 ? '→ Sent to Disputes' : '→ Legitimate'}
+                        </span>
                       </div>
                     ) : (
                       <button
@@ -679,6 +700,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, personnel,
             onClose={() => setEditPolicy(null)}
             canWrite={canWrite}
             limitedFields
+            initialEdit={canWrite}
             onUpdate={updated => {
               setEditPolicy(null)
               onRefresh()
@@ -726,6 +748,9 @@ function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
           {c.status && (c.type === 'non_issued' || c.type === 'search') && <span>Status: {c.status}</span>}
           {c.submit_date && c.type === 'non_issued' && <span>Submitted: {fmtDate(c.submit_date)}</span>}
         </div>
+        {c.flag === 'Flag for review' && c.application_notes && (
+          <p className="text-xs text-gray-600 dark:text-white/60 italic mt-0.5">{c.application_notes}</p>
+        )}
       </div>
       {canWrite && (
         <div className="flex gap-2 flex-shrink-0">
