@@ -1238,9 +1238,9 @@ function Project100Section({ entries }) {
           { label: 'Sold',           value: sold,         color: 'text-green-600 dark:text-green-400' },
           { label: 'Enrolled',       value: enrolled,     color: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Referral Given', value: referralGiven,color: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Needs a Touch',  value: needsTouch,   color: needsTouch > 0 ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/30' },
+          { label: 'Needs a Touch',  value: needsTouch,   color: needsTouch > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-white/30', urgent: needsTouch > 0 },
         ].map(s => (
-          <CardShell key={s.label} className="p-3 text-center">
+          <CardShell key={s.label} className={`p-3 text-center ${s.urgent ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' : ''}`}>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">{s.label}</p>
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
           </CardShell>
@@ -1278,8 +1278,8 @@ const PLAN_SECTIONS = [
 
 function planLabel(plan) {
   if (!plan?.start_date) return 'Plan'
-  const d = new Date(plan.start_date + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'long', d: 'numeric', year: 'numeric' })
+  const fmt = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return plan.end_date ? `${fmt(plan.start_date)} – ${fmt(plan.end_date)}` : fmt(plan.start_date)
 }
 
 function NinetyDayPlanSection({ plans }) {
@@ -1689,7 +1689,12 @@ export default function CoachingPage() {
             nextLeadTarget={nextLeadTarget}
           />
 
-          {/* 2. Production Summary */}
+          {/* 2. 90-Day Plan */}
+          <SectionCard title="90-Day Plan">
+            <NinetyDayPlanSection plans={data.ninetyDays ?? []} />
+          </SectionCard>
+
+          {/* 3. Production Summary */}
           <SectionCard title="Production Summary">
             <ProductionSummary policies={data.policies} period={period} isDark={isDark} />
           </SectionCard>
@@ -1712,11 +1717,6 @@ export default function CoachingPage() {
           {/* 6. Project 100 */}
           <SectionCard title="Project 100">
             <Project100Section entries={data.project100 ?? []} />
-          </SectionCard>
-
-          {/* 7. 90-Day Plan */}
-          <SectionCard title="90-Day Plan">
-            <NinetyDayPlanSection plans={data.ninetyDays ?? []} />
           </SectionCard>
 
           {/* 8. Contracting Status */}

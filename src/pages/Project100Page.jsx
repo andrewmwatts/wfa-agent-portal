@@ -317,9 +317,9 @@ export default function Project100Page() {
           { label: 'Sold',           value: stats.sold,          color: 'text-green-600 dark:text-green-400' },
           { label: 'Enrolled',       value: stats.enrolled,      color: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Referral Given', value: stats.referralGiven, color: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Needs a Touch',  value: stats.needsTouch,    color: stats.needsTouch > 0 ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/30' },
+          { label: 'Needs a Touch',  value: stats.needsTouch,    color: stats.needsTouch > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-white/30', urgent: stats.needsTouch > 0 },
         ].map(s => (
-          <div key={s.label} className="bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl p-3 text-center">
+          <div key={s.label} className={`rounded-xl p-3 text-center border ${s.urgent ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' : 'bg-white dark:bg-primary/30 border-primary/15 dark:border-white/10'}`}>
             <p className={`text-2xl font-extrabold tabular-nums ${s.color}`}>{s.value}</p>
             <p className="text-[10px] text-gray-400 dark:text-white/40 mt-1 font-medium leading-tight">{s.label}</p>
           </div>
