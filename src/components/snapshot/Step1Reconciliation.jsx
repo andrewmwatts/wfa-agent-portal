@@ -245,24 +245,19 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
       id:        policyData.id ?? policyData.policy_id,
       policy_no: policyData.policy_number ?? policyData.policy_no,
     }
-    // Enrich with live DB fields (application_notes, policy_notes, policy_type) when
-    // opening a hypothesis candidate that didn't carry those fields in the stored JSON.
+    // Always fetch the full live record — the snapshot JSON only carries a subset of
+    // fields and goes stale after edits (missing chargeback, submit_date, face_amount, etc.)
+    const sfgId    = base.sfg_id ?? policyData.sfg_id
+    const carrier  = base.carrier
     const policyNo = base.policy_no ?? ''
-    if (base.sfg_id && base.carrier && policyNo && base.application_notes == null) {
+    if (sfgId && carrier && policyNo) {
       try {
-        const params = new URLSearchParams({ type: 'policies', sfg_id: base.sfg_id, carrier: base.carrier, q: policyNo })
+        const params = new URLSearchParams({ type: 'policies', sfg_id: sfgId, carrier, q: policyNo })
         const data = await fetch(`/api/snapshot?${params}`).then(r => r.json())
         const match = Array.isArray(data)
           ? data.find(p => (p.policy_number ?? '').toLowerCase() === policyNo.toLowerCase())
           : null
-        if (match) {
-          base.id                = base.id                ?? match.id
-          base.status            = base.status            || match.status            || ''
-          base.last_update       = base.last_update       ?? match.last_update       ?? ''
-          base.application_notes = match.application_notes ?? ''
-          base.policy_notes      = match.policy_notes      ?? ''
-          base.policy_type       = base.policy_type        || match.policy_name      || ''
-        }
+        if (match) Object.assign(base, match, { id: base.id ?? match.id, policy_no: base.policy_no })
       } catch { /* fall through — open with what we have */ }
     }
     setEditPolicy(base)

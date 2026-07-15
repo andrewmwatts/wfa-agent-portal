@@ -393,7 +393,7 @@ export default async function handler(req, res) {
     try {
       let query = supabase
         .from('policies')
-        .select('id, policy_number, applicant, carrier, policy_name, status, issue_date, last_update, issued_apv, conservation_status, conservation_date, application_notes, policy_notes')
+        .select('id, policy_number, applicant, carrier, policy_name, status, submit_date, submit_week, issue_date, last_update, face_amount, submitted_apv, issued_apv, conservation_status, conservation_date, application_notes, policy_notes, snapshot_chargeback_month, snapshot_chargeback_apv')
         .eq('sfg_id', sfg_id)
         .in('carrier', carrierVariants)
       if (q?.trim()) {
