@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import PolicyModal, { PolicyModalErrorBoundary } from '../PolicyEditModal'
 import { fmtDate, fmtCurrency as fmtAmt } from '../../utils/format'
 
 // ── CopyBlock ─────────────────────────────────────────────────────────────────
@@ -48,17 +47,20 @@ function CopyBlock({ lines, notes, className = '' }) {
 // ── Jotform line builder ───────────────────────────────────────────────────────
 
 function buildJotformLines(agentName, dispute, policy) {
-  const carrier   = policy?.carrier ?? dispute.carrier ?? ''
-  const policyNo  = policy?.policy_no ?? policy?.policy_number ?? ''
-  const rawApv    = policy?.issued_apv ?? dispute.disputed_amount
-  // Always show positive amount in Jotform copy regardless of direction sign
+  // Prefer live-enriched fields on the dispute row (set server-side from the current policies table).
+  // Fall back to policyMap lookup, then dispute-level fields for cases with no linked policy.
+  const carrier   = dispute.carrier   ?? policy?.carrier   ?? dispute.dispute_type ?? ''
+  const policyNo  = dispute.policy_number ?? policy?.policy_no ?? policy?.policy_number ?? ''
+  const issueDate = dispute.issue_date ?? policy?.issue_date
+  // Use live issued_apv; only fall back to disputed_amount when there is no linked policy at all
+  const rawApv    = dispute.issued_apv ?? policy?.issued_apv ?? dispute.disputed_amount
   const apv       = rawApv != null
     ? `$${Math.abs(Number(rawApv)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : ''
-  const issueDate = policy?.issue_date
-    ? new Date(policy.issue_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
+  const fmtIssueDate = issueDate
+    ? new Date(issueDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
     : ''
-  return [carrier, agentName, policyNo, apv, issueDate].filter(Boolean)
+  return [carrier, agentName, policyNo, apv, fmtIssueDate].filter(Boolean)
 }
 
 // ── HierarchyChain ────────────────────────────────────────────────────────────
@@ -179,7 +181,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
   const [notes,            setNotes]            = useState({})
   const [includedOverride, setIncludedOverride] = useState({})
   const [savingId,         setSavingId]         = useState(null)
-  const [editPolicy,       setEditPolicy]       = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
 
@@ -339,31 +340,18 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
             {/* ── Card body ────────────────────────────────────────────────── */}
             <div className="px-6 py-4 space-y-4">
 
-              {/* Saved note reference */}
-              {d.notes && (
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
-                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-300 mb-0.5">Note (paste above Jotform if needed):</p>
-                  <p className="text-xs text-gray-700 dark:text-white/70">{d.notes}</p>
-                </div>
-              )}
-
-              {!readOnly && (
-                <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Notes</p>
-                  <textarea
-                    rows={2}
-                    value={noteVal}
-                    onChange={e => setNotes(n => ({ ...n, [d.id]: e.target.value }))}
-                    onBlur={() => saveNotes(d.id)}
-                    className={INPUT + ' resize-none text-xs'}
-                    placeholder="Add a note…"
-                  />
-                </div>
-              )}
-
-              {policy && canWrite && (
-                <button onClick={() => setEditPolicy(policy)} className="text-xs text-accent hover:underline">Edit policy record</button>
-              )}
+              <div>
+                <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Notes</p>
+                <textarea
+                  rows={2}
+                  value={noteVal}
+                  onChange={e => !readOnly && setNotes(n => ({ ...n, [d.id]: e.target.value }))}
+                  onBlur={() => !readOnly && saveNotes(d.id)}
+                  readOnly={readOnly}
+                  className={INPUT + ' resize-none text-xs' + (readOnly ? ' opacity-60 cursor-default' : '')}
+                  placeholder={readOnly ? '' : 'Add a note…'}
+                />
+              </div>
 
               {jotLines.length > 0 && <CopyBlock lines={jotLines} notes={noteVal || null} />}
 
@@ -420,18 +408,6 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
         </div>
       )}
 
-      {editPolicy && (
-        <PolicyModalErrorBoundary onClose={() => setEditPolicy(null)}>
-          <PolicyModal
-            policy={editPolicy}
-            personnel={personnel}
-            onClose={() => setEditPolicy(null)}
-            canWrite={canWrite}
-            onUpdate={() => { setEditPolicy(null); onRefresh() }}
-            onDelete={() => { setEditPolicy(null); onRefresh() }}
-          />
-        </PolicyModalErrorBoundary>
-      )}
     </div>
   )
 }
