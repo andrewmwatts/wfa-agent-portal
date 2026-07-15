@@ -74,7 +74,7 @@ function matchCandidates({ delta, carrier, chargebacks, nonIssued, straddle, not
   const candidates = []
 
   // Chargebacks (delta < 0: snapshot less than tracker)
-  for (const p of chargebacks) {
+  if (delta < 0) for (const p of chargebacks) {
     const apv = Number(p.issued_apv) || 0
     if (!apv) continue
 
