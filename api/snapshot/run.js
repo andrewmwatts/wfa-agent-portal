@@ -306,7 +306,7 @@ export default async function handler(req, res) {
       if (policies.some(p => p.split_reset))                      mechanical_flags.push('Split/Reset policy')
       if (policies.some(p => duplicateNums.has(p.policy_number))) mechanical_flags.push('Duplicate policy number')
 
-      const hasHardFlag = mechanical_flags.length > 0
+      const hasHardFlag = policies.some(p => duplicateNums.has(p.policy_number))
       if (absDelta < min_diff && !hasHardFlag) { cleanAgents.add(sfgId); continue }
 
       discrepantAgents.add(sfgId)
