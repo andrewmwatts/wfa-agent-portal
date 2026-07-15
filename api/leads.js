@@ -340,8 +340,9 @@ export default async function handler(req, res) {
       })
     }
 
-    let inserted = []
-    let errors   = 0
+    let inserted   = []
+    let errors     = 0
+    let firstError = null
 
     if (toInsert.length) {
       // Insert in chunks to stay within Supabase payload limits
@@ -352,14 +353,16 @@ export default async function handler(req, res) {
           .insert(toInsert.slice(i, i + CHUNK))
           .select()
         if (chunkErr) {
+          console.error('[leads bulk] chunk error:', chunkErr.message, chunkErr.details)
           errors += toInsert.slice(i, i + CHUNK).length
+          if (!firstError) firstError = chunkErr.message
         } else {
           inserted = inserted.concat(chunk ?? [])
         }
       }
     }
 
-    return res.status(200).json({ inserted, skipped, errors })
+    return res.status(200).json({ inserted, skipped, errors, error_detail: firstError ?? undefined })
   }
 
   // ── LEADS ─────────────────────────────────────────────────────────────────

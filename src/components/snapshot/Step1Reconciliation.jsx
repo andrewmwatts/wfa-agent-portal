@@ -604,10 +604,10 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
                               <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-white/20">
                                 <button type="button" onClick={() => setDisputeEditDir('add')}
                                   className={`text-xs px-3 py-1 transition-colors ${disputeEditDir === 'add' ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                  Adds to total</button>
+                                  Adds to Snapshot</button>
                                 <button type="button" onClick={() => setDisputeEditDir('reduce')}
                                   className={`text-xs px-3 py-1 border-l border-gray-300 dark:border-white/20 transition-colors ${disputeEditDir === 'reduce' ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                  Reduces total</button>
+                                  Reduces Snapshot</button>
                               </div>
                             </div>
                           </div>
@@ -769,12 +769,12 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
                             type="button"
                             onClick={() => setCandidateDisputeDirection('add')}
                             className={`text-xs px-3 py-1 transition-colors ${candidateDisputeDirection === 'add' ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                          >Adds to total</button>
+                          >Adds to Snapshot</button>
                           <button
                             type="button"
                             onClick={() => setCandidateDisputeDirection('reduce')}
                             className={`text-xs px-3 py-1 border-l border-gray-300 dark:border-white/20 transition-colors ${candidateDisputeDirection === 'reduce' ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                          >Reduces total</button>
+                          >Reduces Snapshot</button>
                         </div>
                       </div>
                     </div>

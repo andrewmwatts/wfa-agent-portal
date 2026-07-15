@@ -181,6 +181,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
   const [qualifications,   setQualifications]   = useState({})
   const [notes,            setNotes]            = useState({})
   const [includedOverride, setIncludedOverride] = useState({})
+  const [localPatches,     setLocalPatches]     = useState({})  // optimistic updates to avoid scroll-reset
   const [savingId,         setSavingId]         = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
@@ -255,7 +256,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ id, ...patch }),
       })
-      await onRefresh()
+      setLocalPatches(prev => ({ ...prev, [id]: { ...(prev[id] ?? {}), ...patch } }))
     } catch (err) {
       console.error('dispute update error', err)
     } finally {
@@ -268,13 +269,16 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     await updateDispute(id, { notes: notes[id] })
   }
 
+  // Merge optimistic local patches so status updates don't trigger a parent re-render
+  const patchedDisputes = disputes.map(d => localPatches[d.id] ? { ...d, ...localPatches[d.id] } : d)
+
   // Stable sort by creation order so refreshes don't reorder cards
-  const sortedDisputes = [...disputes].sort((a, b) => {
+  const sortedDisputes = [...patchedDisputes].sort((a, b) => {
     if (a.created_at && b.created_at) return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
     return 0
   })
 
-  const allHaveOutcome = disputes.length > 0 && disputes.every(d => !isIncluded(d) || d.outcome)
+  const allHaveOutcome = patchedDisputes.length > 0 && patchedDisputes.every(d => !isIncluded(d) || d.outcome)
 
   const INPUT = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
@@ -318,7 +322,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
                       {isReduce ? '−' : ''}{fmtAmt(Math.abs(d.disputed_amount))}
                     </span>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isReduce ? 'bg-red-500/15 text-red-600 dark:text-red-400' : 'bg-green-500/15 text-green-700 dark:text-green-400'}`}>
-                      {isReduce ? 'Reduces total' : 'Adds to total'}
+                      {isReduce ? 'Reduces Snapshot' : 'Adds to Snapshot'}
                     </span>
                   </>
                 )}

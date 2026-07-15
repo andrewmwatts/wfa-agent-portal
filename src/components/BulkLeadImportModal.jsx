@@ -284,6 +284,9 @@ export default function BulkLeadImportModal({ onClose, onImported, authHeaders }
                   <p className="text-xs text-gray-400 dark:text-white/30">Errors</p>
                 </div>
               </div>
+              {result.error_detail && (
+                <p className="text-xs text-red-500 dark:text-red-400 pt-1 break-words">Error: {result.error_detail}</p>
+              )}
             </div>
           )}
           {result?.error && (
