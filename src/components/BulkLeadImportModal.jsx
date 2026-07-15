@@ -93,10 +93,20 @@ function toProperCase(str) {
     .join(' ')
 }
 
-function parseAssignDate(raw) {
+function parseDate(raw) {
   if (!raw) return null
-  const m = String(raw).trim().match(/^(\d{4}-\d{2}-\d{2})/)
-  return m ? m[1] : null
+  const s = String(raw).trim()
+  // ISO format: YYYY-MM-DD (possibly with time appended)
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (iso) return iso[1]
+  // US format: M/D/YYYY (possibly with time appended) — common in Quility CSV exports
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (us) {
+    const [, m, d, y] = us
+    if (y === '1900') return null  // Quility null-date placeholder
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  return null
 }
 
 function parseRow(row, sfgId) {
@@ -108,7 +118,7 @@ function parseRow(row, sfgId) {
   if (!name || !phone) return null
 
   const stc    = mapSourceTypeCategory(row)
-  const added  = parseAssignDate(row['AssignDate'])
+  const added  = parseDate(row['AssignDate'])
 
   return {
     sfg_id:          sfgId,
@@ -120,7 +130,7 @@ function parseRow(row, sfgId) {
     zip:             (row['Zip']    || '').trim() || null,
     county:          toProperCase(row['County'] || ''),
     age:             row['Age']   ? (parseInt(row['Age'],  10) || null) : null,
-    dob:             row['Birthday'] ? String(row['Birthday']).slice(0, 10) : null,
+    dob:             parseDate(row['Birthday']),
     gender:          (row['Sex'] || '').trim() || null,
     income:          row['HouseholdIncome']          ? (parseInt(row['HouseholdIncome'],          10) || null) : null,
     coverage:        row['RequestedCoverageAmount']  ? (parseInt(row['RequestedCoverageAmount'],  10) || null) : null,
