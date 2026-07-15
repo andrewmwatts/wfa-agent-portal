@@ -168,6 +168,13 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
   const [editPolicy,    setEditPolicy]    = useState(null)
   const [dupeOpen,      setDupeOpen]      = useState(false)
 
+  const [editingDisputeId,  setEditingDisputeId]  = useState(null)
+  const [disputeEditAmt,    setDisputeEditAmt]    = useState('')
+  const [disputeEditDir,    setDisputeEditDir]    = useState('add')
+  const [disputeEditNote,   setDisputeEditNote]   = useState('')
+  const [disputeEditErr,    setDisputeEditErr]    = useState(null)
+  const [deletingDisputeId, setDeletingDisputeId] = useState(null)
+
   // Sort by carrier A-Z, then agent name A-Z; resolved go to bottom
   const sorted = [...reconciliations].sort((a, b) => {
     const aRes = !!a.resolution, bRes = !!b.resolution
@@ -295,6 +302,57 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
     } catch (err) {
       console.error('dispute error', err)
       setDisputeError(err.message || 'Unknown error')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  function startEditDispute(d) {
+    setEditingDisputeId(d.id)
+    setDisputeEditAmt(String(Math.abs(d.disputed_amount ?? 0)))
+    setDisputeEditDir((d.disputed_amount ?? 0) >= 0 ? 'add' : 'reduce')
+    setDisputeEditNote(d.notes ?? '')
+    setDisputeEditErr(null)
+  }
+
+  async function handleDisputeUpdate(disputeId) {
+    setSavingId(disputeId)
+    setDisputeEditErr(null)
+    try {
+      const abs    = parseFloat(String(disputeEditAmt).replace(/[$,]/g, '')) || 0
+      const signed = disputeEditDir === 'reduce' ? -abs : abs
+      const res = await fetch('/api/snapshot?type=dispute', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: disputeId, disputed_amount: signed, notes: disputeEditNote || null }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setDisputeEditErr(body.error || `Server error ${res.status}`)
+        return
+      }
+      setEditingDisputeId(null)
+      await onRefresh()
+    } catch (err) {
+      setDisputeEditErr(err.message || 'Unknown error')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  async function handleDisputeDelete(disputeId) {
+    setSavingId(disputeId)
+    try {
+      const res = await fetch('/api/snapshot?type=dispute', {
+        method:  'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: disputeId }),
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      setDeletingDisputeId(null)
+      await onRefresh()
+    } catch (err) {
+      console.error('delete dispute error', err)
     } finally {
       setSavingId(null)
     }
@@ -506,23 +564,110 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
                 {linkedDisputes.length > 0 && (
                   <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide">Linked Disputes</p>
-                    {linkedDisputes.map(d => (
-                      <div key={d.id} className="flex items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-2.5 gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex-shrink-0">Dispute</span>
-                          <span className="text-xs text-gray-700 dark:text-white/70 truncate">{d.applicant || d.policy_number || 'Unnamed'}</span>
-                          {d.carrier && <span className="text-xs text-gray-400 dark:text-white/40 truncate">{d.carrier}</span>}
+                    {linkedDisputes.map(d => {
+                      const isEditingThis   = editingDisputeId === d.id
+                      const isDeletingThis  = deletingDisputeId === d.id
+                      const isSavingThis    = savingId === d.id
+                      const amtDisplay      = d.disputed_amount != null
+                        ? `${d.disputed_amount >= 0 ? '+' : ''}${fmtAmt(d.disputed_amount)}`
+                        : null
+
+                      if (isEditingThis) return (
+                        <div key={d.id} className="rounded-xl border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-500/5 px-4 py-3 space-y-3">
+                          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                            Edit dispute{d.applicant ? `: ${d.applicant}` : ''}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <label className="text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">Amount:</label>
+                              <span className="text-xs text-gray-400 dark:text-white/40">$</span>
+                              <input
+                                type="text" inputMode="decimal"
+                                value={disputeEditAmt}
+                                onChange={e => setDisputeEditAmt(e.target.value)}
+                                className="w-28 text-sm font-semibold bg-white dark:bg-primary/60 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-accent/60 tabular-nums"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-white/50">Effect:</span>
+                              <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-white/20">
+                                <button type="button" onClick={() => setDisputeEditDir('add')}
+                                  className={`text-xs px-3 py-1 transition-colors ${disputeEditDir === 'add' ? 'bg-green-500/20 text-green-700 dark:text-green-300 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                                  Adds to total</button>
+                                <button type="button" onClick={() => setDisputeEditDir('reduce')}
+                                  className={`text-xs px-3 py-1 border-l border-gray-300 dark:border-white/20 transition-colors ${disputeEditDir === 'reduce' ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                                  Reduces total</button>
+                              </div>
+                            </div>
+                          </div>
+                          <textarea rows={2} value={disputeEditNote} onChange={e => setDisputeEditNote(e.target.value)}
+                            placeholder="Notes (optional)…" className={INPUT + ' resize-none'} />
+                          {disputeEditErr && <p className="text-xs text-red-500 dark:text-red-400">{disputeEditErr}</p>}
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => handleDisputeUpdate(d.id)} disabled={isSavingThis}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-60">
+                              {isSavingThis ? 'Saving…' : 'Save'}
+                            </button>
+                            <button type="button" onClick={() => setEditingDisputeId(null)}
+                              className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          {d.amount != null && (
-                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">{fmtAmt(d.amount)}</span>
-                          )}
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.status === 'resolved' ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'}`}>
-                            {d.status ?? 'open'}
-                          </span>
+                      )
+
+                      if (isDeletingThis) return (
+                        <div key={d.id} className="flex items-center justify-between rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-4 py-2.5 gap-3">
+                          <p className="text-xs text-red-700 dark:text-red-400">
+                            Remove this dispute{d.applicant ? ` (${d.applicant})` : ''}?
+                          </p>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button type="button" onClick={() => handleDisputeDelete(d.id)} disabled={isSavingThis}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-60">
+                              {isSavingThis ? 'Removing…' : 'Remove'}
+                            </button>
+                            <button type="button" onClick={() => setDeletingDisputeId(null)}
+                              className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+
+                      return (
+                        <div key={d.id} className="flex items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-2.5 gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex-shrink-0">Dispute</span>
+                            <span className="text-xs text-gray-700 dark:text-white/70 truncate">
+                              {d.applicant || d.policy_number || d.dispute_type || 'Unnamed'}
+                            </span>
+                            {d.policy_number && d.applicant && (
+                              <span className="text-xs text-gray-400 dark:text-white/40 truncate font-mono">#{d.policy_number}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {amtDisplay && (
+                              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 tabular-nums">{amtDisplay}</span>
+                            )}
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.status === 'resolved' ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'}`}>
+                              {d.status ?? 'open'}
+                            </span>
+                            {!readOnly && !rec.resolution && (
+                              <>
+                                <button type="button" onClick={() => startEditDispute(d)}
+                                  className="text-xs px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/15 border border-gray-200 dark:border-white/15 transition-colors">
+                                  Edit
+                                </button>
+                                <button type="button" onClick={() => setDeletingDisputeId(d.id)}
+                                  className="text-xs px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 border border-gray-200 dark:border-white/15 transition-colors">
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 

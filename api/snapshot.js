@@ -126,6 +126,20 @@ export default async function handler(req, res) {
         }))
       }
 
+      // Enrich disputes with applicant + policy_number from the policies table
+      const disputePolicyIds = [...new Set(disputes.filter(d => d.policy_id).map(d => d.policy_id))]
+      if (disputePolicyIds.length > 0) {
+        const { data: pols } = await supabase
+          .from('policies')
+          .select('id, applicant, policy_number')
+          .in('id', disputePolicyIds)
+        const polMap = Object.fromEntries((pols ?? []).map(p => [p.id, p]))
+        disputes = disputes.map(d => d.policy_id && polMap[d.policy_id]
+          ? { ...d, applicant: polMap[d.policy_id].applicant ?? null, policy_number: polMap[d.policy_id].policy_number ?? null }
+          : d
+        )
+      }
+
       return res.status(200).json({
         cycle: cycleRes.data,
         reconciliations,
