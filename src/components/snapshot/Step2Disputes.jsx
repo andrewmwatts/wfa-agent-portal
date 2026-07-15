@@ -104,19 +104,20 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           const p      = personnelMap[id]
           const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
 
-          // Net APV: base already reflects issued - actual chargebacks (server-computed).
-          // Included disputes adjust the total by their signed disputed_amount:
-          //   positive = we're contesting a deduction (adds back credit)
-          //   negative = we're flagging an overcount (reduces total)
+          // The tracker total (agentMonthApv) is the correct ground truth.
+          // When a dispute is INCLUDED we're asserting Snapshot is wrong and the tracker
+          // is right — no adjustment needed, tracker is already accurate.
+          // When a dispute is EXCLUDED we're accepting Snapshot's value, so we add back
+          // the difference Snapshot applied (negating the disputed_amount).
           const base = agentMonthApv[id] ?? 0
           let adjustment = 0
           for (const d of disputes) {
             const inc = includedOverride[d.id] !== undefined ? includedOverride[d.id] : d.included !== false
-            if (!inc) continue
+            if (inc) continue  // included: tracker is already correct, no adjustment
             let cur = d.sfg_id?.trim().toUpperCase()
             const seen = new Set()
             while (cur && !seen.has(cur)) {
-              if (cur === id) { adjustment += Number(d.disputed_amount) || 0; break }
+              if (cur === id) { adjustment -= Number(d.disputed_amount) || 0; break }
               seen.add(cur)
               const up = personnelMap[cur]
               if (!up?.upline_sfg_id) break
@@ -141,7 +142,7 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
                 {fmtAmt(net)}
                 {adjustment !== 0 && (
                   <span className="font-normal text-gray-400 dark:text-white/30 ml-1">
-                    {adjustment > 0 ? '+' : '−'}{fmtAmt(Math.abs(adjustment))} disputed
+                    {adjustment > 0 ? '+' : '−'}{fmtAmt(Math.abs(adjustment))} on Snapshot
                   </span>
                 )}
               </span>
