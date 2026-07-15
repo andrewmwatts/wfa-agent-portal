@@ -257,7 +257,23 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
         const match = Array.isArray(data)
           ? data.find(p => (p.policy_number ?? '').toLowerCase() === policyNo.toLowerCase())
           : null
-        if (match) Object.assign(base, match, { id: base.id ?? match.id, policy_no: base.policy_no })
+        if (match) {
+          // Object.assign overwrites snapshot JSON fields with live DB values.
+          // The trailing object maps DB column names → modal key names so that
+          // startEdit()'s draft is fully populated and the PUT won't write NULLs
+          // for fields the snapshot JSON never carried (cb_month, subm_apv, etc.)
+          Object.assign(base, match, {
+            id:          base.id          ?? match.id,
+            policy_no:   base.policy_no   ?? match.policy_number,
+            policy_type: match.policy_name ?? base.policy_type ?? '',
+            subm_apv:    match.submitted_apv           != null ? String(match.submitted_apv)           : '',
+            face_amt:    match.face_amount              != null ? String(match.face_amount)              : '',
+            cb_apv:      match.snapshot_chargeback_apv  != null ? String(match.snapshot_chargeback_apv)  : '',
+            cb_month:    match.snapshot_chargeback_month
+                           ? String(match.snapshot_chargeback_month).slice(0, 7)
+                           : '',
+          })
+        }
       } catch { /* fall through — open with what we have */ }
     }
     setEditPolicy(base)
