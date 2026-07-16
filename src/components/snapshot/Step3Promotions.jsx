@@ -15,6 +15,24 @@ function fmtMonth(isoMonth) {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+// Thin fetch wrapper that surfaces non-2xx responses instead of failing silently.
+async function apiRequest(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body != null ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = await res.json()
+      if (data?.error) message = data.error
+    } catch { /* non-JSON error body */ }
+    throw new Error(message)
+  }
+  return res.status === 204 ? null : res.json()
+}
+
 function CopyBlock({ lines }) {
   const [copied, setCopied] = useState(false)
   function copy() {
@@ -40,9 +58,10 @@ function CopyBlock({ lines }) {
 function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing) {
   const fmt$ = n => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const name  = person?.opt_name ?? ''
+  const sfgId = person?.sfg_id ?? ''
   const level = person?.commission_level ?? ''
 
-  const base = [name, level]
+  const base = [name, sfgId, level]
 
   if (promoType === 'Slingshot') {
     return [...base, 'Slingshot Qualification', fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
@@ -54,7 +73,7 @@ function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth
     return lines
   }
   if (promoType === 'AO') {
-    const lines = [name, 'Agency Owner', `AO Qualification Month ${monthNum}`, fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
+    const lines = [name, sfgId, 'Agency Owner', `AO Qualification Month ${monthNum}`, fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
     if (existing?.month_1) lines.push(`Month 1: ${fmtMonth(existing.month_1)}`)
     if (existing?.month_2) lines.push(`Month 2: ${fmtMonth(existing.month_2)}`)
     return lines
@@ -83,13 +102,13 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
     if (!sfgId) return
     setSaving(true)
     try {
-      await fetch('/api/snapshot?type=promotions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cycle_id: cycleId, sfg_id: sfgId, action_type: type, is_manual: true, notes: notes || null }),
+      await apiRequest('/api/snapshot?type=promotions', 'POST', {
+        cycle_id: cycleId, sfg_id: sfgId, action_type: type, is_manual: true, notes: notes || null,
       })
       onSaved()
       onClose()
+    } catch (err) {
+      alert(err.message || 'Failed to save promotion.')
     } finally {
       setSaving(false)
     }
@@ -160,7 +179,6 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     monthPolicies = [],
   } = context ?? {}
 
-  const [skipped,      setSkipped]      = useState(new Set())
   const [saving,       setSaving]       = useState(null)
   const [manualModal,  setManualModal]  = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
@@ -185,6 +203,16 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     }
     return m
   }, [agentPromos])
+
+  // Persisted skips for this cycle, keyed by "SFGID||LEVEL"
+  const skippedSet = useMemo(() => {
+    const s = new Set()
+    for (const a of promotions) {
+      const id = a.sfg_id?.toUpperCase()
+      if (a.action_type === 'skipped' && id && a.level) s.add(`${id}||${a.level}`)
+    }
+    return s
+  }, [promotions])
 
   const qualByLevel = useMemo(() => {
     const m = {}
@@ -254,7 +282,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
       // ── Contract track ────────────────────────────────────────────────────
       const nextContract = nextContractLevel(person.commission_contract?.level ?? '80')
-      if (nextContract && !skipped.has(sfgId + '||' + nextContract)) {
+      if (nextContract && !skippedSet.has(sfgId + '||' + nextContract)) {
         const q = getThresholds(nextContract)
         if (meetsThreshold(q, apv, writers)) {
           const existing = agentPromoMap[`${sfgId}||${nextContract}`] ?? null
@@ -286,7 +314,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
       // ── Leadership track ──────────────────────────────────────────────────
       const nextLeadership = nextLeadershipLevel(person.commission_leadership?.level ?? null)
-      if (nextLeadership && !skipped.has(sfgId + '||' + nextLeadership)) {
+      if (nextLeadership && !skippedSet.has(sfgId + '||' + nextLeadership)) {
         const q = getThresholds(nextLeadership)
         if (meetsThreshold(q, apv, writers)) {
           const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
@@ -318,7 +346,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     }
 
     return result.sort((a, b) => (a.person.opt_name ?? '').localeCompare(b.person.opt_name ?? ''))
-  }, [personnel, apvByAgent, writersCount, agentPromoMap, qualByLevel, promotions, skipped])
+  }, [personnel, apvByAgent, writersCount, agentPromoMap, qualByLevel, promotions, skippedSet])
 
   // ── Broken streaks ───────────────────────────────────────────────────────────
   const brokenStreaks = useMemo(() => {
@@ -347,36 +375,44 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     try {
       const isFinal = monthNum >= totalMonths
 
-      await fetch('/api/snapshot?type=agent_promotion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sfg_id:         sfgId,
-          promotion_type: promoType,
-          level:          targetLevel,
-          month_1:        monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
-          month_2:        monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
-          month_3:        (isFinal && totalMonths === 3) ? cycleMonth : (existing?.month_3 ?? null),
-          is_slingshot:   promoType === 'Slingshot',
-          is_qualified:   isFinal,
-          qualified_date: isFinal ? new Date().toISOString().slice(0, 10) : null,
-        }),
+      await apiRequest('/api/snapshot?type=agent_promotion', 'POST', {
+        sfg_id:         sfgId,
+        promotion_type: promoType,
+        level:          targetLevel,
+        month_1:        monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
+        month_2:        monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
+        month_3:        (isFinal && totalMonths === 3) ? cycleMonth : (existing?.month_3 ?? null),
+        is_slingshot:   promoType === 'Slingshot',
+        is_qualified:   isFinal,
+        qualified_date: isFinal ? new Date().toISOString().slice(0, 10) : null,
       })
 
-      await fetch('/api/snapshot?type=promotions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cycle_id:     cycle.id,
-          sfg_id:       sfgId,
-          action_type:  isFinal ? 'promotion' : 'qualifying_month',
-          month_number: monthNum,
-          level:        targetLevel,
-        }),
+      await apiRequest('/api/snapshot?type=promotions', 'POST', {
+        cycle_id:     cycle.id,
+        sfg_id:       sfgId,
+        action_type:  isFinal ? 'promotion' : 'qualifying_month',
+        month_number: monthNum,
+        level:        targetLevel,
       })
 
       if (isFinal) setJotformOpen(prev => new Set([...prev, sfgId + '||' + targetLevel]))
       await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to log promotion month.')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function skipAgent(sfgId, targetLevel) {
+    setSaving(sfgId + '-' + targetLevel + '-skip')
+    try {
+      await apiRequest('/api/snapshot?type=promotions', 'POST', {
+        cycle_id: cycle.id, sfg_id: sfgId, action_type: 'skipped', level: targetLevel,
+      })
+      await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to skip.')
     } finally {
       setSaving(null)
     }
@@ -388,18 +424,12 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     setSaving(ap.sfg_id + '-reset')
     try {
       await Promise.all([
-        fetch('/api/snapshot?type=agent_promotion', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: ap.id }),
-        }),
-        fetch('/api/snapshot?type=promotions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cycle_id: cycle.id, sfg_id: ap.sfg_id, action_type: 'streak_reset' }),
-        }),
+        apiRequest('/api/snapshot?type=agent_promotion', 'DELETE', { id: ap.id }),
+        apiRequest('/api/snapshot?type=promotions', 'POST', { cycle_id: cycle.id, sfg_id: ap.sfg_id, action_type: 'streak_reset' }),
       ])
       await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to reset streak.')
     } finally {
       setSaving(null)
     }
@@ -408,12 +438,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   async function noteFlag(actionId) {
     setSaving(actionId)
     try {
-      await fetch('/api/snapshot?type=promotion', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: actionId, hierarchy_flag_noted: true }),
-      })
+      await apiRequest('/api/snapshot?type=promotion', 'PUT', { id: actionId, hierarchy_flag_noted: true })
       await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to note flag.')
     } finally {
       setSaving(null)
     }
@@ -422,12 +450,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   async function submitJotform(actionId) {
     setSaving(actionId + '-jf')
     try {
-      await fetch('/api/snapshot?type=promotion', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: actionId, jotform_submitted_at: new Date().toISOString() }),
-      })
+      await apiRequest('/api/snapshot?type=promotion', 'PUT', { id: actionId, jotform_submitted_at: new Date().toISOString() })
       await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to mark jotform submitted.')
     } finally {
       setSaving(null)
     }
@@ -436,12 +462,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   async function closeCycle() {
     setSaving('close')
     try {
-      await fetch('/api/snapshot?type=cycle', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: cycle.id, completed_at: new Date().toISOString() }),
-      })
+      await apiRequest('/api/snapshot?type=cycle', 'PUT', { id: cycle.id, completed_at: new Date().toISOString() })
       onCycleClose()
+    } catch (err) {
+      alert(err.message || 'Failed to close cycle.')
     } finally {
       setSaving(null)
       setConfirmClose(false)
@@ -475,29 +499,34 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
                 <tr>
-                  {['Agent', 'Level', 'Month 1', 'Month 2', 'This Month APV', ''].map((h, i) => (
+                  {['Agent', 'Level', 'Month 1', 'Month 2', 'This Month APV', 'APV Target', 'Writers Target', ''].map((h, i) => (
                     <th key={i} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-white/50">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/10">
-                {brokenStreaks.map(ap => (
-                  <tr key={ap.sfg_id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{ap.person?.opt_name ?? ap.sfg_id}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.level}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{fmtMonth(ap.month_1)}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.month_2 ? fmtMonth(ap.month_2) : '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{fmtApv(ap.apv)}</td>
-                    <td className="px-4 py-3">
-                      {!readOnly && (
-                        <button onClick={() => resetStreak(ap)} disabled={saving === ap.sfg_id + '-reset'}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50">
-                          {saving === ap.sfg_id + '-reset' ? 'Resetting…' : 'Reset Streak'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {brokenStreaks.map(ap => {
+                  const q = getThresholds(ap.level)
+                  return (
+                    <tr key={ap.sfg_id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{ap.person?.opt_name ?? ap.sfg_id}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.level}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{fmtMonth(ap.month_1)}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.month_2 ? fmtMonth(ap.month_2) : '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{fmtApv(ap.apv)}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{q?.regular != null ? fmtApv(q.regular) : '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{q?.writers ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {!readOnly && (
+                          <button onClick={() => resetStreak(ap)} disabled={saving === ap.sfg_id + '-reset'}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50">
+                            {saving === ap.sfg_id + '-reset' ? 'Resetting…' : 'Reset Streak'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -525,6 +554,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               const currentLevelLabel = track === 'contract'
                 ? `${person.commission_contract?.level ?? '80'}%`
                 : (person.commission_leadership?.level ?? 'None')
+              const q = getThresholds(targetLevel)
 
               return (
                 <div key={key} className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
@@ -548,8 +578,11 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                       <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">Condition B</span>
                     )}
                     <div className="ml-auto flex items-center gap-3 text-xs text-gray-500 dark:text-white/50">
-                      <span>{fmtApv(apv)}</span>
-                      <span>{writers} writer{writers !== 1 ? 's' : ''}</span>
+                      <span>{fmtApv(apv)}{q?.regular != null ? ` / ${fmtApv(q.regular)} target` : ''}</span>
+                      <span>{writers} / {q?.writers ?? '—'} writer{Number(q?.writers) !== 1 ? 's' : ''}</span>
+                      {q?.slingshot != null && (
+                        <span className="text-purple-500 dark:text-purple-400">Slingshot: {fmtApv(q.slingshot)}</span>
+                      )}
                     </div>
                   </div>
 
@@ -590,9 +623,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                         )}
 
                         <button
-                          onClick={() => setSkipped(prev => new Set([...prev, sfgId + '||' + targetLevel]))}
-                          className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-600 dark:hover:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">
-                          Skip
+                          onClick={() => skipAgent(sfgId, targetLevel)}
+                          disabled={!!saving}
+                          className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-600 dark:hover:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-50">
+                          {saving === sfgId + '-' + targetLevel + '-skip' ? 'Skipping…' : 'Skip'}
                         </button>
                       </div>
                     )}

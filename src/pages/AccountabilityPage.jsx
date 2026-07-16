@@ -203,6 +203,76 @@ function MembersDialog({ open, onClose, allAgents, rosterIds, agentMap, roster, 
   )
 }
 
+// ── Inactive agents dialog ──────────────────────────────────────────────────
+
+function InactiveAgentsDialog({ open, onClose, agents, onRemove }) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 dark:bg-black/70" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] border border-gray-200 dark:border-gray-700">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+          <h2 className="text-[15px] font-semibold text-gray-900 dark:text-white">
+            Inactive agents
+            <span className="ml-2 text-[12px] font-normal text-gray-400 dark:text-gray-500">
+              no data in 7+ days
+            </span>
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Agent list */}
+        <div className="overflow-y-auto flex-1 px-5 py-1">
+          {agents.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-gray-400 dark:text-gray-500">Every agent has logged data in the last 7 days.</p>
+          ) : (
+            agents.map(a => (
+              <div key={a.sfg_id} className="flex items-center justify-between py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+                <div>
+                  <div className="text-[13px] text-gray-800 dark:text-gray-200">{a.name}</div>
+                  <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                    {a.daysSince == null ? 'No data logged in 60+ days' : `${a.daysSince} day${a.daysSince !== 1 ? 's' : ''} since last log`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemove(a.sfg_id)}
+                  className="text-[12px] text-red-500 hover:text-red-600 font-medium px-2 py-1 transition-colors"
+                  title={`Remove ${a.name}`}
+                >
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 shrink-0 flex items-center justify-end">
+          <button
+            onClick={onClose}
+            className="text-[12px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyRoster() {
@@ -247,8 +317,28 @@ export default function AccountabilityPage() {
   const [expandCount, setExpandCount]     = useState(0)
   const [collapseCount, setCollapseCount] = useState(0)
   const [membersOpen, setMembersOpen]     = useState(false)
+  const [inactiveOpen, setInactiveOpen]   = useState(false)
 
   const rosterSet = useMemo(() => new Set(roster), [roster])
+
+  // ── Inactive agents: roster agents with no activity_logs row in the previous 7 days ──
+  const inactiveAgents = useMemo(() => {
+    const sevenDaysAgoYMD = toYMD(subDays(today, 7))
+    return roster
+      .map(id => {
+        const agent = agentMap[id]
+        if (!agent) return null
+        const rows = activity.filter(r => r.sfg_id === id)
+        if (rows.some(r => r.date >= sevenDaysAgoYMD)) return null
+        const lastDate = rows.reduce((max, r) => (!max || r.date > max) ? r.date : max, null)
+        const daysSince = lastDate
+          ? Math.round((today - new Date(`${lastDate}T00:00:00`)) / 86400000)
+          : null
+        return { sfg_id: id, name: agent.preferred_name ?? agent.opt_name ?? '', daysSince }
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.daysSince ?? 999) - (a.daysSince ?? 999))
+  }, [roster, agentMap, activity, today])
 
   // ── Mount: load roster + all agents ────────────────────────────────────────
   useEffect(() => {
@@ -396,6 +486,13 @@ export default function AccountabilityPage() {
         onClearAll={handleClearAll}
       />
 
+      <InactiveAgentsDialog
+        open={inactiveOpen}
+        onClose={() => setInactiveOpen(false)}
+        agents={inactiveAgents}
+        onRemove={handleRemove}
+      />
+
       {/* Page header */}
       <div className="flex items-start justify-between mb-5">
         <div>
@@ -438,17 +535,33 @@ export default function AccountabilityPage() {
 
       {/* Toolbar */}
       <div className="flex items-center justify-between py-3 border-b border-gray-200 dark:border-gray-700 mb-4">
-        <button
-          onClick={() => setMembersOpen(true)}
-          className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700/60 text-[13px] text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-          </svg>
-          Manage members
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMembersOpen(true)}
+            className="inline-flex items-center gap-2 h-8 px-3 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700/60 text-[13px] text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            Manage members
+          </button>
+          <button
+            onClick={() => setInactiveOpen(true)}
+            className={`inline-flex items-center gap-2 h-8 px-3 rounded-lg border text-[13px] transition-colors ${
+              inactiveAgents.length > 0
+                ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                : 'border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700/60 text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Inactive agents: {inactiveAgents.length}
+          </button>
+        </div>
         <span className="text-[12px] text-gray-400 dark:text-gray-300">
           {roster.length} agent{roster.length !== 1 ? 's' : ''} on call
         </span>

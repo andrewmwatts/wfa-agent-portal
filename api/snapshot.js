@@ -335,7 +335,7 @@ export default async function handler(req, res) {
 
   // ── POST promotion_action ────────────────────────────────────────────────────
   if (method === 'POST' && type === 'promotions') {
-    const { cycle_id, sfg_id, action_type, month_number,
+    const { cycle_id, sfg_id, action_type, month_number, level,
             agent_promotions_id, is_manual, notes } = req.body ?? {}
     if (!cycle_id || !sfg_id || !action_type) {
       return res.status(400).json({ error: 'cycle_id, sfg_id, and action_type are required' })
@@ -348,6 +348,7 @@ export default async function handler(req, res) {
           sfg_id,
           action_type,
           month_number:        month_number        ?? null,
+          level:                level                ?? null,
           agent_promotions_id: agent_promotions_id ?? null,
           is_manual:           is_manual           ?? false,
           notes:               notes               ?? null,
@@ -418,7 +419,7 @@ export default async function handler(req, res) {
         supabase.from('personnel').select(
           'sfg_id, opt_name, preferred_name, upline_sfg_id, hire_date'
         ).order('opt_name'),
-        supabase.from('qualifications').select('level, regular, slingshot, writers'),
+        supabase.from('qualifications').select('level, regular, slingshot, writers, months'),
         supabase.from('agent_promotions').select(
           'id, sfg_id, promotion_type, level, month_1, month_2, month_3, ' +
           'slingshot_month, is_slingshot, is_qualified, qualified_date'
@@ -542,7 +543,7 @@ export default async function handler(req, res) {
   // ── Agent promotions write (for Step 3 qualifying) ───────────────────────────
   if (method === 'POST' && type === 'agent_promotion') {
     const { sfg_id, promotion_type, level, month_1, month_2, month_3,
-            slingshot_month, is_slingshot } = req.body ?? {}
+            slingshot_month, is_slingshot, is_qualified, qualified_date } = req.body ?? {}
     if (!sfg_id || !promotion_type || !level) {
       return res.status(400).json({ error: 'sfg_id, promotion_type, level are required' })
     }
@@ -556,14 +557,24 @@ export default async function handler(req, res) {
         month_3:        month_3        ?? null,
         slingshot_month: slingshot_month ?? null,
         is_slingshot:   is_slingshot   ?? false,
-        is_qualified:   false,
-        qualified_date: null,
+        is_qualified:   is_qualified   ?? false,
+        qualified_date: qualified_date ?? null,
       }
-      const { data, error } = await supabase
+
+      // Look up any existing row explicitly rather than relying on upsert's
+      // onConflict, which requires a matching unique constraint in the DB.
+      const { data: existing, error: findErr } = await supabase
         .from('agent_promotions')
-        .upsert(record, { onConflict: 'sfg_id,promotion_type,level' })
-        .select()
-        .single()
+        .select('id')
+        .eq('sfg_id', record.sfg_id)
+        .eq('promotion_type', promotion_type)
+        .eq('level', level)
+        .maybeSingle()
+      if (findErr) throw findErr
+
+      const { data, error } = existing
+        ? await supabase.from('agent_promotions').update(record).eq('id', existing.id).select().single()
+        : await supabase.from('agent_promotions').insert(record).select().single()
       if (error) throw error
       return res.status(200).json(data)
     } catch (err) {
