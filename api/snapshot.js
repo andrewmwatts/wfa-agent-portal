@@ -548,14 +548,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'sfg_id, promotion_type, level are required' })
     }
     try {
+      // month_1/2/3 and slingshot_month are `date` columns — callers pass the
+      // cycle's 'YYYY-MM' month string, which Postgres rejects without a day.
+      // Normalize to the first of the month.
+      const toFullDate = v => (v && /^\d{4}-\d{2}$/.test(v)) ? `${v}-01` : (v ?? null)
+
       const record = {
         sfg_id: sfg_id.toUpperCase(),
         promotion_type,
         level,
-        month_1:        month_1        ?? null,
-        month_2:        month_2        ?? null,
-        month_3:        month_3        ?? null,
-        slingshot_month: slingshot_month ?? null,
+        month_1:        toFullDate(month_1),
+        month_2:        toFullDate(month_2),
+        month_3:        toFullDate(month_3),
+        slingshot_month: toFullDate(slingshot_month),
         is_slingshot:   is_slingshot   ?? false,
         is_qualified:   is_qualified   ?? false,
         qualified_date: qualified_date ?? null,
