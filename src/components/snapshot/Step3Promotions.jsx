@@ -26,7 +26,7 @@ async function apiRequest(url, method, body) {
     let message = `Request failed (${res.status})`
     try {
       const data = await res.json()
-      if (data?.error) message = data.error
+      if (data?.error) message = data.detail ? `${data.error}: ${data.detail}` : data.error
     } catch { /* non-JSON error body */ }
     throw new Error(message)
   }

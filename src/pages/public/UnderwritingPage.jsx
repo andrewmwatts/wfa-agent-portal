@@ -1,9 +1,11 @@
+import { Link } from 'react-router-dom'
 import PublicLayout from '../../components/public/PublicLayout'
 
 const TERM = [
   { carrier: 'Banner',       product: 'BeyondTerm',                        instant: true  },
   { carrier: 'SBLI',         product: 'EasyTrak',                          instant: true  },
   { carrier: 'Americo',      product: 'Instant Decision Term Series (HMS/CBO)', instant: true  },
+  { carrier: 'AmAm',         product: 'Home Certainty',                    instant: false },
   { carrier: 'MOO',          product: 'Term Life Express',                 instant: false },
   { carrier: 'Foresters',    product: 'Strong Foundation',                 instant: false },
 ]
@@ -88,15 +90,28 @@ export default function UnderwritingPage() {
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
           {/* Header */}
-          <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
-            Underwriting Guidelines
-          </p>
-          <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: '0 0 8px' }}>
-            Carrier Preference Order
-          </h1>
-          <p style={{ fontSize: 14, color: '#4A6568', margin: '0 0 32px', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, maxWidth: 640 }}>
-            This is our recommended order of preference for each policy type. Start at the top and work down based on the client's health and eligibility. Additional products are available and may be required depending on client health, but these should be your first choices.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24, marginBottom: 32 }}>
+            <div style={{ maxWidth: 640 }}>
+              <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
+                Underwriting Guidelines
+              </p>
+              <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: '0 0 8px' }}>
+                Carrier Preference Order
+              </h1>
+              <p style={{ fontSize: 14, color: '#4A6568', margin: 0, fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
+                This is our recommended order of preference for each policy type. Start at the top and work down based on the client's health and eligibility. Additional products are available and may be required depending on client health, but these should be your first choices.
+              </p>
+            </div>
+            <Link to="/guidelines/new-york" style={{
+              background: '#EE2666', color: '#fff', fontSize: 13, fontWeight: 600,
+              borderRadius: 8, padding: '11px 18px',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              textDecoration: 'none', fontFamily: 'Inter, sans-serif',
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}>
+              New York Options →
+            </Link>
+          </div>
 
           {/* Two-column: Term + Whole Life */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>

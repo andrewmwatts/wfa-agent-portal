@@ -34,6 +34,7 @@ import Landing from './pages/public/Landing'
 import VideoLibrary from './pages/public/VideoLibrary'
 import CalendarPage from './pages/public/CalendarPage'
 import UnderwritingPage from './pages/public/UnderwritingPage'
+import NewYorkOptionsPage from './pages/public/NewYorkOptionsPage'
 import PublicLayout from './components/public/PublicLayout'
 
 function ComingSoon({ title }) {
@@ -110,6 +111,7 @@ export default function App() {
             <Route path="/resources"  element={<ComingSoon title="Documents & guides" />} />
             <Route path="/calendar"   element={<CalendarPage />} />
             <Route path="/guidelines" element={<UnderwritingPage />} />
+            <Route path="/guidelines/new-york" element={<NewYorkOptionsPage />} />
 
             {/* /portal and unknown /portal/* paths → dashboard (ProtectedRoute handles auth redirect) */}
             <Route path="/portal"   element={<Navigate to="/portal/dashboard" replace />} />

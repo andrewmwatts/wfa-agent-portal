@@ -563,11 +563,13 @@ export default async function handler(req, res) {
 
       // Look up any existing row explicitly rather than relying on upsert's
       // onConflict, which requires a matching unique constraint in the DB.
+      // Identity is (sfg_id, level) — NOT promotion_type, which the client
+      // recomputes each render (Standard vs Slingshot) and can legitimately
+      // differ between the existing row and this save.
       const { data: existing, error: findErr } = await supabase
         .from('agent_promotions')
         .select('id')
         .eq('sfg_id', record.sfg_id)
-        .eq('promotion_type', promotion_type)
         .eq('level', level)
         .maybeSingle()
       if (findErr) throw findErr
@@ -579,7 +581,7 @@ export default async function handler(req, res) {
       return res.status(200).json(data)
     } catch (err) {
       console.error('[snapshot/agent_promotion POST]', err)
-      return res.status(500).json({ error: 'Failed to save agent promotion' })
+      return res.status(500).json({ error: 'Failed to save agent promotion', detail: err.message ?? String(err) })
     }
   }
 
