@@ -466,9 +466,13 @@ export default async function handler(req, res) {
         continue
       }
       if (namedMilMatch) {
-        const [, level, idx] = namedMilMatch
-        const k = `named:${level.toUpperCase()}`
-        if (!milChanges[k]) milChanges[k] = { type: 'named', level: level.toUpperCase() }
+        const [, levelRaw, idx] = namedMilMatch
+        const level = levelRaw.toUpperCase()
+        // agent_promotions.promotion_type only allows 'commission' | 'leadership' | 'badge' —
+        // TL/KL/AO are leadership titles, TP/EP are prestige badges.
+        const type = ['TL', 'KL', 'AO'].includes(level) ? 'leadership' : 'badge'
+        const k = `${type}:${level}`
+        if (!milChanges[k]) milChanges[k] = { type, level }
         milChanges[k][Number(idx)] = val?.trim() || null
         continue
       }

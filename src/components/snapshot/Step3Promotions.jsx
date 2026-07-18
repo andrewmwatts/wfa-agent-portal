@@ -370,14 +370,17 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   const unresolvedFlags = finalizedActions.filter(a => hierarchyFlags(a.sfg_id).any && !a.hierarchy_flag_noted)
 
   // ── Actions ──────────────────────────────────────────────────────────────────
-  async function logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths) {
+  async function logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths, track) {
     setSaving(sfgId + '-' + targetLevel + '-month')
     try {
       const isFinal = monthNum >= totalMonths
 
       await apiRequest('/api/snapshot?type=agent_promotion', 'POST', {
         sfg_id:         sfgId,
-        promotion_type: promoType,
+        // agent_promotions.promotion_type is a DB category constrained to
+        // 'commission' | 'leadership' | 'badge' — not the display label
+        // (Standard/Slingshot/TL/KL/AO), which is `promoType` below.
+        promotion_type: track === 'contract' ? 'commission' : 'leadership',
         level:          targetLevel,
         month_1:        monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
         month_2:        monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
@@ -600,7 +603,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                     {!readOnly && (
                       <div className="flex items-center gap-2 pt-1 flex-wrap">
                         <button
-                          onClick={() => logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths)}
+                          onClick={() => logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths, track)}
                           disabled={!!saving}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${
                             isFinal
