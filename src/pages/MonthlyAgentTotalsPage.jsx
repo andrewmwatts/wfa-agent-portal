@@ -189,6 +189,16 @@ function sumIncomplete(pols) {
     .reduce((s, p) => s + (p.subm_apv ?? 0), 0)
 }
 
+// SFG rule: for promotions to 125/130, each single policy's issued APV counts
+// at most $7,500 toward the qualifying total (and the leg-rule sub-totals).
+// cap defaults to Infinity (no cap) for every other level.
+const SINGLE_APV_CAP = 7500
+const CAPPED_PROMO_LEVELS = new Set(['125', '130'])
+
+function cappedIssuedSum(pols, cap = Infinity) {
+  return pols.reduce((s, p) => s + Math.min(p.issued_apv ?? 0, cap), 0)
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = [
@@ -463,19 +473,8 @@ export default function MonthlyAgentTotalsPage() {
       const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
       const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
 
-      // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
-      const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
-      const agentIssued     = sumApv(agentIssuedPols) - ownCb - (isCurrentMonth && includeLikelyCb ? ownLikelyCbAmt  : 0)
-      const agentPending    = sumApv(agentPendingPols)
-      const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = sumApv(teamIssuedPolsList) - teamCb - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
-      const teamPending     = sumApv(teamPendingPols)
-      const teamIncomplete  = sumApv(teamIncompletePols)
-
-      // Writers = distinct SFG IDs in team with any submitted policy this month
-      const writers = new Set(teamPols.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)).size
-
-      // Current levels & next targets
+      // Current levels & next targets (computed before the sums so the 125/130
+      // single-policy cap can be applied to the issued team total)
       const curContract  = agent.commission_contract?.level ?? null
       const curLeader    = agent.commission_leadership?.level ?? null
       const nextConLvl   = nextContractLevel(curContract)
@@ -483,13 +482,28 @@ export default function MonthlyAgentTotalsPage() {
       const promoQual    = nextConLvl  ? (qualMap[String(nextConLvl)] ?? null) : null
       const leadQual     = nextLeadLvl ? (qualMap[nextLeadLvl]        ?? null) : null
 
+      // $7,500-per-policy cap applies only when the next contract level is 125/130
+      const apvCap = CAPPED_PROMO_LEVELS.has(String(nextConLvl)) ? SINGLE_APV_CAP : Infinity
+
+      // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
+      const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
+      const agentIssued     = sumApv(agentIssuedPols) - ownCb - (isCurrentMonth && includeLikelyCb ? ownLikelyCbAmt  : 0)
+      const agentPending    = sumApv(agentPendingPols)
+      const agentIncomplete = sumApv(agentIncompletePols)
+      const teamIssued      = cappedIssuedSum(teamIssuedPolsList, apvCap) - teamCb - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
+      const teamPending     = sumApv(teamPendingPols)
+      const teamIncomplete  = sumApv(teamIncompletePols)
+
+      // Writers = distinct SFG IDs in team with any submitted policy this month
+      const writers = new Set(teamPols.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)).size
+
       // 50 % leg rule — find the largest single-leg issued APV
       // A "leg" = one direct downline + all of their subordinates
       const directChildren = directChildrenOf[id] ?? []
       const maxLegApv = directChildren.reduce((best, childId) => {
         const legDesc = descendantsOf[childId] ?? new Set([childId])
         const legApv  = [...legDesc].reduce(
-          (s, tid) => s + (issuedPolsBySfgId[tid] ?? []).reduce((ss, p) => ss + (p.issued_apv ?? 0), 0),
+          (s, tid) => s + cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], apvCap),
           0
         )
         return Math.max(best, legApv)
@@ -530,6 +544,7 @@ export default function MonthlyAgentTotalsPage() {
       return {
         sfg_id: agent.sfg_id,
         name:   agent.name,
+        apvCap,
         agentSubmitted, agentIssued, agentPending, agentIncomplete,
         ownPols,
         teamIssued, teamPending, teamIncomplete,
@@ -724,13 +739,17 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
 function PolicyBreakdownModal({ modal, onClose }) {
   if (!modal) return null
 
-  const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes } = modal
+  const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes, cap = Infinity } = modal
 
-  // Sort main policies by APV descending
-  const sorted = [...pols].sort((a, b) => (b[apvField] ?? 0) - (a[apvField] ?? 0))
+  // Per-policy cap (only finite for 125/130 team-issued views) — each policy
+  // counts at most `cap` toward the total, matching the capped column.
+  const capVal = v => Math.min(v ?? 0, cap)
 
-  // Running total (positive policies minus chargebacks and likely chargebacks)
-  const total = pols.reduce((s, p) => s + (p[apvField] ?? 0), 0)
+  // Sort main policies by capped APV descending
+  const sorted = [...pols].sort((a, b) => capVal(b[apvField]) - capVal(a[apvField]))
+
+  // Running total (capped positive policies minus chargebacks and likely chargebacks)
+  const total = pols.reduce((s, p) => s + capVal(p[apvField]), 0)
               - cbPols.reduce((s, p) => s + parseCbApv(p.snapshot_chargeback_apv), 0)
               - likelyCbPols.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
 
@@ -748,7 +767,14 @@ function PolicyBreakdownModal({ modal, onClose }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
+            {cap !== Infinity && (
+              <p className="text-[11px] text-gray-400 dark:text-white/40 mt-0.5">
+                Each policy counts up to {fmtAmt(cap)} toward 125/130 qualification
+              </p>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors text-base leading-none"
@@ -784,7 +810,12 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       <td className={tdCls}>{p.applicant || '—'}</td>
                       <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.carrier || '—'}</td>
                       {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
-                      <td className={`${tdCls} text-right tabular-nums`}>{fmtAmt(p[apvField])}</td>
+                      <td className={`${tdCls} text-right tabular-nums`}>
+                        {fmtAmt(capVal(p[apvField]))}
+                        {(p[apvField] ?? 0) > cap && (
+                          <span className="ml-1 text-[10px] text-gray-400 dark:text-white/35">({fmtAmt(p[apvField])})</span>
+                        )}
+                      </td>
                       {showNotes && (
                         <td className={`${tdCls} text-gray-500 dark:text-white/55 max-w-xs`}>
                           {p.application_notes || <span className="text-gray-300 dark:text-white/20">—</span>}
@@ -947,7 +978,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
       {/* Team APVs */}
       {apvCell(r.teamIssued, true,
         { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols,
-          likelyCbPols: r.teamLikelyCbPols,
+          likelyCbPols: r.teamLikelyCbPols, cap: r.apvCap,
           showAgent: true, apvField: 'issued_apv', showNotes: false })}
       {apvCell(r.teamPending, false,
         { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [],
