@@ -70,8 +70,8 @@ function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth
   if (promoType === 'Slingshot') {
     return [...base, 'Slingshot Qualification', fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
   }
-  if (promoType === 'TL-KL') {
-    const lines = [...base, `TL-KL Qualification Month ${monthNum}`, fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
+  if (promoType === 'TL' || promoType === 'KL') {
+    const lines = [...base, `${promoType} Qualification Month ${monthNum}`, fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
     if (existing?.month_1) lines.push(`Month 1: ${fmtMonth(existing.month_1)}`)
     if (existing?.month_2) lines.push(`Month 2: ${fmtMonth(existing.month_2)}`)
     return lines
@@ -654,7 +654,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               const jotformKey  = sfgId + '||' + targetLevel
               const savingKey   = sfgId + '-' + targetLevel + '-month'
               const showJotform = isFinal || jotformOpen.has(jotformKey)
-              const jotformLines = buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing)
+              // Slingshot-eligible agents will log the single-month slingshot, so
+              // show that Jotform format for them.
+              const jotformLines = buildJotformLines(person, apv, writers, monthNum, slingEligible ? 'Slingshot' : promoType, cycleMonth, existing)
               const currentLevelLabel = track === 'contract'
                 ? `${person.commission_contract?.level ?? '80'}%`
                 : (person.commission_leadership?.level ?? 'None')
