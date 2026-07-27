@@ -5,7 +5,7 @@ import ScopeDropdown from '../components/ScopeDropdown'
 import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
-import { nextContractLevel, nextLeadershipLevel } from '../../shared/commissionLevel'
+import { nextContractLevel, nextLeadershipLevel, levelAsOfMonth } from '../../shared/commissionLevel'
 import {
   apvCapForLevel, cappedIssuedSum,
   legRulePreventsQual, promoStatuses, leadStatuses, requiredSubmissionWeeks,
@@ -320,6 +320,9 @@ export default function MonthlyAgentTotalsPage() {
 
   // ── Per-agent stats ────────────────────────────────────────────────────────
   const agentRows = useMemo(() => {
+    // Selected business month ('YYYY-MM') — used to reconstruct point-in-time
+    // promotion targets for past months.
+    const selMonthStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`
     return displayPersonnel.map(agent => {
       const id      = agent.sfg_id.toLowerCase()
       const descSet = descendantsOf[id] ?? new Set([id])
@@ -367,10 +370,14 @@ export default function MonthlyAgentTotalsPage() {
       const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
       const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
 
-      // Current levels & next targets (computed before the sums so the 125/130
-      // single-policy cap can be applied to the issued team total)
-      const curContract  = agent.commission_contract?.level ?? null
-      const curLeader    = agent.commission_leadership?.level ?? null
+      // Levels & next targets (computed before the sums so the 125/130
+      // single-policy cap can be applied to the issued team total).
+      // Past months use the level the agent HELD that month (reconstructed from
+      // agent_promotions) so targets reflect what they were then chasing, not
+      // their current level. Current/future months use their current level.
+      const asOfLevels   = isPastMonth ? levelAsOfMonth(agent.promotions, selMonthStr) : null
+      const curContract  = isPastMonth ? (asOfLevels.contract?.level   ?? null) : (agent.commission_contract?.level   ?? null)
+      const curLeader    = isPastMonth ? (asOfLevels.leadership?.level ?? null) : (agent.commission_leadership?.level ?? null)
       const nextConLvl   = nextContractLevel(curContract)
       const nextLeadLvl  = nextLeadershipLevel(curLeader)
       const promoQual    = nextConLvl  ? (qualMap[String(nextConLvl)] ?? null) : null
@@ -464,7 +471,7 @@ export default function MonthlyAgentTotalsPage() {
     )
     // Alphabetical by name
     .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, likelyCbMemo, includeLikelyCb, isCurrentMonth, isPastMonth, weekColumns])
+  }, [displayPersonnel, polsBySfgId, issuedPolsBySfgId, allPoliciesBySfgId, descendantsOf, directChildrenOf, qualMap, chargebackMemo, likelyCbMemo, includeLikelyCb, isCurrentMonth, isPastMonth, weekColumns, selectedYear, selectedMonth])
 
   // ── Year options ───────────────────────────────────────────────────────────
   const yearOptions = []

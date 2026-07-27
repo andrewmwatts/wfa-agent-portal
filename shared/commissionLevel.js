@@ -75,6 +75,52 @@ export function buildLevelMap(allPromos) {
 }
 
 /**
+ * Latest business month ('YYYY-MM') a promotion counted toward — the max of its
+ * qualifying-month markers, falling back to qualified_date, else null (an
+ * undated/backfilled row whose timing predates tracking).
+ *
+ * @param {object} ap — one agent_promotions row
+ */
+export function promoCompletionMonth(ap) {
+  const months = [ap.month_1, ap.month_2, ap.month_3, ap.slingshot_month]
+    .filter(Boolean)
+    .map(m => String(m).slice(0, 7))
+  if (months.length) return months.reduce((a, b) => (a > b ? a : b))
+  if (ap.qualified_date) return String(ap.qualified_date).slice(0, 7)
+  return null
+}
+
+/**
+ * Point-in-time levels: the highest contract & leadership levels an agent HELD
+ * during business month `monthStr` ('YYYY-MM'). A promotion counts only once it
+ * had already completed — its final qualifying month is strictly before
+ * `monthStr`. A promotion whose final qualifying month IS `monthStr` is still in
+ * progress that month (the agent was targeting it, not yet holding it), so it is
+ * excluded. Undated rows (no month markers, no qualified_date) are treated as
+ * held since before tracking began.
+ *
+ * @param {Array}  agentPromos — agent_promotions rows for one agent
+ * @param {string} monthStr    — 'YYYY-MM'
+ * @returns {{ contract: {level: string}|null, leadership: {level: string}|null }}
+ */
+export function levelAsOfMonth(agentPromos, monthStr) {
+  let contract   = null
+  let leadership = null
+  for (const ap of agentPromos ?? []) {
+    if (!ap.is_qualified) continue
+    const done = promoCompletionMonth(ap)
+    if (done && done >= monthStr) continue   // completed in/after this month → not yet held
+    const { level } = ap
+    if (CONTRACT_RANK[level] != null) {
+      if (!contract || CONTRACT_RANK[level] > CONTRACT_RANK[contract.level]) contract = { level }
+    } else if (LEADERSHIP_RANK[level] != null) {
+      if (!leadership || LEADERSHIP_RANK[level] > LEADERSHIP_RANK[leadership.level]) leadership = { level }
+    }
+  }
+  return { contract, leadership }
+}
+
+/**
  * Returns a short display string for an agent's current levels.
  * e.g. "100% · TL", "85%", "AO", "130% · KL · EP"
  *
