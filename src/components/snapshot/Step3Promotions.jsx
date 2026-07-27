@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
 import { fmtCurrency as fmtAmt } from '../../utils/format'
 import { nextContractLevel, nextLeadershipLevel } from '../../../shared/commissionLevel'
+import {
+  buildDownlineTree, apvCapForLevel, computeTeamIssued, computeMaxLegApv,
+  legRulePreventsQual, fridayWeekCount, submissionRequirementMet,
+} from '../../../shared/promotionQualification'
 
 const INPUT_CLS = 'w-full rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
 
@@ -177,6 +181,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     qualifications = [],
     promotions: agentPromos = [],
     monthPolicies = [],
+    chargebacksByAgent    = {},
+    submittedWeeksByAgent = {},
+    submittedInMonth      = [],
   } = context ?? {}
 
   const [saving,       setSaving]       = useState(null)
@@ -220,25 +227,45 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     return m
   }, [qualifications])
 
-  const apvByAgent = useMemo(() => {
+  // ── Downline tree + team qualification inputs (mirrors Monthly Agent Totals) ──
+  const { descendantsOf, directChildrenOf } = useMemo(() => buildDownlineTree(personnel), [personnel])
+
+  // Issued policies keyed by lowercased sfg_id (for team rollup, cap, and leg rule)
+  const issuedPolsBySfgId = useMemo(() => {
     const m = {}
     for (const p of monthPolicies) {
-      const id = p.sfg_id?.toUpperCase()
-      if (id) m[id] = (m[id] ?? 0) + (Number(p.issued_apv) || 0)
+      const id = p.sfg_id?.toLowerCase()
+      if (!id) continue
+      ;(m[id] ??= []).push(p)
     }
     return m
   }, [monthPolicies])
 
-  // Direct downlines with issued policies this month = writers
-  const writersCount = useMemo(() => {
+  // Chargebacks keyed lowercase to match the tree ids
+  const chargebacksLower = useMemo(() => {
     const m = {}
-    for (const p of personnel) {
-      const upline = p.upline_sfg_id?.toUpperCase()
-      if (!upline) continue
-      if ((apvByAgent[p.sfg_id?.toUpperCase()] ?? 0) > 0) m[upline] = (m[upline] ?? 0) + 1
-    }
+    for (const [k, v] of Object.entries(chargebacksByAgent)) m[k.toLowerCase()] = v
     return m
-  }, [personnel, apvByAgent])
+  }, [chargebacksByAgent])
+
+  // Agents (any depth) who submitted a policy this month — for the writers count
+  const submittedSet = useMemo(
+    () => new Set(submittedInMonth.map(id => id.toLowerCase())),
+    [submittedInMonth],
+  )
+
+  // Personal submitted-week counts, keyed uppercase (for the slingshot requirement)
+  const submittedWeekCount = useMemo(() => {
+    const m = {}
+    for (const [k, weeks] of Object.entries(submittedWeeksByAgent)) m[k.toUpperCase()] = weeks.length
+    return m
+  }, [submittedWeeksByAgent])
+
+  const fridayCount = useMemo(() => {
+    if (!cycleMonth) return 4
+    const [y, mo] = String(cycleMonth).slice(0, 7).split('-').map(Number)
+    return fridayWeekCount(y, mo - 1)
+  }, [cycleMonth])
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function getThresholds(level) {
@@ -260,31 +287,54 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   function hierarchyFlags(sfgId) {
     const id     = sfgId?.toUpperCase()
     const person = personnelMap[id]
-    const condA  = personnel.some(p => p.upline_sfg_id?.toUpperCase() === id && (apvByAgent[p.sfg_id?.toUpperCase()] ?? 0) > 0)
+    const condA  = personnel.some(p => p.upline_sfg_id?.toUpperCase() === id && (issuedPolsBySfgId[p.sfg_id?.toLowerCase()]?.length ?? 0) > 0)
     const upline = personnelMap[person?.upline_sfg_id?.toUpperCase()]
     const condB  = !!(upline && upline.commission_contract?.level && upline.commission_contract.level === person?.commission_contract?.level)
     return { condA, condB, any: condA || condB }
   }
 
+  // Team qualifying APV (capped for the target level, net chargebacks) + largest leg.
+  function teamNumbers(lowerId, targetLevel) {
+    const descSet = descendantsOf[lowerId] ?? new Set([lowerId])
+    const cap     = apvCapForLevel(targetLevel)
+    return {
+      teamApv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, cap),
+      maxLeg:  computeMaxLegApv(directChildrenOf[lowerId] ?? [], descendantsOf, issuedPolsBySfgId, cap),
+      writers: [...descSet].filter(tid => submittedSet.has(tid)).length,
+    }
+  }
+
   // ── Qualifying agents ────────────────────────────────────────────────────────
   // Each entry represents one qualifying opportunity (contract OR leadership track).
   // A single agent may appear twice if they're qualifying on both tracks simultaneously.
+  // Qualification is evaluated on TEAM issued APV (net chargebacks), gated by the
+  // 50% leg rule and the $7,500/policy cap for 125/130 — matching Monthly Agent Totals.
   const qualifyingAgents = useMemo(() => {
     const result = []
 
     for (const person of personnel) {
-      const sfgId = person.sfg_id?.toUpperCase()
+      const sfgId   = person.sfg_id?.toUpperCase()
+      const lowerId = person.sfg_id?.toLowerCase()
       if (!sfgId) continue
 
-      const apv     = apvByAgent[sfgId] ?? 0
-      const writers = writersCount[sfgId] ?? 0
-      const flags   = hierarchyFlags(sfgId)
+      const flags = hierarchyFlags(sfgId)
 
       // ── Contract track ────────────────────────────────────────────────────
       const nextContract = nextContractLevel(person.commission_contract?.level ?? '80')
       if (nextContract && !skippedSet.has(sfgId + '||' + nextContract)) {
         const q = getThresholds(nextContract)
-        if (meetsThreshold(q, apv, writers)) {
+        const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextContract)
+
+        // Standard qualification: regular APV + writers met, leg rule satisfied
+        const regularMet = meetsThreshold(q, teamApv, writers) &&
+                           !legRulePreventsQual(teamApv, q?.regular, maxLeg)
+
+        // Slingshot: higher APV bar + personal weekly submissions, leg rule satisfied
+        const submissionMet = submissionRequirementMet(submittedWeekCount[sfgId] ?? 0, fridayCount)
+        const slingEligible = isSlingshot(q, teamApv) && submissionMet &&
+                              !legRulePreventsQual(teamApv, q?.slingshot, maxLeg)
+
+        if ((regularMet || slingEligible)) {
           const existing = agentPromoMap[`${sfgId}||${nextContract}`] ?? null
           if (!existing?.is_qualified) {
             const months = Number(q?.months) || 2
@@ -299,10 +349,11 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
             )
             if (!alreadyLogged) {
               result.push({
-                key, person, sfgId, apv, writers, monthNum,
+                key, person, sfgId, apv: teamApv, writers, monthNum,
                 track: 'contract',
                 targetLevel: nextContract,
-                promoType:   isSlingshot(q, apv) ? 'Slingshot' : 'Standard',
+                promoType:   'Standard',
+                slingEligible,
                 existing,
                 flags,
                 totalMonths: months,
@@ -316,7 +367,10 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       const nextLeadership = nextLeadershipLevel(person.commission_leadership?.level ?? null)
       if (nextLeadership && !skippedSet.has(sfgId + '||' + nextLeadership)) {
         const q = getThresholds(nextLeadership)
-        if (meetsThreshold(q, apv, writers)) {
+        const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextLeadership)
+        const regularMet = meetsThreshold(q, teamApv, writers) &&
+                           !legRulePreventsQual(teamApv, q?.regular, maxLeg)
+        if (regularMet) {
           const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
           if (!existing?.is_qualified) {
             const months = Number(q?.months) || 2
@@ -331,10 +385,11 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
             )
             if (!alreadyLogged) {
               result.push({
-                key, person, sfgId, apv, writers, monthNum,
+                key, person, sfgId, apv: teamApv, writers, monthNum,
                 track: 'leadership',
                 targetLevel: nextLeadership,
                 promoType:   nextLeadership,
+                slingEligible: false,
                 existing,
                 flags,
                 totalMonths: months,
@@ -346,7 +401,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     }
 
     return result.sort((a, b) => (a.person.opt_name ?? '').localeCompare(b.person.opt_name ?? ''))
-  }, [personnel, apvByAgent, writersCount, agentPromoMap, qualByLevel, promotions, skippedSet])
+  }, [personnel, descendantsOf, directChildrenOf, issuedPolsBySfgId, chargebacksLower, submittedSet, submittedWeekCount, fridayCount, agentPromoMap, qualByLevel, promotions, skippedSet, cycleMonth])
 
   // ── Broken streaks ───────────────────────────────────────────────────────────
   const brokenStreaks = useMemo(() => {
@@ -359,9 +414,17 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         if (ap.month_2?.slice(0, 7) === cycleMonth) return false  // completed this cycle
         return !qualifyingIds.has(ap.sfg_id?.toUpperCase())
       })
-      .map(ap => ({ ...ap, person: personnelMap[ap.sfg_id?.toUpperCase()], apv: apvByAgent[ap.sfg_id?.toUpperCase()] ?? 0 }))
+      .map(ap => {
+        const lowerId = ap.sfg_id?.toLowerCase()
+        const descSet = descendantsOf[lowerId] ?? new Set([lowerId])
+        return {
+          ...ap,
+          person: personnelMap[ap.sfg_id?.toUpperCase()],
+          apv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, Infinity),
+        }
+      })
       .sort((a, b) => (a.person?.opt_name ?? '').localeCompare(b.person?.opt_name ?? ''))
-  }, [agentPromos, qualifyingAgents, cycleMonth, personnelMap, apvByAgent])
+  }, [agentPromos, qualifyingAgents, cycleMonth, personnelMap, descendantsOf, issuedPolsBySfgId, chargebacksLower])
 
   const finalizedActions = promotions.filter(
     a => a.action_type === 'promotion' || a.action_type === 'manual_promotion'
@@ -385,7 +448,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         month_1:        monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
         month_2:        monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
         month_3:        (isFinal && totalMonths === 3) ? cycleMonth : (existing?.month_3 ?? null),
-        is_slingshot:   promoType === 'Slingshot',
+        // Standard month-by-month path is never a slingshot — slingshot has its
+        // own action (logSlingshot), which records slingshot_month instead.
+        is_slingshot:   false,
         is_qualified:   isFinal,
         qualified_date: isFinal ? new Date().toISOString().slice(0, 10) : null,
       })
@@ -402,6 +467,41 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       await onRefresh()
     } catch (err) {
       alert(err.message || 'Failed to log promotion month.')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  // Slingshot: a single-month qualification (higher APV bar + weekly submissions).
+  // Records slingshot_month and finalizes immediately, clearing any partial
+  // month-by-month progress toward the same level.
+  async function logSlingshot(sfgId, targetLevel, track) {
+    setSaving(sfgId + '-' + targetLevel + '-sling')
+    try {
+      await apiRequest('/api/snapshot?type=agent_promotion', 'POST', {
+        sfg_id:          sfgId,
+        promotion_type:  track === 'contract' ? 'commission' : 'leadership',
+        level:           targetLevel,
+        month_1:         null,
+        month_2:         null,
+        month_3:         null,
+        slingshot_month: cycleMonth,
+        is_slingshot:    true,
+        is_qualified:    true,
+        qualified_date:  new Date().toISOString().slice(0, 10),
+      })
+
+      await apiRequest('/api/snapshot?type=promotions', 'POST', {
+        cycle_id:    cycle.id,
+        sfg_id:      sfgId,
+        action_type: 'promotion',
+        level:       targetLevel,
+      })
+
+      setJotformOpen(prev => new Set([...prev, sfgId + '||' + targetLevel]))
+      await onRefresh()
+    } catch (err) {
+      alert(err.message || 'Failed to log slingshot promotion.')
     } finally {
       setSaving(null)
     }
@@ -548,8 +648,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           </div>
         ) : (
           <div className="space-y-3">
-            {qualifyingAgents.map(({ key, person, sfgId, apv, writers, monthNum, promoType, targetLevel, track, existing, flags, totalMonths }) => {
+            {qualifyingAgents.map(({ key, person, sfgId, apv, writers, monthNum, promoType, targetLevel, track, existing, flags, totalMonths, slingEligible }) => {
               const isFinal     = monthNum >= totalMonths
+              const slingSaving = sfgId + '-' + targetLevel + '-sling'
               const jotformKey  = sfgId + '||' + targetLevel
               const savingKey   = sfgId + '-' + targetLevel + '-month'
               const showJotform = isFinal || jotformOpen.has(jotformKey)
@@ -579,6 +680,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                     )}
                     {flags.condB && (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">Condition B</span>
+                    )}
+                    {slingEligible && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">⚡ Slingshot eligible</span>
                     )}
                     <div className="ml-auto flex items-center gap-3 text-xs text-gray-500 dark:text-white/50">
                       <span>{fmtApv(apv)}{q?.regular != null ? ` / ${fmtApv(q.regular)} target` : ''}</span>
@@ -612,6 +716,16 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                           }`}>
                           {saving === savingKey ? 'Logging…' : isFinal ? 'Log & Submit Promotion' : `Log Month ${monthNum}`}
                         </button>
+
+                        {slingEligible && (
+                          <button
+                            onClick={() => logSlingshot(sfgId, targetLevel, track)}
+                            disabled={!!saving}
+                            title="Qualifies in a single month via the higher APV bar + weekly submissions"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-yellow-500 text-white hover:bg-yellow-600 disabled:opacity-50">
+                            {saving === slingSaving ? 'Logging…' : '⚡ Log Slingshot Promotion'}
+                          </button>
+                        )}
 
                         {!isFinal && (
                           <button

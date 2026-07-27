@@ -6,109 +6,13 @@ import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
 import { nextContractLevel, nextLeadershipLevel } from '../../shared/commissionLevel'
+import {
+  apvCapForLevel, cappedIssuedSum,
+  legRulePreventsQual, promoStatuses, leadStatuses, requiredSubmissionWeeks,
+} from '../../shared/promotionQualification'
 
-// ─── Conditional-formatting logic ─────────────────────────────────────────────
-// Returns 'green' | 'yellow' | 'none'
-// green  = this target is met AND all other defined targets for this qual are also met
-// yellow = this target is met BUT at least one companion target is not met
-
-// ─── 50 % leg rule ────────────────────────────────────────────────────────────
-// No single leg may contribute more than 50 % of the required APV for a level.
-// A "leg" is one direct downline agent plus all of their subordinates.
-// If the largest leg exceeds the cap, we recompute the effective qualifying APV;
-// if that effective APV falls below the target we flag the cell as 'orange'.
-//
-// orange = raw APV target is met but the leg rule prevents actual qualification
-// green  = target met AND leg rule satisfied
-// yellow = companion requirement (writers / slingshot) not yet met
-
-function legRulePreventsQual(teamIssued, targetApv, maxLegApv) {
-  if (!targetApv || teamIssued < targetApv) return false   // target not reached anyway
-  const legCap = 0.5 * targetApv
-  if (maxLegApv <= legCap) return false                    // largest leg is within limit
-  const effectiveApv = teamIssued - maxLegApv + legCap     // cap the oversized leg
-  return effectiveApv < targetApv                          // true → can't qualify
-}
-
-// ─── Conditional-formatting logic ─────────────────────────────────────────────
-// Levels with Slingshot (85, 90, 95):
-//   Regular APV  → GREEN (or ORANGE if leg rule) independently when met
-//   Slingshot    → GREEN/ORANGE if met; YELLOW if regular met but slingshot not yet
-//
-// Levels with Writers as companion (105-130, TL, KL, AO):
-//   APV + Writers are companions — YELLOW if one met, GREEN/ORANGE only if both met
-//
-// Single-target levels (100, TP, EP):
-//   Regular APV  → GREEN/ORANGE when met; no companions
-
-function promoStatuses(teamIssued, writers, qual, maxLegApv = 0, submissionMet = false) {
-  if (!qual) return { apv: 'none', slingshot: 'none', writers: 'none' }
-
-  const apvHit     = qual.regular   != null && teamIssued >= qual.regular
-  const slingHit   = qual.slingshot != null && teamIssued >= qual.slingshot
-  const writersHit = qual.writers   != null && writers    >= qual.writers
-
-  // Returns 'green' or 'orange' depending on whether the leg rule blocks qualification
-  const hitColor = (target) =>
-    legRulePreventsQual(teamIssued, target, maxLegApv) ? 'orange' : 'green'
-
-  if (qual.writers != null) {
-    // APV + Writers are companions (105–130)
-    const allMet = apvHit && writersHit
-    return {
-      apv:       qual.regular != null ? (apvHit     ? (allMet ? hitColor(qual.regular) : 'yellow') : 'none') : 'none',
-      slingshot: 'none',
-      writers:   qual.writers != null ? (writersHit ? (allMet ? hitColor(qual.regular) : 'yellow') : 'none') : 'none',
-    }
-  }
-
-  if (qual.slingshot != null) {
-    // Slingshot + weekly submissions are companions (85–95).
-    // Regular APV is a standalone indicator (no companion).
-    // slingHit && submissionMet → green / orange (leg rule)
-    // slingHit && !submissionMet → yellow (APV reached but weeks not done)
-    // !slingHit && apvHit → yellow (regular met, progress toward slingshot)
-    return {
-      apv:       qual.regular != null ? (apvHit   ? hitColor(qual.regular) : 'none') : 'none',
-      slingshot: slingHit
-                   ? (submissionMet ? hitColor(qual.slingshot) : 'yellow')
-                   : 'none',
-      writers:   'none',
-    }
-  }
-
-  // Single-target level (100, TP, EP)
-  return {
-    apv:       qual.regular != null ? (apvHit ? hitColor(qual.regular) : 'none') : 'none',
-    slingshot: 'none',
-    writers:   'none',
-  }
-}
-
-function leadStatuses(teamIssued, writers, qual, maxLegApv = 0) {
-  if (!qual) return { apv: 'none', writers: 'none' }
-
-  const apvHit     = qual.regular != null && teamIssued >= qual.regular
-  const writersHit = qual.writers != null && writers    >= qual.writers
-
-  const hitColor = (target) =>
-    legRulePreventsQual(teamIssued, target, maxLegApv) ? 'orange' : 'green'
-
-  if (qual.writers != null) {
-    // APV + Writers are companions (TL, KL, AO)
-    const allMet = apvHit && writersHit
-    return {
-      apv:     qual.regular != null ? (apvHit     ? (allMet ? hitColor(qual.regular) : 'yellow') : 'none') : 'none',
-      writers: qual.writers != null ? (writersHit ? (allMet ? hitColor(qual.regular) : 'yellow') : 'none') : 'none',
-    }
-  }
-
-  // Single-target leadership level
-  return {
-    apv:     qual.regular != null ? (apvHit ? hitColor(qual.regular) : 'none') : 'none',
-    writers: 'none',
-  }
-}
+// Qualification math (50% leg rule, $7,500 cap, promo/lead statuses) lives in
+// shared/promotionQualification.js so this page and Step 3 stay in lockstep.
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -187,16 +91,6 @@ function sumIncomplete(pols) {
   return pols
     .filter(p => p.status?.toLowerCase() === 'incomplete')
     .reduce((s, p) => s + (p.subm_apv ?? 0), 0)
-}
-
-// SFG rule: for promotions to 125/130, each single policy's issued APV counts
-// at most $7,500 toward the qualifying total (and the leg-rule sub-totals).
-// cap defaults to Infinity (no cap) for every other level.
-const SINGLE_APV_CAP = 7500
-const CAPPED_PROMO_LEVELS = new Set(['125', '130'])
-
-function cappedIssuedSum(pols, cap = Infinity) {
-  return pols.reduce((s, p) => s + Math.min(p.issued_apv ?? 0, cap), 0)
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -483,7 +377,7 @@ export default function MonthlyAgentTotalsPage() {
       const leadQual     = nextLeadLvl ? (qualMap[nextLeadLvl]        ?? null) : null
 
       // $7,500-per-policy cap applies only when the next contract level is 125/130
-      const apvCap = CAPPED_PROMO_LEVELS.has(String(nextConLvl)) ? SINGLE_APV_CAP : Infinity
+      const apvCap = apvCapForLevel(nextConLvl)
 
       // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
       const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
@@ -516,7 +410,7 @@ export default function MonthlyAgentTotalsPage() {
       const agentWeekNums      = new Set(ownPols.map(p => p.submit_week_num?.trim()).filter(Boolean))
       const hasSlingshotTarget = (promoQual?.slingshot ?? null) !== null
       const slingHit           = hasSlingshotTarget && teamIssued >= promoQual.slingshot
-      const requiredWeeks      = weekColumns.length >= 5 ? 4 : 3
+      const requiredWeeks      = requiredSubmissionWeeks(weekColumns.length)
       const submittedCount     = weekColumns.filter(wk => agentWeekNums.has(wk.numStr)).length
       const submissionMet      = hasSlingshotTarget && submittedCount >= requiredWeeks
 

@@ -28,10 +28,12 @@ function buildPromotionMaps(promoRows) {
     const arr = []
 
     if (is_slingshot) {
-      // For slingshot rows the qualifying month is month_1 when present, otherwise the
-      // slingshot month itself.  Both slots being equal triggers "(SS)" in the display.
-      arr.push(month_1 ?? slingshot_month ?? '')
-      arr.push(slingshot_month ?? '')
+      // A slingshot is a single-month qualification. Show the qualifying month in
+      // both slots so the display renders "(SS)". Prefer slingshot_month; fall back
+      // to month_2/month_1 for older rows that stored it there.
+      const sm = slingshot_month ?? month_2 ?? month_1 ?? ''
+      arr.push(sm)
+      arr.push(sm)
     } else {
       arr.push(month_1 ?? '')
       arr.push(month_2 ?? '')

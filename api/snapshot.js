@@ -430,6 +430,9 @@ export default async function handler(req, res) {
       // Build per-agent APV map for the month (issued minus chargebacks that occurred this month)
       let monthPolicies  = []
       let agentMonthApv  = {}   // uppercase sfg_id → net APV
+      let chargebacksByAgent   = {}  // uppercase sfg_id → chargeback $ for the month (snapshot_chargeback_apv)
+      let submittedWeeksByAgent = {} // uppercase sfg_id → [distinct submit_week_num submitted this month]
+      let submittedInMonth      = [] // uppercase sfg_ids that submitted any policy this month (for writers)
       if (month) {
         // Normalize: month may be 'YYYY-MM' (varchar) or 'YYYY-MM-DD' (date type)
         const monthYM    = String(month).slice(0, 7)   // always 'YYYY-MM'
@@ -459,7 +462,14 @@ export default async function handler(req, res) {
           return isNaN(n) ? 0 : n
         }
 
-        const [issuedRes, cbRes] = await Promise.all([
+        // year + 1-indexed month from a 'YYYY-MM-DD' date string
+        const svrYearMonth = (s) => {
+          if (!s) return null
+          const m = String(s).match(/^(\d{4})-(\d{2})/)
+          return m ? { year: +m[1], month: +m[2] } : null
+        }
+
+        const [issuedRes, cbRes, submittedRes] = await Promise.all([
           supabase
             .from('policies')
             .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
@@ -475,9 +485,18 @@ export default async function handler(req, res) {
             .not('snapshot_chargeback_month', 'is', null)
             .gte('snapshot_chargeback_month', monthStart)
             .lt('snapshot_chargeback_month', nextMonth),
+          // Policies submitted in the month — drives both the writers count (any
+          // team member who submitted) and the personal weekly-submission
+          // requirement on slingshot promotions. submit_week is the business-week
+          // Friday; fall back to submit_date. Mirrors MonthlyAgentTotals month filter.
+          supabase
+            .from('policies')
+            .select('sfg_id, submit_week, submit_date, submit_week_num')
+            .or(`and(submit_week.gte.${monthStart},submit_week.lt.${nextMonth}),and(submit_date.gte.${monthStart},submit_date.lt.${nextMonth})`),
         ])
-        if (issuedRes.error) console.error('[snapshot/context] issuedRes error:', issuedRes.error)
-        if (cbRes.error)     console.error('[snapshot/context] cbRes error:', cbRes.error)
+        if (issuedRes.error)    console.error('[snapshot/context] issuedRes error:', issuedRes.error)
+        if (cbRes.error)        console.error('[snapshot/context] cbRes error:', cbRes.error)
+        if (submittedRes.error) console.error('[snapshot/context] submittedRes error:', submittedRes.error)
         monthPolicies = issuedRes.data ?? []
 
         // Personal APV: issued_apv for the calendar month, minus actual chargebacks
@@ -519,6 +538,33 @@ export default async function handler(req, res) {
         ])
         for (const id of seedIds) teamApv(id)
         agentMonthApv = cumulApv
+
+        // Per-agent chargebacks for the month — snapshot_chargeback_apv only (no
+        // issued fallback), matching MonthlyAgentTotals' chargebackMemo so Step 3
+        // nets chargebacks identically.
+        for (const p of cbRes.data ?? []) {
+          const amt = parseCbApvSvr(p.snapshot_chargeback_apv)
+          if (!amt) continue
+          const key = p.sfg_id?.trim().toUpperCase()
+          if (!key) continue
+          chargebacksByAgent[key] = (chargebacksByAgent[key] ?? 0) + amt
+        }
+
+        // Per-agent distinct submit-week numbers for policies submitted this month,
+        // plus the set of agents who submitted anything (for the writers count).
+        const weekSets = {}
+        const submittedSet = new Set()
+        for (const p of submittedRes.data ?? []) {
+          const ym = svrYearMonth(p.submit_week) ?? svrYearMonth(p.submit_date)
+          if (!ym || ym.year !== yr || ym.month !== mo) continue
+          const key = p.sfg_id?.trim().toUpperCase()
+          if (!key) continue
+          submittedSet.add(key)
+          const wk = p.submit_week_num?.trim()
+          if (wk) (weekSets[key] ??= new Set()).add(wk)
+        }
+        for (const [key, set] of Object.entries(weekSets)) submittedWeeksByAgent[key] = [...set]
+        submittedInMonth = [...submittedSet]
       }
 
       const levelMap = buildLevelMap(promoRes.data ?? [])
@@ -533,6 +579,9 @@ export default async function handler(req, res) {
         promotions:     promoRes.data ?? [],
         monthPolicies,
         agentMonthApv,
+        chargebacksByAgent,
+        submittedWeeksByAgent,
+        submittedInMonth,
       })
     } catch (err) {
       console.error('[snapshot/context GET]', err)
