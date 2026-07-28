@@ -375,8 +375,11 @@ export default function MonthlyAgentTotalsPage() {
       // Past months use the level the agent HELD that month (reconstructed from
       // agent_promotions) so targets reflect what they were then chasing, not
       // their current level. Current/future months use their current level.
+      // Baseline '80' when no point-in-time contract level is known: a new agent
+      // with no promotions yet is still at 80% and targeting 85%, mirroring the
+      // API's current-month default (commission_contract ?? { level: '80' }).
       const asOfLevels   = isPastMonth ? levelAsOfMonth(agent.promotions, selMonthStr) : null
-      const curContract  = isPastMonth ? (asOfLevels.contract?.level   ?? null) : (agent.commission_contract?.level   ?? null)
+      const curContract  = isPastMonth ? (asOfLevels.contract?.level   ?? '80') : (agent.commission_contract?.level   ?? '80')
       const curLeader    = isPastMonth ? (asOfLevels.leadership?.level ?? null) : (agent.commission_leadership?.level ?? null)
       const nextConLvl   = nextContractLevel(curContract)
       const nextLeadLvl  = nextLeadershipLevel(curLeader)
