@@ -146,6 +146,7 @@ function processRows(csvRows, personnel, existingPolicies) {
     const rawCarrier   = getField(raw, 'Carrier', 'carrier', 'Company', 'company', 'Insurance Company')
     const rawPolicyNo  = getField(raw, 'Policy Number', 'policy_number', 'PolicyNumber', 'Policy No', 'PolicyNo', 'Policy #', 'Contract Number', 'ContractNumber')
     const rawSubmDate  = getField(raw, 'Submit Date', 'submit_date', 'SubmitDate', 'Date Submitted', 'DateSubmitted', 'App Date', 'AppDate', 'Application Date', 'Submission Date')
+    const rawRecvDate  = getField(raw, 'Receive Date', 'receive_date', 'ReceiveDate', 'Received Date', 'ReceivedDate', 'Date Received', 'DateReceived')
     const rawIssDate   = getField(raw, 'Issue Date', 'issue_date', 'IssueDate', 'Date Issued', 'DateIssued', 'Issued Date')
     const rawFace      = getField(raw, 'Face Amount', 'face_amount', 'FaceAmount', 'FaceAmt', 'Face', 'Coverage Amount', 'Death Benefit', 'Benefit Amount')
     const rawSubmApv   = getField(raw, 'APV')
@@ -164,7 +165,15 @@ function processRows(csvRows, personnel, existingPolicies) {
     const faceAmt    = parseNum(rawFace)
     const submApv    = parseNum(rawSubmApv)
 
-    const submitDateObj  = parseCSVDate(rawSubmDate)
+    // Opt's SubmitDate is when the app was keyed into Opt, which can lag the true
+    // ReceiveDate when an agent enters it late. They're meant to match, so bucket
+    // by the EARLIER of the two — a late Opt entry shouldn't push the app into a
+    // later week/month than it was actually written.
+    const submDateCand   = parseCSVDate(rawSubmDate)
+    const recvDateCand   = parseCSVDate(rawRecvDate)
+    const submitDateObj  = (submDateCand && recvDateCand)
+      ? (recvDateCand < submDateCand ? recvDateCand : submDateCand)
+      : (submDateCand || recvDateCand)
     const issueDateObj   = parseCSVDate(rawIssDate)
     const submitDateISO  = fmtISO(submitDateObj)
     const issueDateISO   = fmtISO(issueDateObj)

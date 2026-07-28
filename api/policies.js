@@ -807,6 +807,14 @@ export default async function handler(req, res) {
       for (const [col, val] of Object.entries(updates)) {
         if (ALLOWED_COLS.has(col)) coerced[col] = coerce(col, val)
       }
+      // submit_week is always derived from submit_date — never trust a client-
+      // supplied week. When the date changes, recompute the week here so an edit
+      // that moves submit_date across a month boundary can't leave a stale week
+      // (which would mis-bucket the policy into the wrong month's writer/APV counts).
+      if ('submit_date' in coerced) {
+        coerced.submit_week     = coerced.submit_date ? computeSubmitWeek(coerced.submit_date) : null
+        coerced.submit_week_num = coerced.submit_week ? computeSubmitWeekNum(coerced.submit_week) : null
+      }
       const { error } = await supabase.from('policies').update(coerced).eq('id', id)
       if (error) throw error
       return res.status(200).json({ ok: true })
