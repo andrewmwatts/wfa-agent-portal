@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import PublicLayout from '../../components/public/PublicLayout'
+import useIsMobile from '../../hooks/useIsMobile'
 
 // ── Symmetry business-month helpers ──────────────────────────────────────────
 
@@ -209,9 +210,12 @@ const MACC_IMAGE_URL =
 function MaccSchedule() {
   const [lightbox, setLightbox] = useState(false)
   const src = `${MACC_IMAGE_URL}?t=${Math.floor(Date.now() / 60000)}`
+  // Sticky only in the two-column layout. When the layout stacks (narrow
+  // screens) a pinned panel would let the calendars scroll up over it.
+  const isStacked = useIsMobile(720)
 
   return (
-    <div style={{ position: 'sticky', top: 64 }}>
+    <div style={isStacked ? undefined : { position: 'sticky', top: 64 }}>
       <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
         This Week
       </p>
