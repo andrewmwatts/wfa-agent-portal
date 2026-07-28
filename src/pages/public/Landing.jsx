@@ -72,12 +72,12 @@ export default function Landing() {
   return (
     <PublicLayout>
       {/* Hero banner */}
-      <div style={{ background: '#003539', padding: '48px 28px' }}>
+      <div style={{ background: '#003539', padding: 'clamp(32px, 6vw, 48px) clamp(16px, 4vw, 28px)' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px', fontFamily: 'Inter, sans-serif' }}>
             WATTS FAMILY AGENCY
           </p>
-          <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 32, fontWeight: 500, color: '#fff', margin: 0, lineHeight: 1.25 }}>
+          <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 'clamp(26px, 6vw, 32px)', fontWeight: 500, color: '#fff', margin: 0, lineHeight: 1.25 }}>
             Training resources for the field.
           </h1>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', maxWidth: 480, margin: '10px 0 0', lineHeight: 1.6, fontFamily: 'Inter, sans-serif' }}>
@@ -87,9 +87,9 @@ export default function Landing() {
       </div>
 
       {/* Quick links */}
-      <div style={{ background: '#fff', padding: '32px 28px' }}>
+      <div style={{ background: '#fff', padding: '32px clamp(16px, 4vw, 28px)' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             {QUICK_LINKS.map(card => (
               <div key={card.title}
                 style={{ background: '#fff', border: '0.5px solid #DDE6E8', borderRadius: 10, padding: '20px 20px 16px' }}>
