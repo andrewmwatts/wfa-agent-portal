@@ -6,6 +6,7 @@ import { getBaseshopIds } from '../utils/agencyScope'
 import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import { getPolicyStatusClass } from '../utils/status'
+import { computeChargebackExempt } from '../components/PolicyEditModal'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -770,6 +771,17 @@ function toInputDate(str) {
 
 const LAPSE_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
+const CONSERVATION_STATUS_OPTIONS = [
+  'Cancelled',
+  'Death',
+  'Declined, On Snapshot',
+  'First Premium Not Paid',
+  'Lapse pending',
+  'Lapsed',
+  'Not Taken, On Snapshot',
+  'Withdrawn, On Snapshot',
+]
+
 const LAPSE_COL_MAP = {
   carrier:             'carrier',
   policy_type:         'policy_name',
@@ -814,9 +826,40 @@ function LapseModal({ policy: p, onClose, canWrite, onUpdate, agentPhone, viewer
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function startEdit() { setDraft({ ...p }); setEditing(true); setSaveError(null) }
+  function startEdit() {
+    const initialDraft = { ...p }
+    // Seed Chargeback Exempt from the carrier/date rule when it hasn't been set yet.
+    if (initialDraft.chargeback_exempt == null && initialDraft.conservation_status?.trim()) {
+      const exempt = computeChargebackExempt(
+        initialDraft.conservation_status,
+        initialDraft.conservation_date,
+        initialDraft.issue_date,
+        initialDraft.carrier,
+      )
+      if (exempt !== null) initialDraft.chargeback_exempt = exempt
+    }
+    setDraft(initialDraft)
+    setEditing(true)
+    setSaveError(null)
+  }
   function cancelEdit() { setEditing(false); setDraft(null); setSaveError(null) }
   function setField(key, value) { setDraft(d => ({ ...d, [key]: value })) }
+
+  // Conservation status / date changes re-run the Chargeback Exempt rule
+  // (carrier + issue date + status) so the box auto-checks to match.
+  function setConservationField(key, value) {
+    setDraft(d => {
+      const updated = { ...d, [key]: value }
+      const exempt = computeChargebackExempt(
+        updated.conservation_status,
+        updated.conservation_date,
+        updated.issue_date,
+        updated.carrier,
+      )
+      if (exempt !== null) updated.chargeback_exempt = exempt
+      return updated
+    })
+  }
 
   async function handleRemoveConservation() {
     setRemoving(true)
@@ -979,8 +1022,18 @@ function LapseModal({ policy: p, onClose, canWrite, onUpdate, agentPhone, viewer
           <ModalSection title="Conservation">
             {editing ? (
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <LapseEditField label="Status"              value={draft.conservation_status}  onChange={v => setField('conservation_status', v)} />
-                <LapseEditField label="Expected Lapse Date" value={toInputDate(draft.conservation_date)} onChange={v => setField('conservation_date', v)} type="date" />
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
+                  <select
+                    value={draft.conservation_status ?? ''}
+                    onChange={e => setConservationField('conservation_status', e.target.value)}
+                    className={LAPSE_INPUT_CLS}
+                  >
+                    <option value="">—</option>
+                    {CONSERVATION_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <LapseEditField label="Expected Lapse Date" value={toInputDate(draft.conservation_date)} onChange={v => setConservationField('conservation_date', v)} type="date" />
                 <LapseEditField label="Chargeback Month"    value={draft.cb_month ?? ''}  onChange={v => setField('cb_month', v)} />
                 <LapseEditField label="Chargeback APV"      value={draft.cb_apv ?? ''}    onChange={v => setField('cb_apv', v)} />
                 <div className="col-span-2 pt-1">
