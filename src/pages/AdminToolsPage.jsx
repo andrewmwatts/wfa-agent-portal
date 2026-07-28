@@ -27,6 +27,7 @@ const TABS = [
   { key: 'errors',   label: 'Parse Errors'          },
   { key: 'messages', label: 'System Messages'       },
   { key: 'videos',   label: 'Video Library'         },
+  { key: 'macc',     label: 'MACC Schedule'         },
 ]
 
 const PORTAL_PAGES = [
@@ -94,6 +95,7 @@ export default function AdminToolsPage() {
       {tab === 'errors'    && <ParseErrorsTab        adminFetch={adminFetch} />}
       {tab === 'messages'  && <SystemMessagesTab     adminFetch={adminFetch} />}
       {tab === 'videos'    && <VideoLibraryTab       ah={ah} />}
+      {tab === 'macc'      && <MaccScheduleTab       ah={ah} />}
     </main>
   )
 }
@@ -1399,6 +1401,147 @@ function VideoLibraryTab({ ah }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Tab 8: MACC Schedule Upload ──────────────────────────────────────────────
+
+const MACC_PUBLIC_URL =
+  'https://vmsiaijeymiepnkkdawm.supabase.co/storage/v1/object/public/MACC%20schedule/current.jpg'
+
+function MaccScheduleTab({ ah }) {
+  const [file,      setFile]      = useState(null)
+  const [preview,   setPreview]   = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [success,   setSuccess]   = useState(false)
+  const [err,       setErr]       = useState('')
+  const [cacheBust, setCacheBust] = useState(() => Date.now())
+  const inputRef = useRef(null)
+
+  function handleFile(f) {
+    if (!f) return
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if (!allowed.includes(f.type)) { setErr('Only JPEG, PNG, or WebP images are accepted.'); return }
+    setFile(f)
+    setErr('')
+    setSuccess(false)
+    const reader = new FileReader()
+    reader.onload = e => setPreview(e.target.result)
+    reader.readAsDataURL(f)
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    handleFile(e.dataTransfer.files[0])
+  }
+
+  async function upload() {
+    if (!file) return
+    setUploading(true); setErr(''); setSuccess(false)
+    try {
+      const reader = new FileReader()
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload  = e => resolve(e.target.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch('/api/macc-upload', {
+        method: 'POST',
+        headers: { ...ah(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: base64, mimeType: file.type }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || String(res.status))
+      setSuccess(true)
+      setFile(null)
+      setPreview(null)
+      setCacheBust(Date.now())
+    } catch (e) { setErr(e.message) }
+    finally { setUploading(false) }
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-1">Upload this week's schedule</p>
+        <p className="text-xs text-gray-400 dark:text-white/40 mb-4">
+          Overwrites the current image instantly — no redeploy needed. Upload each Saturday morning.
+        </p>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => e.preventDefault()}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          className="border-2 border-dashed border-gray-200 dark:border-white/15 rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-accent/40 hover:bg-accent/5 transition-colors"
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={e => handleFile(e.target.files[0])}
+          />
+          {preview ? (
+            <img src={preview} alt="Preview" className="max-h-64 rounded-lg object-contain" />
+          ) : (
+            <>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 dark:text-white/20">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p className="text-sm text-gray-400 dark:text-white/40">Drag & drop or click to select image</p>
+              <p className="text-xs text-gray-300 dark:text-white/20">JPEG, PNG, or WebP</p>
+            </>
+          )}
+        </div>
+
+        {file && (
+          <p className="text-xs text-gray-500 dark:text-white/50 mt-2">
+            {file.name} · {(file.size / 1024).toFixed(0)} KB
+          </p>
+        )}
+
+        {err     && <p className="text-xs text-red-500 mt-2">{err}</p>}
+        {success && <p className="text-xs text-green-600 dark:text-green-400 mt-2">✓ Schedule updated successfully.</p>}
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={upload}
+            disabled={!file || uploading}
+            className={BTN + ' bg-accent text-white hover:bg-accent/90 disabled:opacity-40'}
+          >
+            {uploading ? 'Uploading…' : 'Upload Schedule'}
+          </button>
+          {file && (
+            <button
+              onClick={() => { setFile(null); setPreview(null); setErr('') }}
+              className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </Card>
+
+      {/* Current live image */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 mb-3">
+          Currently live
+        </p>
+        <img
+          key={cacheBust}
+          src={`${MACC_PUBLIC_URL}?t=${cacheBust}`}
+          alt="Current MACC schedule"
+          className="rounded-xl border border-gray-200 dark:border-white/10 w-full max-w-xl"
+          onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'block' }}
+        />
+        <p style={{ display: 'none' }} className="text-sm text-gray-400 dark:text-white/40">
+          No schedule uploaded yet.
+        </p>
+      </div>
     </div>
   )
 }
