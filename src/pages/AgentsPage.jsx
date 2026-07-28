@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { OWNER_ROLES } from '../config/navSections'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import AddAgentModal from '../components/AddAgentModal'
 import HireMatchingModal from '../components/HireMatchingModal'
 import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
+
+// Leaflet is heavy — split it out so it only loads when the Map tab is opened
+const AgentMap = lazy(() => import('../components/agents/AgentMap'))
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -61,7 +65,9 @@ export default function AgentsPage() {
   const { theme }                      = useTheme()
 
   const isSuperAdmin = userProfile?.role === 'super_admin'
+  const canViewMap   = OWNER_ROLES.has(userProfile?.role)
 
+  const [tab, setTab]               = useState('list')
   const [personnel, setPersonnel]   = useState([])
   const [loading, setLoading]       = useState(false)
   const [mode, setMode]             = useState('baseshop')
@@ -277,8 +283,34 @@ export default function AgentsPage() {
         </div>
       )}
 
+      {/* ── Tabs ───────────────────────────────────────────────────────────── */}
+      {canViewMap && (
+        <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2">
+          {[{ key: 'list', label: 'List' }, { key: 'map', label: 'Map' }].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === t.key
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Map ────────────────────────────────────────────────────────────── */}
+      {canViewMap && tab === 'map' && (
+        <Suspense fallback={<div className="py-20 text-center text-sm text-gray-400 dark:text-white/30">Loading map…</div>}>
+          <AgentMap personnel={rows} loading={loading} />
+        </Suspense>
+      )}
+
       {/* ── Table ──────────────────────────────────────────────────────────── */}
-      {loading ? (
+      {tab === 'list' && (loading ? (
         <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden animate-pulse">
           <div className="p-4 space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -356,7 +388,7 @@ export default function AgentsPage() {
             </table>
           </div>
         </div>
-      )}
+      ))}
 
       {/* ── Modal ──────────────────────────────────────────────────────────── */}
       {selected && (
