@@ -35,11 +35,13 @@ function statusOf(p) {
   return STATUSES.includes(p.status) ? p.status : NO_STATUS
 }
 
-// Marker color reflects the dominant status in that ZIP
-function dominantStatus(agents) {
-  const counts = {}
-  for (const a of agents) counts[statusOf(a)] = (counts[statusOf(a)] ?? 0) + 1
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+// A ZIP's pin takes the color of its highest-priority status, not the most
+// common one: Active > Stalled > Lapsed > Terminated > No status. So one active
+// agent turns the whole pin green, and it only goes red if everyone's terminated.
+const STATUS_PRIORITY = ['Active', 'Stalled', 'Lapsed', 'Terminated', NO_STATUS]
+function pinStatus(agents) {
+  const present = new Set(agents.map(statusOf))
+  return STATUS_PRIORITY.find(s => present.has(s)) ?? NO_STATUS
 }
 
 export default function AgentMap({ personnel, loading }) {
@@ -148,7 +150,7 @@ export default function AgentMap({ personnel, loading }) {
       if (!c) continue
       const n = agents.length
       const d = Math.round(26 + Math.min(n, 20) * 0.9)
-      const color = STATUS_HEX[dominantStatus(agents)]
+      const color = STATUS_HEX[pinStatus(agents)]
       const marker = L.marker([c.lat, c.lng], {
         agentCount: n,
         agents,
