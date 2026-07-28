@@ -318,11 +318,11 @@ export default function CalendarPage() {
 
   return (
     <PublicLayout>
-      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px 28px 60px' }}>
+      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px clamp(16px, 4vw, 28px) 60px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
-          {/* Two-column layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
+          {/* Two-column layout — stacks (MACC above calendars) on narrow screens */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'clamp(24px, 4vw, 48px)', alignItems: 'start' }}>
 
             {/* Left — MACC dialer schedule */}
             <MaccSchedule />

@@ -13,7 +13,7 @@ export default function FlatView({ videos, onVideoClick }) {
 
   return (
     <div style={{ background: 'var(--pub-bg-page)', paddingBottom: 40 }}>
-      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px' }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 clamp(16px, 4vw, 28px)' }}>
         {videos.length === 0 ? (
           <p style={{ textAlign: 'center', padding: '48px 0', color: '#7A9499', fontSize: 14, fontFamily: 'Inter, sans-serif' }}>
             No videos found.

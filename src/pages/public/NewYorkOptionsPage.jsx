@@ -77,7 +77,7 @@ function Section({ title, children, shade }) {
 export default function NewYorkOptionsPage() {
   return (
     <PublicLayout>
-      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px 28px 60px' }}>
+      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px clamp(16px, 4vw, 28px) 60px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
           {/* Back link */}
@@ -102,7 +102,7 @@ export default function NewYorkOptionsPage() {
           </p>
 
           {/* Two-column: Term + Whole Life */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
             <Section title="Term">
               <ProductList items={TERM} />
             </Section>
@@ -112,7 +112,7 @@ export default function NewYorkOptionsPage() {
           </div>
 
           {/* Two-column: Accidental + Critical Illness */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
             <Section title="Accidental" shade>
               <ProductList items={ACCIDENTAL} />
             </Section>

@@ -38,8 +38,8 @@ export default function SeriesStrip({ slug, videos, totalCount, onSeeAll, onVide
         </button>
       </div>
 
-      {/* 4-column card grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+      {/* Card grid — 4 across on desktop, reflows to 2 on narrow screens */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {videos.slice(0, 4).map(v => (
           <VideoCard key={v.id} video={v} onClick={() => onVideoClick(v)} />
         ))}

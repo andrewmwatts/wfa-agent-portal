@@ -95,7 +95,7 @@ export default function VideoLibrary() {
   return (
     <PublicLayout>
       {/* Page title + search — not sticky */}
-      <div style={{ background: '#fff', padding: '28px 28px 16px' }}>
+      <div style={{ background: '#fff', padding: '28px clamp(16px, 4vw, 28px) 16px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 24, fontWeight: 500, color: '#003539', margin: '0 0 6px' }}>
             Training video library
@@ -112,7 +112,7 @@ export default function VideoLibrary() {
         background: '#fff', borderBottom: '0.5px solid #DDE6E8',
         position: 'sticky', top: 52, zIndex: 30,
       }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px' }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 clamp(16px, 4vw, 28px)' }}>
           {/* Chips row */}
           <div style={{ padding: '10px 0 12px' }}>
             <ChipRow activeSeries={activeSeries} onSelect={handleSeriesSelect} marginTop={0} />

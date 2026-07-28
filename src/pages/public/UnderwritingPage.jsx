@@ -86,12 +86,12 @@ function Section({ title, descriptor, children, shade }) {
 export default function UnderwritingPage() {
   return (
     <PublicLayout>
-      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px 28px 60px' }}>
+      <div style={{ background: '#fff', minHeight: 'calc(100vh - 52px)', padding: '36px clamp(16px, 4vw, 28px) 60px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24, marginBottom: 32 }}>
-            <div style={{ maxWidth: 640 }}>
+          {/* Header — wraps the CTA below the intro on narrow screens */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24, marginBottom: 32, flexWrap: 'wrap' }}>
+            <div style={{ maxWidth: 640, flex: '1 1 320px' }}>
               <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
                 Underwriting Guidelines
               </p>
@@ -114,7 +114,7 @@ export default function UnderwritingPage() {
           </div>
 
           {/* Two-column: Term + Whole Life */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
             <Section title="Term" descriptor="Most coverage for the premium, but only valid for a limited time. Target age: 20–60">
               <ProductList items={TERM} />
             </Section>
@@ -124,7 +124,7 @@ export default function UnderwritingPage() {
           </div>
 
           {/* Two-column: GIWL + Accidental */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
             <Section title="GIWL" descriptor="Extremely unhealthy clients. If insured dies within the first two years due to non-accidental causes, beneficiary receives premiums paid plus 10% rather than the full face value." shade>
               <ProductList items={GIWL} />
             </Section>

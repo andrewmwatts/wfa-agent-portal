@@ -23,7 +23,7 @@ export default function StripsView({ videos, onSeriesSelect, onVideoClick }) {
 
   return (
     <div style={{ background: 'var(--pub-bg-page)', padding: '24px 0 40px' }}>
-      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 clamp(16px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: 32 }}>
         {strips.map((slug, i) => (
           <SeriesStrip
             key={slug}
