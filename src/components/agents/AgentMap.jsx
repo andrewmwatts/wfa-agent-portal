@@ -24,6 +24,13 @@ function normalizeZip(raw) {
   return m ? m[1] : null
 }
 
+// Only real personnel plot — guest/dummy and any other off-format records
+// (SFG-GUEST-001, SFG-DUMMY-002, …) are excluded from the map and its tallies.
+const SFG_ID_RE = /^SFG\d{7}$/
+function isRealAgent(p) {
+  return SFG_ID_RE.test((p.sfg_id ?? '').trim())
+}
+
 function statusOf(p) {
   return STATUSES.includes(p.status) ? p.status : NO_STATUS
 }
@@ -46,32 +53,35 @@ export default function AgentMap({ personnel, loading }) {
   const [centroids, setCentroids] = useState(null)   // zip → {lat,lng}
   const [centroidErr, setCentroidErr] = useState(null)
   const [enabled, setEnabled] = useState(() => new Set([...STATUSES, NO_STATUS]))
-  const [selected, setSelected] = useState(null)     // { zip, agents }
+  const [selected, setSelected] = useState(null)     // { zip?, agents, cluster? }
+
+  // Real agents only — drops guest/dummy and any non-SFG####### records
+  const roster = useMemo(() => personnel.filter(isRealAgent), [personnel])
 
   // ── Status counts across the full (unfiltered) roster ────────────────────
   const statusCounts = useMemo(() => {
     const c = {}
-    for (const p of personnel) c[statusOf(p)] = (c[statusOf(p)] ?? 0) + 1
+    for (const p of roster) c[statusOf(p)] = (c[statusOf(p)] ?? 0) + 1
     return c
-  }, [personnel])
+  }, [roster])
 
   // ── Agents passing the status filter, with a usable ZIP ──────────────────
   const { byZip, unmappable } = useMemo(() => {
     const groups = {}
     let unmappable = 0
-    for (const p of personnel) {
+    for (const p of roster) {
       if (!enabled.has(statusOf(p))) continue
       const zip = normalizeZip(p.zip)
       if (!zip) { unmappable++; continue }
       ;(groups[zip] ??= []).push(p)
     }
     return { byZip: groups, unmappable }
-  }, [personnel, enabled])
+  }, [roster, enabled])
 
   // ── Load centroids for the ZIPs actually in use ──────────────────────────
   useEffect(() => {
     const zips = [...new Set(
-      personnel.map(p => normalizeZip(p.zip)).filter(Boolean)
+      roster.map(p => normalizeZip(p.zip)).filter(Boolean)
     )]
     if (!zips.length) { setCentroids({}); return }
 
@@ -90,7 +100,7 @@ export default function AgentMap({ personnel, loading }) {
       if (!cancelled) { setCentroids(out); setCentroidErr(null) }
     })()
     return () => { cancelled = true }
-  }, [personnel])
+  }, [roster])
 
   // ── Init map once ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -114,6 +124,9 @@ export default function AgentMap({ personnel, loading }) {
 
     const cluster = L.markerClusterGroup({
       showCoverageOnHover: false,
+      // Clicking a cluster opens its combined roster instead of zooming/splitting
+      zoomToBoundsOnClick: false,
+      spiderfyOnMaxZoom: false,
       maxClusterRadius: 55,
       // Cluster label counts AGENTS, not ZIPs
       iconCreateFunction(c) {
@@ -138,6 +151,7 @@ export default function AgentMap({ personnel, loading }) {
       const color = STATUS_HEX[dominantStatus(agents)]
       const marker = L.marker([c.lat, c.lng], {
         agentCount: n,
+        agents,
         icon: L.divIcon({
           html: `<div style="width:${d}px;height:${d}px;border-radius:50%;background:${color};color:#fff;
                  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;
@@ -149,6 +163,12 @@ export default function AgentMap({ personnel, loading }) {
       marker.on('click', () => setSelected({ zip, agents }))
       cluster.addLayer(marker)
     }
+
+    // A cluster represents several ZIPs — show everyone it rolls up
+    cluster.on('clusterclick', (e) => {
+      const agents = e.layer.getAllChildMarkers().flatMap(m => m.options.agents ?? [])
+      setSelected({ agents, cluster: true })
+    })
 
     map.addLayer(cluster)
     clusterRef.current = cluster
@@ -162,10 +182,13 @@ export default function AgentMap({ personnel, loading }) {
     }
   }, [byZip, centroids])
 
-  // Keep the panel in sync when filters remove the selected ZIP
+  // Keep the panel in sync when filters change the underlying data
   useEffect(() => {
-    if (selected && !byZip[selected.zip]) setSelected(null)
-    else if (selected) setSelected(s => ({ ...s, agents: byZip[s.zip] }))
+    if (!selected) return
+    // Cluster rollups are rebuilt on every filter change — just close the panel
+    if (selected.cluster) { setSelected(null); return }
+    if (!byZip[selected.zip]) setSelected(null)
+    else setSelected(s => ({ ...s, agents: byZip[s.zip] }))
   }, [byZip]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggle(status) {
@@ -231,10 +254,23 @@ export default function AgentMap({ personnel, loading }) {
             <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10 flex items-start gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {selected.agents[0]?.city || 'ZIP'} {selected.agents[0]?.state || ''}
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-white/40 font-mono">{selected.zip}</p>
+                  {selected.cluster ? (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {selected.agents.length} agent{selected.agents.length !== 1 ? 's' : ''} in this area
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-white/40">
+                        {new Set(selected.agents.map(a => normalizeZip(a.zip))).size} ZIP codes
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {selected.agents[0]?.city || 'ZIP'} {selected.agents[0]?.state || ''}
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-white/40 font-mono">{selected.zip}</p>
+                    </>
+                  )}
                 </div>
                 <button
                   onClick={() => setSelected(null)}
@@ -260,11 +296,17 @@ export default function AgentMap({ personnel, loading }) {
                           </span>
                         )}
                       </div>
-                      {a.upline_name && (
-                        <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5 ml-3.5 truncate">
-                          ↑ {a.upline_name}
-                        </p>
-                      )}
+                      {selected.cluster
+                        ? (a.city || a.state) && (
+                            <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5 ml-3.5 truncate">
+                              {[a.city, a.state].filter(Boolean).join(', ')}
+                            </p>
+                          )
+                        : a.upline_name && (
+                            <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5 ml-3.5 truncate">
+                              ↑ {a.upline_name}
+                            </p>
+                          )}
                     </div>
                   ))}
               </div>
