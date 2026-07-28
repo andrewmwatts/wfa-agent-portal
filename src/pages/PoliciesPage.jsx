@@ -71,7 +71,7 @@ export default function PoliciesPage() {
   const [dateEnd,   setDateEnd]   = useState('')
 
   // Sort
-  const [sortBy, setSortBy] = useState('submit_date')
+  const [sortBy, setSortBy] = useState('agent')
 
   // Pagination
   const PAGE_SIZE = 50
