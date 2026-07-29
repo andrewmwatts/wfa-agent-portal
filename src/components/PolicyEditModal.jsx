@@ -35,7 +35,7 @@ export function computeChargebackExempt(conservation_status, conservation_date, 
     }
     if (status === 'lapsed' || status === 'lapse pending') {
       const mo = monthsBetween(issue_date, conservation_date)
-      if (mo !== null && mo > 14) return false
+      if (mo !== null && mo < 14) return false
     }
   }
 

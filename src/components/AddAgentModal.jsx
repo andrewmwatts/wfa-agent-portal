@@ -168,14 +168,14 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
                 <input type="text" value={form.phone} onChange={e => set('phone', e.target.value)}
                   className={inputCls()} />
               </Field>
-              <Field label="City">
-                <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
+              <Field label="Street Address">
+                <input type="text" value={form.address} onChange={e => set('address', e.target.value)}
                   className={inputCls()} />
               </Field>
             </Row>
             <Row>
-              <Field label="Street Address">
-                <input type="text" value={form.address} onChange={e => set('address', e.target.value)}
+              <Field label="City">
+                <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
                   className={inputCls()} />
               </Field>
               <Field label="State">

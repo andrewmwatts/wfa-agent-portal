@@ -574,7 +574,7 @@ export default function PoliciesPage() {
           query={quickSearchQuery}
           onQueryChange={setQuickSearchQuery}
           onSelect={openFromSearch}
-          onClose={() => setQuickSearchOpen(false)}
+          onClose={() => { setQuickSearchOpen(false); setQuickSearchQuery('') }}
           optionStyle={optionStyle}
         />
       )}
