@@ -148,6 +148,29 @@ export function nextContractLevel(currentLevel) {
 }
 
 /**
+ * Returns the contract level immediately below the given level string,
+ * or null if already at the minimum (or the level is unrecognized).
+ *
+ * @param {string | null} currentLevel  e.g. '95'
+ */
+export function previousContractLevel(currentLevel) {
+  const ORDER = Object.keys(CONTRACT_RANK).sort((a, b) => CONTRACT_RANK[a] - CONTRACT_RANK[b])
+  if (!currentLevel) return null
+  const idx = ORDER.indexOf(String(currentLevel))
+  return idx <= 0 ? null : ORDER[idx - 1]
+}
+
+/**
+ * Numeric rank for a contract level string (higher = more senior), or null
+ * if the value isn't a recognized contract level (e.g. a leadership title).
+ *
+ * @param {string | null} level
+ */
+export function contractLevelRank(level) {
+  return CONTRACT_RANK[String(level)] ?? null
+}
+
+/**
  * Returns the next leadership level above the given title, or null if AO.
  *
  * @param {string | null} currentLeadership  e.g. 'TL'

@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { fmtCurrency as fmtAmt } from '../../utils/format'
-import { nextContractLevel, nextLeadershipLevel } from '../../../shared/commissionLevel'
+import {
+  nextContractLevel, nextLeadershipLevel, previousContractLevel, contractLevelRank,
+} from '../../../shared/commissionLevel'
 import {
   buildDownlineTree, apvCapForLevel, computeTeamIssued, computeMaxLegApv,
   legRulePreventsQual, fridayWeekCount, submissionRequirementMet,
@@ -282,15 +284,34 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     return !!(q?.slingshot && apv >= Number(q.slingshot))
   }
 
-  // Condition A: agent has writing downlines this month (structural impact on promotion)
-  // Condition B: agent's contract level equals their upline's contract level (hierarchy parity)
-  function hierarchyFlags(sfgId) {
+  // Carrier appointment rule: two vertically-stacked agents can't sit at the
+  // same-or-higher contract level at the carrier, even though they stay
+  // stacked internally in Symmetry. Two flags, both contract-level only:
+  //
+  //   moveOut    — this agent's current contract level has reached or passed
+  //                their upline's current level → carrier paperwork needed
+  //                to detach them from the upline.
+  //   moveBackIn — this agent (as an upline) just promoted, and the new
+  //                level now exceeds a direct downline who was previously
+  //                tied-or-ahead of them → carrier paperwork needed to
+  //                reattach that downline underneath them again.
+  function restructureFlags(sfgId) {
     const id     = sfgId?.toUpperCase()
     const person = personnelMap[id]
-    const condA  = personnel.some(p => p.upline_sfg_id?.toUpperCase() === id && (issuedPolsBySfgId[p.sfg_id?.toLowerCase()]?.length ?? 0) > 0)
     const upline = personnelMap[person?.upline_sfg_id?.toUpperCase()]
-    const condB  = !!(upline && upline.commission_contract?.level && upline.commission_contract.level === person?.commission_contract?.level)
-    return { condA, condB, any: condA || condB }
+
+    const myRank     = contractLevelRank(person?.commission_contract?.level)
+    const uplineRank = contractLevelRank(upline?.commission_contract?.level)
+    const moveOut     = !!(upline && myRank != null && uplineRank != null && myRank >= uplineRank)
+
+    const prevRank = contractLevelRank(previousContractLevel(person?.commission_contract?.level))
+    const moveBackIn = myRank != null && prevRank != null && personnel.some(p => {
+      if (p.upline_sfg_id?.toUpperCase() !== id) return false
+      const downRank = contractLevelRank(p.commission_contract?.level)
+      return downRank != null && downRank >= prevRank && downRank < myRank
+    })
+
+    return { moveOut, moveBackIn, any: moveOut || moveBackIn }
   }
 
   // Team qualifying APV (capped for the target level, net chargebacks) + largest leg.
@@ -317,7 +338,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       const lowerId = person.sfg_id?.toLowerCase()
       if (!sfgId) continue
 
-      const flags = hierarchyFlags(sfgId)
+      const flags = restructureFlags(sfgId)
 
       // ── Contract track ────────────────────────────────────────────────────
       const nextContract = nextContractLevel(person.commission_contract?.level ?? '80')
@@ -430,7 +451,44 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     a => a.action_type === 'promotion' || a.action_type === 'manual_promotion'
   )
 
-  const unresolvedFlags = finalizedActions.filter(a => hierarchyFlags(a.sfg_id).any && !a.hierarchy_flag_noted)
+  // Intermediate month logs (e.g. Month 1 of 2) recorded this cycle — these drop
+  // out of "Qualifying Months" above once logged, so surface them here instead
+  // of letting them disappear until the agent finally qualifies.
+  const intermediateActions = useMemo(() => {
+    return promotions
+      .filter(a => a.action_type === 'qualifying_month')
+      .map(a => {
+        const sfgId    = a.sfg_id?.toUpperCase()
+        const existing = sfgId && a.level ? agentPromoMap[`${sfgId}||${a.level}`] : null
+        const totalMonths = Number(getThresholds(a.level)?.months) || 2
+        return { ...a, person: personnelMap[sfgId], existing, totalMonths }
+      })
+      .sort((a, b) => (a.person?.opt_name ?? '').localeCompare(b.person?.opt_name ?? ''))
+  }, [promotions, agentPromoMap, personnelMap, qualByLevel])
+
+  const LEADERSHIP_LEVELS = new Set(['TL', 'KL', 'AO'])
+
+  // Restructure flags are contract-level only (leadership titles don't carry
+  // a carrier appointment level, so the same-level-as-upline rule doesn't apply).
+  const unresolvedFlags = finalizedActions.filter(
+    a => !LEADERSHIP_LEVELS.has(a.level) && restructureFlags(a.sfg_id).any && !a.hierarchy_flag_noted
+  )
+
+  // Reconstructs the Jotform copy text for an already-finalized promotion —
+  // standard final-month and slingshot both land here (both post action_type
+  // 'promotion'), so this covers both instead of only the pre-finalize preview
+  // in the Qualifying Months section above, which disappears once logged.
+  function finalizedJotformLines(a) {
+    const sfgId = a.sfg_id?.toUpperCase()
+    const level = a.level
+    const person = personnelMap[sfgId]
+    if (!sfgId || !level || !person) return null
+    const existing  = agentPromoMap[`${sfgId}||${level}`] ?? null
+    const promoType = existing?.is_slingshot ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
+    const { teamApv, writers } = teamNumbers(sfgId.toLowerCase(), level)
+    const monthNum = a.month_number ?? (existing?.month_3 ? 3 : existing?.month_2 ? 2 : 1)
+    return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth, existing)
+  }
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   async function logMonth(sfgId, monthNum, promoType, targetLevel, existing, totalMonths, track) {
@@ -677,11 +735,15 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                     }`}>
                       {isFinal ? `FINAL — ${promoType}` : `Month ${monthNum}/${totalMonths} — ${promoType}`}
                     </span>
-                    {flags.condA && (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400">Condition A</span>
+                    {track === 'contract' && flags.moveOut && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400" title="New level reaches or passes their upline's current level — carrier paperwork needed to detach them from their upline (stays stacked in Symmetry)">
+                        Restructure: Move Out
+                      </span>
                     )}
-                    {flags.condB && (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">Condition B</span>
+                    {track === 'contract' && flags.moveBackIn && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400" title="This promotion puts them back above a downline that was previously tied-or-ahead — carrier paperwork needed to reattach that downline underneath them">
+                        Restructure: Move Back In
+                      </span>
                     )}
                     {slingEligible && (
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">⚡ Slingshot eligible</span>
@@ -729,18 +791,6 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                           </button>
                         )}
 
-                        {!isFinal && (
-                          <button
-                            onClick={() => setJotformOpen(prev => {
-                              const s = new Set(prev)
-                              s.has(jotformKey) ? s.delete(jotformKey) : s.add(jotformKey)
-                              return s
-                            })}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 dark:text-white/50 border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5">
-                            {jotformOpen.has(jotformKey) ? 'Hide Jotform' : 'Show Jotform'}
-                          </button>
-                        )}
-
                         <button
                           onClick={() => skipAgent(sfgId, targetLevel)}
                           disabled={!!saving}
@@ -756,6 +806,42 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           </div>
         )}
       </section>
+
+      {/* ── B2: Progress Logged This Cycle ─────────────────────────────────────── */}
+      {intermediateActions.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+            Progress Logged This Cycle <span className="ml-1 text-xs font-normal text-gray-400">({intermediateActions.length})</span>
+          </h2>
+          <div className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
+                <tr>
+                  {['Agent', 'Level', 'Progress', 'Month 1', 'Month 2', 'Notes'].map((h, i) => (
+                    <th key={i} className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-white/50">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/10">
+                {intermediateActions.map(a => (
+                  <tr key={a.id}>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{a.person?.opt_name ?? a.sfg_id}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                        Month {a.month_number}/{a.totalMonths}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.existing?.month_1 ? fmtMonth(a.existing.month_1) : '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.existing?.month_2 ? fmtMonth(a.existing.month_2) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400 dark:text-white/40">{a.notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* ── C: Promotions Finalized ────────────────────────────────────────────── */}
       {finalizedActions.length > 0 && (
@@ -774,39 +860,79 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/10">
                 {finalizedActions.map(a => {
-                  const person = personnelMap[a.sfg_id?.toUpperCase()]
-                  const flags  = hierarchyFlags(a.sfg_id)
+                  const person    = personnelMap[a.sfg_id?.toUpperCase()]
+                  // Restructure flags are contract-level only — leadership
+                  // titles don't carry a carrier appointment level.
+                  const flags     = LEADERSHIP_LEVELS.has(a.level)
+                    ? { moveOut: false, moveBackIn: false, any: false }
+                    : restructureFlags(a.sfg_id)
+                  const jfKey     = a.sfg_id?.toUpperCase() + '||' + a.level
+                  const jfOpen    = jotformOpen.has(jfKey)
+                  const canShowJf = !!a.level && a.action_type !== 'manual_promotion'
                   return (
-                    <tr key={a.id}>
-                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{person?.opt_name ?? a.sfg_id}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/50 capitalize">{(a.action_type ?? '').replace('_', ' ')}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/50">{person?.commission_level ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        {a.jotform_submitted_at
-                          ? <span className="text-xs text-green-600 dark:text-green-400">✓ Submitted</span>
-                          : !readOnly
-                            ? <button onClick={() => submitJotform(a.id)} disabled={saving === a.id + '-jf'}
-                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-gray-600 dark:text-white/60 border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50">
-                                {saving === a.id + '-jf' ? 'Saving…' : 'Mark Submitted'}
+                    <Fragment key={a.id}>
+                      <tr>
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{person?.opt_name ?? a.sfg_id}</td>
+                        <td className="px-4 py-3 text-gray-500 dark:text-white/50 capitalize">{(a.action_type ?? '').replace('_', ' ')}</td>
+                        <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ?? '—'}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {a.jotform_submitted_at
+                              ? <span className="text-xs text-green-600 dark:text-green-400">✓ Submitted</span>
+                              : !readOnly
+                                ? <button onClick={() => submitJotform(a.id)} disabled={saving === a.id + '-jf'}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-semibold text-gray-600 dark:text-white/60 border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50">
+                                    {saving === a.id + '-jf' ? 'Saving…' : 'Mark Submitted'}
+                                  </button>
+                                : <span className="text-xs text-gray-400">—</span>
+                            }
+                            {canShowJf && (
+                              <button
+                                onClick={() => setJotformOpen(prev => {
+                                  const s = new Set(prev)
+                                  s.has(jfKey) ? s.delete(jfKey) : s.add(jfKey)
+                                  return s
+                                })}
+                                className="text-xs text-accent hover:text-accent/80 font-medium">
+                                {jfOpen ? 'Hide' : 'View'} Jotform
                               </button>
-                            : <span className="text-xs text-gray-400">—</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3">
-                        {flags.any
-                          ? a.hierarchy_flag_noted
-                            ? <span className="text-xs text-green-600 dark:text-green-400">✓ Noted</span>
-                            : !readOnly
-                              ? <button onClick={() => noteFlag(a.id)} disabled={saving === a.id}
-                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/30 hover:bg-orange-50 dark:hover:bg-orange-500/10 disabled:opacity-50">
-                                  {saving === a.id ? 'Saving…' : 'Note Flags'}
-                                </button>
-                              : <span className="text-xs text-orange-500">⚠ Unresolved</span>
-                          : <span className="text-xs text-gray-300 dark:text-white/20">—</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 dark:text-white/40">{a.notes || '—'}</td>
-                    </tr>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {flags.any ? (
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className="text-[11px] font-medium text-gray-500 dark:text-white/50">
+                                {[flags.moveOut && 'Move Out', flags.moveBackIn && 'Move Back In'].filter(Boolean).join(' · ')}
+                              </span>
+                              {a.hierarchy_flag_noted
+                                ? <span className="text-xs text-green-600 dark:text-green-400">✓ Noted</span>
+                                : !readOnly
+                                  ? <button onClick={() => noteFlag(a.id)} disabled={saving === a.id}
+                                      className="px-2.5 py-1 rounded-lg text-xs font-semibold text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/30 hover:bg-orange-50 dark:hover:bg-orange-500/10 disabled:opacity-50">
+                                      {saving === a.id ? 'Saving…' : 'Note Flags'}
+                                    </button>
+                                  : <span className="text-xs text-orange-500">⚠ Unresolved</span>
+                              }
+                            </div>
+                          ) : <span className="text-xs text-gray-300 dark:text-white/20">—</span>
+                          }
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-400 dark:text-white/40">{a.notes || '—'}</td>
+                      </tr>
+                      {jfOpen && (
+                        <tr>
+                          <td colSpan={6} className="px-4 pb-4 bg-gray-50/50 dark:bg-white/[0.02]">
+                            {(() => {
+                              const lines = finalizedJotformLines(a)
+                              return lines
+                                ? <CopyBlock lines={lines} />
+                                : <p className="text-xs text-gray-400 dark:text-white/40 pt-2">Unable to reconstruct Jotform text for this row.</p>
+                            })()}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
               </tbody>
