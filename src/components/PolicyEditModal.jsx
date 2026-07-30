@@ -1,5 +1,6 @@
 import { Component, useEffect, useState } from 'react'
 import { AgentLookup } from './AddPolicyModal'
+import SplitPolicyModal from './SplitPolicyModal'
 import { normalizeCarrier } from '../../shared/carriers'
 import { toInputDate, fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { getPolicyStatusClass } from '../utils/status'
@@ -81,7 +82,7 @@ export const POLICY_BOOLEAN_KEYS = new Set(['not_in_opt', 'split_reset', 'charge
 
 export const INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
 
-const STATUS_OPTIONS = ['Pending', 'Incomplete', 'Issued', 'Declined', 'Withdrawn', 'Not taken']
+export const STATUS_OPTIONS = ['Pending', 'Incomplete', 'Issued', 'Declined', 'Withdrawn', 'Not taken']
 
 const CONSERVATION_STATUS_OPTIONS = [
   'Cancelled',
@@ -195,7 +196,7 @@ export class PolicyModalErrorBoundary extends Component {
 
 const NOT_IN_OPT_DELETE_STATUSES = ['declined', 'withdrawn', 'not taken']
 
-export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId, limitedFields = false, initialEdit = false }) {
+export default function PolicyModal({ policy: p, personnel = [], onClose, onBack, canWrite, onUpdate, onDelete, agentPhone, viewerSfgId, limitedFields = false, initialEdit = false, allowSplit = false, onSplitComplete }) {
   const [editing,         setEditing]         = useState(false)
   const [draft,           setDraft]           = useState(null)
   const [saving,          setSaving]          = useState(false)
@@ -203,6 +204,7 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
   const [confirmDelete,   setConfirmDelete]   = useState(false)
   const [deleting,        setDeleting]        = useState(false)
   const [confirmNotInOpt, setConfirmNotInOpt] = useState(false)
+  const [splitOpen,       setSplitOpen]       = useState(false)
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -388,6 +390,14 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
               return null
             })()}
             {!editing && <StatusBadge status={display.status} />}
+            {canWrite && !editing && allowSplit && (
+              <button
+                onClick={() => setSplitOpen(true)}
+                className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-800 dark:hover:text-white transition-colors px-2 py-1 rounded-lg border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5"
+              >
+                Split
+              </button>
+            )}
             {canWrite && !editing && (
               <button
                 onClick={startEdit}
@@ -658,6 +668,18 @@ export default function PolicyModal({ policy: p, personnel = [], onClose, onBack
 
         </div>
       </div>
+
+      {splitOpen && (
+        <SplitPolicyModal
+          policy={p}
+          personnel={personnel}
+          onClose={() => setSplitOpen(false)}
+          onSplitComplete={() => {
+            setSplitOpen(false)
+            onSplitComplete?.()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -595,6 +595,11 @@ export default function PoliciesPage() {
             onDelete={id => setPolicies(prev => prev.filter(p => p.id !== id))}
             agentPhone={personnel.find(pers => pers.sfg_id === selected.sfg_id)?.phone}
             viewerSfgId={activeSubject?.sfg_id}
+            allowSplit
+            onSplitComplete={() => {
+              closeDetail()
+              if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
+            }}
           />
         </PolicyModalErrorBoundary>
       )}
