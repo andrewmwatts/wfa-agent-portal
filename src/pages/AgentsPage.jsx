@@ -305,7 +305,7 @@ export default function AgentsPage() {
       {/* ── Map ────────────────────────────────────────────────────────────── */}
       {canViewMap && tab === 'map' && (
         <Suspense fallback={<div className="py-20 text-center text-sm text-gray-400 dark:text-white/30">Loading map…</div>}>
-          <AgentMap personnel={rows} loading={loading} />
+          <AgentMap personnel={rows} loading={loading} onAgentClick={setSelected} />
         </Suspense>
       )}
 

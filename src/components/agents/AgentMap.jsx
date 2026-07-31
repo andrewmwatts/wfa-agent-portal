@@ -44,7 +44,7 @@ function pinStatus(agents) {
   return STATUS_PRIORITY.find(s => present.has(s)) ?? NO_STATUS
 }
 
-export default function AgentMap({ personnel, loading }) {
+export default function AgentMap({ personnel, loading, onAgentClick }) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 
@@ -288,7 +288,11 @@ export default function AgentMap({ personnel, loading }) {
                 {[...selected.agents]
                   .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
                   .map(a => (
-                    <div key={a.sfg_id} className="px-4 py-2.5">
+                    <div
+                      key={a.sfg_id}
+                      onClick={() => onAgentClick?.(a)}
+                      className={`px-4 py-2.5 ${onAgentClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors' : ''}`}
+                    >
                       <div className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: STATUS_HEX[statusOf(a)] }} />
                         <span className="text-sm text-gray-800 dark:text-white/80 truncate">{a.name}</span>
