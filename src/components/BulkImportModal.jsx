@@ -309,7 +309,7 @@ function PreviewRow({ row, personnel, onUpdate, onAgentSelected, idx }) {
           <StatusBadge status={row.rowStatus} excluded={row.excluded} isDuplicate={row.isDuplicate} isNotInOptRestore={row.isNotInOptRestore} />
         </div>
 
-        <span className="w-36 truncate font-medium flex-shrink-0">{row.applicant || <em className="text-gray-400">—</em>}</span>
+        <span className="w-36 truncate font-medium text-gray-900 flex-shrink-0">{row.applicant || <em className="text-gray-400">—</em>}</span>
         <span className="w-28 truncate text-gray-600 flex-shrink-0">{row.carrier}</span>
         <span className="w-40 truncate text-gray-600 flex-shrink-0">{row.policy_name}</span>
         <span className="w-20 text-gray-500 flex-shrink-0">{fmtDate(row.submit_date)}</span>
@@ -399,7 +399,10 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
   const [optNamePrompt, setOptNamePrompt] = useState(null) // { sfg_id, proposed }
   const fileRef = useRef()
 
-  const redCount = rows.filter(r => r.rowStatus === 'red').length
+  // Excludes auto-excluded rows (e.g. a carrier export's "Total" footer row) —
+  // they're never going to be imported, so they shouldn't drive the "missing
+  // agent" prompt or be swept up by the default-agent bulk assignment below.
+  const redCount = rows.filter(r => r.rowStatus === 'red' && !r.excluded).length
 
   const defaultAgentResults = defaultAgentSearch.length > 1
     ? personnel.filter(p => {
@@ -413,10 +416,10 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
     const name = (p.preferred_name || p.opt_name || '').trim()
     // Collect the raw agent names from affected rows
     const rawNames = [...new Set(
-      rows.filter(r => r.rowStatus === 'red' && r.rawAgent).map(r => r.rawAgent.trim())
+      rows.filter(r => r.rowStatus === 'red' && !r.excluded && r.rawAgent).map(r => r.rawAgent.trim())
     )]
     setRows(prev => prev.map(r =>
-      r.rowStatus === 'red'
+      r.rowStatus === 'red' && !r.excluded
         ? { ...r, sfg_id: p.sfg_id, agentName: name, rowStatus: r.warnings?.length > 0 ? 'yellow' : 'green', errors: [] }
         : r
     ))
@@ -581,7 +584,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
   }
 
   function downloadErrorsCsv() {
-    const errRows = rows.filter(r => r.errors.length > 0 || r.rowStatus === 'red')
+    const errRows = rows.filter(r => !r.excluded && (r.errors.length > 0 || r.rowStatus === 'red'))
     const out = errRows.map(r => ({
       Applicant:    r.applicant,
       Agent:        r.agentName || '',
@@ -769,11 +772,11 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                 )}
                 <div className="flex justify-between border-b pb-2">
                   <span className="text-gray-600">Rows excluded / skipped</span>
-                  <span className="font-semibold">{rows.length - toImport.length}</span>
+                  <span className="font-semibold text-gray-900">{rows.length - toImport.length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Duplicates included anyway</span>
-                  <span className="font-semibold">{toImport.filter(r => r.includeAnyway).length}</span>
+                  <span className="font-semibold text-gray-900">{toImport.filter(r => r.includeAnyway).length}</span>
                 </div>
               </div>
               <p className="text-xs text-gray-400">
@@ -821,7 +824,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
                   <div className="border border-red-200 rounded-lg overflow-hidden text-xs">
                     {result.errors.slice(0, 10).map((e, i) => (
                       <div key={i} className="px-3 py-1.5 border-b last:border-0 bg-red-50 flex gap-2">
-                        {e.applicant && <span className="font-medium">{e.applicant}</span>}
+                        {e.applicant && <span className="font-medium text-gray-900">{e.applicant}</span>}
                         {e.agent     && <span className="text-gray-500">({e.agent})</span>}
                         <span className="text-red-600">{e.error}</span>
                       </div>
@@ -870,7 +873,7 @@ export default function BulkImportModal({ onClose, personnel = [], existingPolic
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50">
           <div>
-            {phase === 'preview' && rows.some(r => r.errors.length > 0 || r.rowStatus === 'red') && (
+            {phase === 'preview' && rows.some(r => !r.excluded && (r.errors.length > 0 || r.rowStatus === 'red')) && (
               <button onClick={downloadErrorsCsv} className="text-sm text-blue-600 underline">
                 Download error rows
               </button>
