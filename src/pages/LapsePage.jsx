@@ -5,17 +5,7 @@ import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
 import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
-
-const CONSERVATION_STATUS_OPTIONS = [
-  'Cancelled',
-  'Death',
-  'Declined, On Snapshot',
-  'First Premium Not Paid',
-  'Lapse pending',
-  'Lapsed',
-  'Not Taken, On Snapshot',
-  'Withdrawn, On Snapshot',
-]
+import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
 
 function daysToLapse(conservationDate) {
   if (!conservationDate) return null
@@ -356,27 +346,31 @@ export default function LapsePage() {
 
       {/* ── Detail modal ─────────────────────────────────────────────────────── */}
       {selected && (
-        <LapseModal
-          policy={selected}
-          onClose={closeDetail}
-          onBack={selectedSource === 'search' ? () => { setSelected(null); setQuickSearchOpen(true) } : null}
-          canWrite={permissions?.appsAndPolicies?.write ?? false}
-          onUpdate={updated => {
-            setSelected(updated)
-            setAllPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
-            if (updated.conservation_status?.trim()) {
-              // Add to table list if newly given a conservation status, otherwise update in place
-              setPolicies(prev =>
-                prev.some(p => p.id === updated.id)
-                  ? prev.map(p => p.id === updated.id ? updated : p)
-                  : [...prev, updated]
-              )
-            } else {
-              // Conservation status removed — drop from table
-              setPolicies(prev => prev.filter(p => p.id !== updated.id))
-            }
-          }}
-        />
+        <PolicyModalErrorBoundary onClose={closeDetail}>
+          <PolicyModal
+            view="lapse"
+            policy={selected}
+            personnel={masterPersonnel}
+            onClose={closeDetail}
+            onBack={selectedSource === 'search' ? () => { setSelected(null); setQuickSearchOpen(true) } : null}
+            canWrite={permissions?.appsAndPolicies?.write ?? false}
+            onUpdate={updated => {
+              setSelected(updated)
+              setAllPolicies(prev => prev.map(p => p.id === updated.id ? updated : p))
+              if (updated.conservation_status?.trim()) {
+                // Add to table list if newly given a conservation status, otherwise update in place
+                setPolicies(prev =>
+                  prev.some(p => p.id === updated.id)
+                    ? prev.map(p => p.id === updated.id ? updated : p)
+                    : [...prev, updated]
+                )
+              } else {
+                // Conservation status removed — drop from table
+                setPolicies(prev => prev.filter(p => p.id !== updated.id))
+              }
+            }}
+          />
+        </PolicyModalErrorBoundary>
       )}
 
       {/* ── Quick search modal ───────────────────────────────────────────────── */}
@@ -467,390 +461,6 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
           })}
         </div>
       </div>
-    </div>
-  )
-}
-
-// ─── Lapse edit helpers ───────────────────────────────────────────────────────
-
-function toInputDate(str) {
-  if (!str) return ''
-  // ISO date (YYYY-MM-DD) — use directly to avoid UTC→local shift
-  const iso = String(str).match(/^(\d{4}-\d{2}-\d{2})/)
-  if (iso) return iso[1]
-  const d = new Date(str)
-  if (isNaN(d)) return str
-  return d.toISOString().slice(0, 10)
-}
-
-const LAPSE_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
-
-const LAPSE_COL_MAP = {
-  carrier:             'carrier',
-  policy_type:         'policy_name',
-  policy_no:           'policy_number',
-  issue_date:          'issue_date',
-  issued_apv:          'issued_apv',
-  face_amt:            'face_amount',
-  conservation_status: 'conservation_status',
-  conservation_date:   'conservation_date',
-  cb_month:            'snapshot_chargeback_month',
-  cb_apv:              'snapshot_chargeback_apv',
-  policy_notes:        'policy_notes',
-  last_update:         'last_update',
-}
-
-function LapseEditField({ label, value, onChange, type = 'text', span2 }) {
-  return (
-    <div className={span2 ? 'col-span-2' : ''}>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
-      <input
-        type={type}
-        value={value ?? ''}
-        onChange={e => onChange(e.target.value)}
-        className={LAPSE_INPUT_CLS}
-      />
-    </div>
-  )
-}
-
-// ─── Lapse Detail Modal ───────────────────────────────────────────────────────
-
-function LapseModal({ policy: p, onClose, onBack, canWrite, onUpdate }) {
-  const [editing,   setEditing]   = useState(false)
-  const [draft,     setDraft]     = useState(null)
-  const [saving,    setSaving]    = useState(false)
-  const [saveError, setSaveError] = useState(null)
-  const [removing,  setRemoving]  = useState(false)
-
-  useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  function startEdit() {
-    setDraft({ ...p })
-    setEditing(true)
-    setSaveError(null)
-  }
-
-  function cancelEdit() {
-    setEditing(false)
-    setDraft(null)
-    setSaveError(null)
-  }
-
-  function setField(key, value) {
-    setDraft(d => ({ ...d, [key]: value }))
-  }
-
-  async function handleRemoveConservation() {
-    setRemoving(true)
-    setSaveError(null)
-    try {
-      const res = await fetch('/api/policies', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: p.id,
-          updates: { conservation_status: '', conservation_date: '' },
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Remove failed')
-      }
-      const updated = { ...p, conservation_status: '', conservation_date: '' }
-      onUpdate?.(updated)
-      onClose()
-    } catch (e) {
-      setSaveError(e.message)
-    } finally {
-      setRemoving(false)
-    }
-  }
-
-  async function handleSave() {
-    if (!draft) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const updates = {}
-      for (const [key, col] of Object.entries(LAPSE_COL_MAP)) {
-        updates[col] = String(draft[key] ?? '')
-      }
-      // Boolean fields handled separately
-      updates.chargeback_exempt = !!draft.chargeback_exempt
-      const res = await fetch('/api/policies', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draft.id, updates }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Save failed')
-      }
-      onUpdate?.(draft)
-      setEditing(false)
-      setDraft(null)
-    } catch (e) {
-      setSaveError(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const display = editing ? draft : p
-
-  const days = daysToLapse(display.conservation_date)
-  const urg  = getUrgency(days)
-
-  const daysLabel = days === null      ? null
-    : days < 0    ? `${Math.abs(days)}d overdue`
-    : days === 0  ? 'Due today'
-    : `${days}d remaining`
-
-  const daysCls = (urg === 'overdue' || urg === 'critical')
-    ? 'bg-red-500/15 text-red-500 dark:text-red-300'
-    : urg === 'warning'
-    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
-    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/60'
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50 dark:bg-black/70" />
-      <div
-        className="relative bg-white dark:bg-secondary border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="p-6">
-
-          {/* Back / close / edit */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              {onBack && (
-                <button onClick={onBack} className="text-xs text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/70 transition-colors">← Back to search</button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 ml-auto">
-              {canWrite && !editing && (
-                <>
-                  <button
-                    onClick={handleRemoveConservation}
-                    disabled={removing}
-                    className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {removing ? 'Removing…' : 'Remove Conservation'}
-                  </button>
-                  <button
-                    onClick={startEdit}
-                    className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10"
-                  >
-                    Edit
-                  </button>
-                </>
-              )}
-              {editing && (
-                <>
-                  <button
-                    onClick={cancelEdit}
-                    className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
-                  >
-                    {saving && (
-                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                      </svg>
-                    )}
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
-                </>
-              )}
-              <button onClick={onClose} className="text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {saveError && (
-            <div className="mb-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300">
-              {saveError}
-            </div>
-          )}
-
-          {/* Client + days pill */}
-          <div className="flex items-start justify-between gap-3 mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">{display.applicant}</h2>
-              <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">{display.agent}</p>
-            </div>
-            {daysLabel && (
-              <span className={`text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap flex-shrink-0 ${daysCls}`}>
-                {daysLabel}
-              </span>
-            )}
-          </div>
-
-          {/* Policy details */}
-          <ModalSection title="Policy">
-            {editing ? (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <LapseEditField label="Carrier"     value={draft.carrier}     onChange={v => setField('carrier', v)} />
-                <LapseEditField label="Policy Type" value={draft.policy_type} onChange={v => setField('policy_type', v)} />
-                <LapseEditField label="Policy #"    value={draft.policy_no}   onChange={v => setField('policy_no', v)} />
-                <LapseEditField label="Issue Date"  value={toInputDate(draft.issue_date)}  onChange={v => setField('issue_date', v)}  type="date" />
-                <LapseEditField label="Issued APV"  value={draft.issued_apv ?? ''} onChange={v => setField('issued_apv', v)} />
-                <LapseEditField label="Face Amount" value={draft.face_amt ?? ''}   onChange={v => setField('face_amt', v)} />
-              </div>
-            ) : (
-              <ModalGrid>
-                <ModalField label="Carrier"      value={display.carrier} />
-                <ModalField label="Policy Type"  value={display.policy_type} />
-                <ModalField label="Policy #"     value={display.policy_no} mono />
-                <ModalField label="Issue Date"   value={fmtDate(display.issue_date)} />
-                <ModalField label="Issued APV"   value={fmtAmt(display.issued_apv)} />
-                <ModalField label="Face Amount"  value={fmtAmt(display.face_amt)} />
-              </ModalGrid>
-            )}
-          </ModalSection>
-
-          {/* Conservation */}
-          <ModalSection title="Conservation">
-            {editing ? (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
-                  <select
-                    value={draft.conservation_status ?? ''}
-                    onChange={e => setField('conservation_status', e.target.value)}
-                    className={LAPSE_INPUT_CLS}
-                  >
-                    <option value="">— select —</option>
-                    {CONSERVATION_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <LapseEditField label="Expected Lapse Date" value={toInputDate(draft.conservation_date)} onChange={v => setField('conservation_date', v)} type="date" />
-                <LapseEditField label="Chargeback Month"    value={draft.cb_month ?? ''}  onChange={v => setField('cb_month', v)} />
-                <LapseEditField label="Chargeback APV"      value={draft.cb_apv ?? ''}    onChange={v => setField('cb_apv', v)} />
-                <div className="col-span-2 pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={!!draft.chargeback_exempt}
-                      onChange={e => setField('chargeback_exempt', e.target.checked)}
-                      className="w-4 h-4 rounded accent-accent cursor-pointer"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-white/70">Not reported</span>
-                  </label>
-                </div>
-              </div>
-            ) : (
-              <ModalGrid>
-                <ModalField label="Status"              value={display.conservation_status} />
-                <ModalField label="Expected Lapse Date" value={fmtDate(display.conservation_date)} />
-                <ModalField label="Chargeback Month"    value={display.cb_month} />
-                <ModalField label="Chargeback APV"      value={fmtAmt(display.cb_apv)} />
-                {display.chargeback_exempt && (
-                  <div className="col-span-2">
-                    <span className="text-xs font-medium bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50 px-2 py-0.5 rounded">Not reported</span>
-                  </div>
-                )}
-              </ModalGrid>
-            )}
-          </ModalSection>
-
-          {/* Flags */}
-          {(display.not_in_opt || display.split_reset) && (
-            <ModalSection title="Flags">
-              <div className="flex flex-wrap gap-4">
-                <CheckItem label="Not in Opt"  value={display.not_in_opt} />
-                <CheckItem label="Split/Reset" value={display.split_reset} />
-              </div>
-            </ModalSection>
-          )}
-
-          {/* Notes */}
-          <ModalSection title="Notes">
-            {editing ? (
-              <textarea
-                value={draft.policy_notes ?? ''}
-                onChange={e => setField('policy_notes', e.target.value)}
-                rows={3}
-                className={`${LAPSE_INPUT_CLS} resize-none`}
-                placeholder="Policy notes…"
-              />
-            ) : (
-              display.policy_notes?.trim()
-                ? <p className="text-sm text-gray-700 dark:text-white/80 whitespace-pre-wrap">{display.policy_notes}</p>
-                : <p className="text-sm text-gray-400 dark:text-white/30">—</p>
-            )}
-          </ModalSection>
-
-          {editing ? (
-            <div className="mt-2">
-              <LapseEditField label="Last Update" value={toInputDate(draft.last_update)} onChange={v => setField('last_update', v)} type="date" />
-            </div>
-          ) : (
-            <p className="text-xs text-gray-400 dark:text-white/30 mt-4 text-right">
-              Last updated: {fmtDate(display.last_update)}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Modal helpers ────────────────────────────────────────────────────────────
-
-function ModalSection({ title, children }) {
-  return (
-    <div className="mb-5">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3 pb-1.5 border-b border-gray-100 dark:border-white/10">
-        {title}
-      </h3>
-      {children}
-    </div>
-  )
-}
-
-function ModalGrid({ children }) {
-  return <div className="grid grid-cols-2 gap-x-6 gap-y-3">{children}</div>
-}
-
-function ModalField({ label, value, mono }) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
-      <p className={`text-sm text-gray-900 dark:text-white ${mono ? 'font-mono' : ''}`}>{value || '—'}</p>
-    </div>
-  )
-}
-
-function CheckItem({ label, value }) {
-  const checked = !!value && !['false', '0', 'no', 'n', ''].includes(String(value).trim().toLowerCase())
-  return (
-    <div className="flex items-center gap-2">
-      <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
-        checked ? 'bg-accent/20 border-accent/50' : 'bg-gray-100 border-gray-300 dark:bg-white/5 dark:border-white/20'
-      }`}>
-        {checked && (
-          <svg className="w-2.5 h-2.5 text-accent" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
-          </svg>
-        )}
-      </div>
-      <span className={`text-sm ${checked ? 'text-gray-900 dark:text-white/80' : 'text-gray-400 dark:text-white/35'}`}>{label}</span>
     </div>
   )
 }

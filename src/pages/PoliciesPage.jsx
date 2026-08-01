@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import AddPolicyModal from '../components/AddPolicyModal'
 import PolicyModal, { PolicyModalErrorBoundary, StatusBadge } from '../components/PolicyEditModal'
 import BulkImportModal from '../components/BulkImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
@@ -606,12 +605,14 @@ export default function PoliciesPage() {
 
       {/* Add Policy Modal */}
       {showAddPolicy && (
-        <AddPolicyModal
+        <PolicyModal
+          mode="create"
           personnel={personnel}
           existingCarriers={carrierOptions}
           existingPolicyTypes={policyTypeOptions}
+          canWrite
           onClose={() => setShowAddPolicy(false)}
-          onPolicyAdded={() => {
+          onCreate={() => {
             setShowAddPolicy(false)
             if (activeSubject?.sfg_id) load(activeSubject.sfg_id)
           }}

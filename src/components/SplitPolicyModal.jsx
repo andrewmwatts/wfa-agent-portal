@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { AgentLookup } from './AddPolicyModal'
+import AgentLookup from './AgentLookup'
 import { INPUT_CLS, STATUS_OPTIONS } from './PolicyEditModal'
+import { validateIssuedDateConsistency } from '../../shared/policyValidation'
 
 // ─── Split Policy workflow ─────────────────────────────────────────────────────
 //
@@ -113,6 +114,14 @@ function SplitWorkflow({ policy: p, personnel, splitType, onBack, onClose, onSpl
     if (isAgents && !newAgentId) return 'Select the agent for the new policy.'
     if (!isAgents && !newApplicant.trim()) return 'Enter the client name for the new policy.'
     if (!isAgents && !newPolicyNo.trim()) return 'Enter the policy number for the new policy.'
+
+    // Neither side edits Issue Date here — both inherit p.issue_date — so any
+    // mismatch comes from the Status chosen for each side.
+    const origErr = validateIssuedDateConsistency(origStatus, p.issue_date)
+    if (origErr) return `Original policy: ${origErr}`
+    const newErr = validateIssuedDateConsistency(newStatus, p.issue_date)
+    if (newErr) return `New policy: ${newErr}`
+
     return null
   }
 
