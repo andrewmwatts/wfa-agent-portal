@@ -3,6 +3,14 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from './_auth.js'
+import { nowInBusinessTZ } from '../shared/businessTime.js'
+
+// Formats a Date's own year/month/date (no UTC conversion — .toISOString()
+// would shift the day for anything constructed from business-local "today"
+// once the local time is far enough ahead of UTC midnight).
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -52,21 +60,21 @@ export default async function handler(req, res) {
   }
 
   const daysNum = Math.min(Math.max(parseInt(days) || 35, 1), 90)
-  const start = new Date()
+  const start = nowInBusinessTZ()
   start.setDate(start.getDate() - daysNum)
-  const startYMD = start.toISOString().slice(0, 10)
+  const startYMD = ymd(start)
 
-  const yesterday = new Date()
+  const yesterday = nowInBusinessTZ()
   yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayYMD = yesterday.toISOString().slice(0, 10)
+  const yesterdayYMD = ymd(yesterday)
 
   // 7-day window for the lead spend point-in-time check
-  const sevenDaysAgo = new Date()
+  const sevenDaysAgo = nowInBusinessTZ()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const sevenDaysAgoYMD = sevenDaysAgo.toISOString().slice(0, 10)
+  const sevenDaysAgoYMD = ymd(sevenDaysAgo)
 
   // Calendar month window for issued APV
-  const now = new Date()
+  const now = nowInBusinessTZ()
   const monthStartYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
   const [actRes, goalsRes, txRes, policiesRes, actGoalsRes] = await Promise.all([

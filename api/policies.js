@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { normalizeCarrier } from '../shared/carriers.js'
+import { nowInBusinessTZ } from '../shared/businessTime.js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -421,7 +422,7 @@ export default async function handler(req, res) {
         if (!earliestSubmit[id] || key < earliestSubmit[id]) earliestSubmit[id] = key
       }
 
-      const now        = new Date()
+      const now        = nowInBusinessTZ()
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 1)
       const weekStart  = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d })()
