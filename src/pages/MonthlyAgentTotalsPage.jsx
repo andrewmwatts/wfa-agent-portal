@@ -569,7 +569,7 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
     `text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-2.5 py-2 text-right whitespace-nowrap ${extra}`
 
   const THEAD_BG  = 'bg-gray-50 dark:bg-white/[0.04]'
-  const STICKY_BG = 'bg-gray-50 dark:bg-[#003539]'
+  const STICKY_BG = 'bg-gray-50 dark:bg-secondary'
 
   return (
     <div className="border border-gray-200 dark:border-white/10 rounded-2xl [overflow:clip]">
@@ -783,7 +783,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
 function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
   const BL       = 'border-l border-gray-100 dark:border-white/5 '
   const rowBg    = isEven ? 'bg-white dark:bg-transparent' : 'bg-gray-50/50 dark:bg-white/[0.018]'
-  const stickyBg = isEven ? 'bg-white dark:bg-[#003539]'  : 'bg-gray-50 dark:bg-[#003539]'
+  const stickyBg = isEven ? 'bg-white dark:bg-secondary'  : 'bg-gray-50 dark:bg-secondary'
 
   // Production cells — value, dash, or negative (red); clickable when non-zero
   function apvCell(v, borderL = false, modalConfig = null) {
