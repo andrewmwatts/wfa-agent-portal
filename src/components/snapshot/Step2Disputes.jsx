@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fmtDate, fmtCurrency as fmtAmt } from '../../utils/format'
+import { nextContractLevel, nextLeadershipLevel } from '../../../shared/commissionLevel'
 
 // ── CopyBlock ─────────────────────────────────────────────────────────────────
 
@@ -79,18 +80,26 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
     current = p.upline_sfg_id.trim().toUpperCase()
   }
 
-  // Sorted thresholds: [ { level, regular, slingshot, writers }, ... ]
-  const thresholds = useMemo(() => {
-    return Object.entries(qualifications)
-      .map(([level, q]) => ({
-        level,
-        regular:   Number(q.regular)   || 0,
-        slingshot: q.slingshot != null ? Number(q.slingshot) : null,
-        writers:   q.writers   ?? null,
-      }))
-      .filter(t => t.regular > 0)
-      .sort((a, b) => a.regular - b.regular)
-  }, [qualifications])
+  // Which agents have at least one direct downline — gates the leadership target
+  // so a solo writer with no team doesn't show a perpetually-unmet "Promote TL".
+  const hasDownlinesSet = useMemo(() => {
+    const set = new Set()
+    for (const id in personnelMap) {
+      const up = personnelMap[id]?.upline_sfg_id?.trim().toUpperCase()
+      if (up) set.add(up)
+    }
+    return set
+  }, [personnelMap])
+
+  function qualFor(level) {
+    const q = level ? qualifications[level] : null
+    if (!q) return null
+    return {
+      regular:   Number(q.regular) || 0,
+      slingshot: q.slingshot != null ? Number(q.slingshot) : null,
+      writers:   q.writers ?? null,
+    }
+  }
 
   if (chain.length === 0) return null
 
@@ -126,8 +135,14 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
           }
           const net = base + adjustment
 
-          // Next unmet promote threshold
-          const nextT = thresholds.find(t => t.regular > net)
+          // Next unmet target on EACH track, based on the level the agent
+          // actually holds today — not a single ladder merging contract % and
+          // leadership titles by dollar amount, which could skip levels or
+          // surface only whichever track's threshold happened to be closer.
+          const nextConLvl  = nextContractLevel(p?.commission_contract?.level ?? '80')
+          const nextLeadLvl = hasDownlinesSet.has(id) ? nextLeadershipLevel(p?.commission_leadership?.level ?? null) : null
+          const promoQual   = qualFor(nextConLvl)
+          const leadQual    = qualFor(nextLeadLvl)
 
           return (
             <div key={id} className="px-3 py-2.5 flex flex-wrap gap-x-4 gap-y-1 items-baseline">
@@ -147,25 +162,35 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
                 )}
               </span>
 
-              {/* Promote target */}
-              {nextT ? (
-                <span className="text-red-500 dark:text-red-400">
-                  Promote {nextT.level}: {fmtAmt(nextT.regular)} (need {fmtAmt(nextT.regular - net)})
-                </span>
-              ) : thresholds.length > 0 ? (
-                <span className="text-green-600 dark:text-green-400">All targets met</span>
-              ) : null}
-
-              {/* Slingshot target */}
-              {nextT?.slingshot != null && nextT.slingshot > 0 && (
-                net >= nextT.slingshot
-                  ? <span className="text-green-600 dark:text-green-400">Slingshot ✓ ({fmtAmt(nextT.slingshot)})</span>
-                  : <span className="text-amber-600 dark:text-amber-300">Slingshot {nextT.level}: {fmtAmt(nextT.slingshot)} (need {fmtAmt(nextT.slingshot - net)})</span>
+              {/* Contract promote target */}
+              {promoQual ? (
+                net >= promoQual.regular
+                  ? <span className="text-green-600 dark:text-green-400">Contract {nextConLvl} ✓</span>
+                  : <span className="text-red-500 dark:text-red-400">Promote {nextConLvl}: {fmtAmt(promoQual.regular)} (need {fmtAmt(promoQual.regular - net)})</span>
+              ) : (
+                <span className="text-green-600 dark:text-green-400">Max contract level</span>
               )}
 
-              {/* Writers / leadership threshold */}
-              {nextT?.writers && (
-                <span className="text-purple-600 dark:text-purple-300">Writers: {nextT.writers} req.</span>
+              {/* Slingshot target (contract track only) */}
+              {promoQual?.slingshot != null && promoQual.slingshot > 0 && (
+                net >= promoQual.slingshot
+                  ? <span className="text-green-600 dark:text-green-400">Slingshot ✓ ({fmtAmt(promoQual.slingshot)})</span>
+                  : <span className="text-amber-600 dark:text-amber-300">Slingshot {nextConLvl}: {fmtAmt(promoQual.slingshot)} (need {fmtAmt(promoQual.slingshot - net)})</span>
+              )}
+
+              {/* Contract writers requirement, if any */}
+              {promoQual?.writers && (
+                <span className="text-purple-600 dark:text-purple-300">Writers: {promoQual.writers} req.</span>
+              )}
+
+              {/* Leadership target — only for agents with a downline */}
+              {leadQual && (
+                net >= leadQual.regular
+                  ? <span className="text-purple-600 dark:text-purple-300">Leadership {nextLeadLvl} ✓</span>
+                  : <span className="text-purple-600 dark:text-purple-300">Promote {nextLeadLvl}: {fmtAmt(leadQual.regular)} (need {fmtAmt(leadQual.regular - net)})</span>
+              )}
+              {leadQual?.writers && (
+                <span className="text-purple-600 dark:text-purple-300">Writers: {leadQual.writers} req.</span>
               )}
             </div>
           )
@@ -306,12 +331,8 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10 flex-wrap gap-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{agentName}</span>
-                {policy ? (
-                  <>
-                    <span className="text-xs text-gray-400 dark:text-white/40">{policy.policy_no ?? policy.policy_number ?? '—'}</span>
-                    <span className="text-xs text-gray-500 dark:text-white/50">{policy.applicant}</span>
-                    <span className="text-xs text-gray-500 dark:text-white/50">{policy.carrier}</span>
-                  </>
+                {(d.applicant ?? policy?.applicant) ? (
+                  <span className="text-xs text-gray-500 dark:text-white/50">{d.applicant ?? policy.applicant}</span>
                 ) : d.dispute_type ? (
                   <span className="text-xs text-gray-400 dark:text-white/40">{d.dispute_type}</span>
                 ) : null}
