@@ -4,7 +4,7 @@ import {
   nextContractLevel, nextLeadershipLevel, previousContractLevel, contractLevelRank,
 } from '../../../shared/commissionLevel'
 import {
-  buildDownlineTree, apvCapForLevel, computeTeamIssued, computeMaxLegApv,
+  buildDownlineTree, computeTeamIssued, computeMaxLegApv,
   legRulePreventsQual, fridayWeekCount, submissionRequirementMet,
 } from '../../../shared/promotionQualification'
 
@@ -317,10 +317,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   // Team qualifying APV (capped for the target level, net chargebacks) + largest leg.
   function teamNumbers(lowerId, targetLevel) {
     const descSet = descendantsOf[lowerId] ?? new Set([lowerId])
-    const cap     = apvCapForLevel(targetLevel)
     return {
-      teamApv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, cap),
-      maxLeg:  computeMaxLegApv(directChildrenOf[lowerId] ?? [], descendantsOf, issuedPolsBySfgId, cap),
+      teamApv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, targetLevel),
+      maxLeg:  computeMaxLegApv(directChildrenOf[lowerId] ?? [], descendantsOf, issuedPolsBySfgId, targetLevel),
       writers: [...descSet].filter(tid => submittedSet.has(tid)).length,
     }
   }
@@ -441,7 +440,9 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         return {
           ...ap,
           person: personnelMap[ap.sfg_id?.toUpperCase()],
-          apv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, Infinity),
+          // No level-specific cap here — the target level for an in-progress
+          // streak isn't fixed. The universal post-cutoff cap still applies.
+          apv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, null),
         }
       })
       .sort((a, b) => (a.person?.opt_name ?? '').localeCompare(b.person?.opt_name ?? ''))

@@ -16,17 +16,41 @@
  * of the business month.
  */
 
-// Contract levels whose qualifying APV caps each single policy at $7,500.
 export const SINGLE_APV_CAP = 7500
+
+// Contract levels that capped each single policy at $7,500 under the ORIGINAL rule.
 export const CAPPED_PROMO_LEVELS = new Set(['125', '130'])
 
-export function apvCapForLevel(nextContractLevel) {
+// Date the "maximum credit per sale is $7,500" rule was extended from 125/130 to
+// every promotion level. Policies issued before this keep the original behaviour,
+// so historical qualifying totals are unaffected by the change.
+export const ALL_LEVEL_CAP_FROM = '2026-08-01'
+
+/**
+ * Per-policy qualifying APV cap. Depends on the policy's issue date, not just
+ * the level being chased:
+ *   issued on/after ALL_LEVEL_CAP_FROM → $7,500 at every level
+ *   issued before it                   → $7,500 only when targeting 125/130
+ *
+ * `nextContractLevel` may be null when no specific level is in play (e.g. a
+ * display total for an in-progress streak). That suppresses the level-specific
+ * rule only — the universal post-cutoff cap is level-independent and still bites.
+ *
+ * @param {object} policy             a policy row (reads issue_date)
+ * @param {string|null} nextContractLevel
+ */
+export function policyApvCap(policy, nextContractLevel) {
+  const issued = String(policy?.issue_date ?? '').slice(0, 10)
+  if (issued && issued >= ALL_LEVEL_CAP_FROM) return SINGLE_APV_CAP
   return CAPPED_PROMO_LEVELS.has(String(nextContractLevel)) ? SINGLE_APV_CAP : Infinity
 }
 
-// Sum of issued_apv over policies, each counted at most `cap`.
-export function cappedIssuedSum(pols, cap = Infinity) {
-  return (pols ?? []).reduce((s, p) => s + Math.min(p.issued_apv ?? 0, cap), 0)
+// Sum of issued_apv over policies, each capped per policyApvCap() above.
+export function cappedIssuedSum(pols, nextContractLevel = null) {
+  return (pols ?? []).reduce(
+    (s, p) => s + Math.min(p.issued_apv ?? 0, policyApvCap(p, nextContractLevel)),
+    0
+  )
 }
 
 /**
@@ -60,29 +84,29 @@ export function buildDownlineTree(personnel) {
  * capped at `cap`, net of chargebacks.
  *
  * @param descSet            Set of descendant idLowers (incl. self)
- * @param issuedPolsBySfgId  idLower → issued policies [{ issued_apv }]
+ * @param issuedPolsBySfgId  idLower → issued policies [{ issued_apv, issue_date }]
  * @param chargebackAmounts  idLower → chargeback dollar amount for the month
- * @param cap                per-policy cap (Infinity for non-125/130)
+ * @param nextContractLevel  level being chased, or null for no level-specific cap
  */
-export function computeTeamIssued(descSet, issuedPolsBySfgId, chargebackAmounts = {}, cap = Infinity) {
+export function computeTeamIssued(descSet, issuedPolsBySfgId, chargebackAmounts = {}, nextContractLevel = null) {
   let issued = 0
   let cb = 0
   for (const tid of descSet) {
-    issued += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], cap)
+    issued += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], nextContractLevel)
     cb += chargebackAmounts[tid] ?? 0
   }
   return issued - cb
 }
 
 /**
- * Largest single-leg issued APV (each policy capped at `cap`).
+ * Largest single-leg issued APV (each policy capped per policyApvCap()).
  * A leg = one direct child + all of their subordinates.
  */
-export function computeMaxLegApv(directChildren, descendantsOf, issuedPolsBySfgId, cap = Infinity) {
+export function computeMaxLegApv(directChildren, descendantsOf, issuedPolsBySfgId, nextContractLevel = null) {
   return (directChildren ?? []).reduce((best, childId) => {
     const legDesc = descendantsOf[childId] ?? new Set([childId])
     let legApv = 0
-    for (const tid of legDesc) legApv += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], cap)
+    for (const tid of legDesc) legApv += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], nextContractLevel)
     return Math.max(best, legApv)
   }, 0)
 }
