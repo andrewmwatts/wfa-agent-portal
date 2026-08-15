@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 import { buildLevelMap } from '../shared/commissionLevel.js'
+import { expandAndAttachSplits } from './_policySplits.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -72,6 +73,7 @@ const POLICY_COLS = [
   'snapshot_chargeback_month', 'snapshot_chargeback_apv',
 ].join(', ')
 
+// Returns one row per policy, each carrying a `splits` array when shared.
 async function fetchPolicies(supabase, sfgIds) {
   const PAGE = 10000
   const rows = []
@@ -85,7 +87,7 @@ async function fetchPolicies(supabase, sfgIds) {
     if (!data || data.length < PAGE) break
     from += PAGE
   }
-  return rows
+  return expandAndAttachSplits(supabase, rows, sfgIds, POLICY_COLS)
 }
 
 // ── Tree traversal ────────────────────────────────────────────────────────────

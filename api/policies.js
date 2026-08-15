@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { normalizeCarrier } from '../shared/carriers.js'
 import { nowInBusinessTZ } from '../shared/businessTime.js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
+import { expandAndAttachSplits } from './_policySplits.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -33,7 +34,8 @@ const POLICY_COLS = [
   'snapshot_chargeback_month', 'snapshot_chargeback_apv',
 ].join(', ')
 
-// applyFilter is an optional function (q => q) for caller-specific WHERE clauses
+// applyFilter is an optional function (q => q) for caller-specific WHERE clauses.
+// Returns one row per policy, each carrying a `splits` array when shared.
 async function fetchPolicies(supabase, sfgIds, applyFilter = null) {
   const PAGE = 10000
   const results = []
@@ -48,7 +50,7 @@ async function fetchPolicies(supabase, sfgIds, applyFilter = null) {
     if (!data || data.length < PAGE) break
     from += PAGE
   }
-  return results
+  return expandAndAttachSplits(supabase, results, sfgIds, POLICY_COLS, applyFilter)
 }
 
 // ── Carrier-metrics cache ─────────────────────────────────────────────────────
@@ -642,6 +644,15 @@ export default async function handler(req, res) {
           conservation_status: p.conservation_status            ?? '',
           conservation_date:   p.conservation_date              ?? '',
           last_update:         p.last_update                    ?? '',
+          // Present only on split policies. Names resolve for agents inside the
+          // requested scope; a split partner outside it still carries its sfg_id
+          // so agent filtering matches on both sides.
+          ...(p.splits ? {
+            splits: p.splits.map(s => ({
+              ...s,
+              agent: personLookup[(s.sfg_id ?? '').trim().toLowerCase()]?.name || '',
+            })),
+          } : {}),
         }
       })
 
