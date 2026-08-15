@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireSuperAdmin } from '../_auth.js'
+import { fetchPoliciesForAgents, toCreditedRows } from '../_policySplits.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../../.vercel/.env.development.local') })
@@ -82,45 +83,41 @@ export default async function handler(req, res) {
       ? new Date(new Date(windowTo).getTime() + 31 * 86400000).toISOString().slice(0, 10)
       : null
 
-    // Fetch all candidate pools in parallel
+    // Fetch all candidate pools in parallel. Each is split-aware — a policy this
+    // agent only shares still belongs in the pool — and APV is rewritten to their
+    // credited portion, since that is what Snapshot reports for them.
+    const pool = (columns, applyFilter) =>
+      fetchPoliciesForAgents(supabase, [sfgId], columns,
+        q => applyFilter(q.in('carrier', carrierVariants)))
+        .then(rows => ({ data: toCreditedRows(rows, sfgId) }))
+
     const [cbRes, nonIssuedRes, straddleRes, notTakenRes] = await Promise.all([
       // Chargebacks: any issued policy for this agent/carrier with a conservation_date set.
       // No strict window filter — carriers sometimes charge 1–2 months after conservation.
-      supabase
-        .from('policies')
-        .select('id, policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date')
-        .eq('sfg_id', sfgId)
-        .in('carrier', carrierVariants)
-        .ilike('status', 'issued')
-        .not('conservation_date', 'is', null),
+      pool(
+        'id, sfg_id, policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date',
+        q => q.ilike('status', 'issued').not('conservation_date', 'is', null),
+      ),
 
       // Non-issued (Pending/Incomplete): carrier may be reporting these positively
-      supabase
-        .from('policies')
-        .select('id, policy_number, applicant, carrier, issued_apv, status, submit_date')
-        .eq('sfg_id', sfgId)
-        .in('carrier', carrierVariants)
-        .in('status', ['Pending', 'Incomplete', 'pending', 'incomplete']),
+      pool(
+        'id, sfg_id, policy_number, applicant, carrier, issued_apv, status, submit_date',
+        q => q.in('status', ['Pending', 'Incomplete', 'pending', 'incomplete']),
+      ),
 
       // Effective-date straddle: issued just after the window — carrier credits in their date
       dayAfterWindow && straddleEnd
-        ? supabase
-            .from('policies')
-            .select('id, policy_number, applicant, carrier, issue_date, issued_apv')
-            .eq('sfg_id', sfgId)
-            .in('carrier', carrierVariants)
-            .ilike('status', 'issued')
-            .gte('issue_date', dayAfterWindow)
-            .lte('issue_date', straddleEnd)
+        ? pool(
+            'id, sfg_id, policy_number, applicant, carrier, issue_date, issued_apv',
+            q => q.ilike('status', 'issued').gte('issue_date', dayAfterWindow).lte('issue_date', straddleEnd),
+          )
         : Promise.resolve({ data: [] }),
 
       // Not taken: may be treated as a chargeback by the carrier
-      supabase
-        .from('policies')
-        .select('id, policy_number, applicant, carrier, issued_apv, status')
-        .eq('sfg_id', sfgId)
-        .in('carrier', carrierVariants)
-        .ilike('status', 'not taken'),
+      pool(
+        'id, sfg_id, policy_number, applicant, carrier, issued_apv, status',
+        q => q.ilike('status', 'not taken'),
+      ),
     ])
 
     const candidates = []

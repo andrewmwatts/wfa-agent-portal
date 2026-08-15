@@ -3,6 +3,8 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireSuperAdmin } from '../_auth.js'
+import { loadAllSplits, fetchPoliciesForAgents, explodeCreditedRows } from '../_policySplits.js'
+import { attachSplits, participants, creditedAmount } from '../../shared/policySplit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../../.vercel/.env.development.local') })
@@ -247,24 +249,39 @@ export default async function handler(req, res) {
       .lte('issue_date', snapshot_window.to)
     if (polErr) throw polErr
 
-    // Group by sfg_id + carrier; only include agents with a known display name
+    // Group by credited agent + carrier; only include agents with a known display
+    // name. Snapshot reports each agent their share of a split sale, so a shared
+    // policy lands in BOTH agents' buckets carrying only that agent's portion —
+    // otherwise every split would read as a discrepancy every month.
     const knownSfgIds = new Set(
       Object.values(nameCrosswalk).map(id => id?.trim().toUpperCase()).filter(Boolean)
     )
-    const policyBuckets = {}  // `${sfg_id}||${carrier}` → [policies]
+    const splitRows        = await loadAllSplits(supabase)
+    const windowWithSplits = attachSplits(windowPolicies ?? [], splitRows)
+    const policyBuckets    = {}  // `${sfg_id}||${carrier}` → [policies, APV credited to that agent]
 
-    for (const p of windowPolicies ?? []) {
-      const sfgId = p.sfg_id?.trim().toUpperCase()
-      if (!sfgId || !knownSfgIds.has(sfgId)) continue
+    for (const p of windowWithSplits) {
       const carrier = normalizeSnapshotCarrier(p.carrier)
-      const key = `${sfgId}||${carrier}`
-      ;(policyBuckets[key] ??= []).push(p)
+      for (const agentId of participants(p)) {
+        if (!knownSfgIds.has(agentId)) continue
+        const key = `${agentId}||${carrier}`
+        ;(policyBuckets[key] ??= []).push({
+          ...p,
+          sfg_id:     agentId,
+          issued_apv: creditedAmount(p, agentId, 'issued_apv'),
+        })
+      }
     }
 
     // ── 5. Find duplicate policy numbers ─────────────────────────────────────
+    // Deduplicated by policy id first: a split policy sits in two buckets, and
+    // without this its shared policy number would look like a duplicate.
     const byPolicyNum = {}
+    const seenPolicyIds = new Set()
     for (const policies of Object.values(policyBuckets)) {
       for (const p of policies) {
+        if (seenPolicyIds.has(p.id)) continue
+        seenPolicyIds.add(p.id)
         const num = p.policy_number?.trim()
         if (num) (byPolicyNum[num] ??= []).push(p)
       }
@@ -304,6 +321,7 @@ export default async function handler(req, res) {
 
       const mechanical_flags = []
       if (policies.some(p => p.split_reset))                      mechanical_flags.push('Split/Reset policy')
+      if (policies.some(p => p.splits?.length))                   mechanical_flags.push('Shared credit policy')
       if (policies.some(p => duplicateNums.has(p.policy_number))) mechanical_flags.push('Duplicate policy number')
 
       const hasHardFlag = policies.some(p => duplicateNums.has(p.policy_number))
@@ -323,38 +341,36 @@ export default async function handler(req, res) {
 
     let cbAll = [], nonIssuedAll = [], straddleAll = [], notTakenAll = []
     if (discrepantSfgIds.length > 0) {
+      // Each pool is fetched split-aware (so a policy an agent only shares still
+      // appears) and then exploded to one row per credited agent with issued_apv
+      // rewritten to their share — the amounts matchCandidates compares against
+      // the delta have to be the same amounts Snapshot reports.
+      const pool = (columns, applyFilter) =>
+        fetchPoliciesForAgents(supabase, discrepantSfgIds, columns, applyFilter)
+          .then(rows => explodeCreditedRows(rows, discrepantSfgIds))
+
       const [cbRes, niRes, stRes, ntRes] = await Promise.all([
-        supabase
-          .from('policies')
-          .select('id, policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date, sfg_id')
-          .in('sfg_id', discrepantSfgIds)
-          .ilike('status', 'issued')
-          .not('conservation_date', 'is', null),
-
-        supabase
-          .from('policies')
-          .select('id, policy_number, applicant, carrier, issued_apv, status, submit_date, sfg_id')
-          .in('sfg_id', discrepantSfgIds)
-          .in('status', ['Pending', 'Incomplete', 'pending', 'incomplete']),
-
-        supabase
-          .from('policies')
-          .select('id, policy_number, applicant, carrier, issue_date, issued_apv, sfg_id')
-          .in('sfg_id', discrepantSfgIds)
-          .ilike('status', 'issued')
-          .gte('issue_date', dayAfterWindow)
-          .lte('issue_date', straddleEnd),
-
-        supabase
-          .from('policies')
-          .select('id, policy_number, applicant, carrier, issued_apv, status, sfg_id')
-          .in('sfg_id', discrepantSfgIds)
-          .ilike('status', 'not taken'),
+        pool(
+          'id, policy_number, applicant, carrier, issue_date, issued_apv, conservation_status, conservation_date, sfg_id',
+          q => q.ilike('status', 'issued').not('conservation_date', 'is', null),
+        ),
+        pool(
+          'id, policy_number, applicant, carrier, issued_apv, status, submit_date, sfg_id',
+          q => q.in('status', ['Pending', 'Incomplete', 'pending', 'incomplete']),
+        ),
+        pool(
+          'id, policy_number, applicant, carrier, issue_date, issued_apv, sfg_id',
+          q => q.ilike('status', 'issued').gte('issue_date', dayAfterWindow).lte('issue_date', straddleEnd),
+        ),
+        pool(
+          'id, policy_number, applicant, carrier, issued_apv, status, sfg_id',
+          q => q.ilike('status', 'not taken'),
+        ),
       ])
-      cbAll         = cbRes.data  ?? []
-      nonIssuedAll  = niRes.data  ?? []
-      straddleAll   = stRes.data  ?? []
-      notTakenAll   = ntRes.data  ?? []
+      cbAll         = cbRes
+      nonIssuedAll  = niRes
+      straddleAll   = stRes
+      notTakenAll   = ntRes
     }
 
     // ── 8. Pass 2 — build upsert rows with analysis ───────────────────────────
@@ -383,8 +399,10 @@ export default async function handler(req, res) {
         applicant:     p.applicant      ?? '',
         carrier:       normalizeSnapshotCarrier(p.carrier),
         issue_date:    p.issue_date     ?? '',
+        // This agent's credited share, matching what Snapshot reports for them
         issued_apv:    p.issued_apv     ?? null,
         split_reset:   p.split_reset    ?? false,
+        splits:        p.splits         ?? null,
         policy_notes:  p.policy_notes   ?? '',
         agent_name:    agentName,
       })))
