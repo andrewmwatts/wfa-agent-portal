@@ -5,8 +5,12 @@ import {
 } from '../../../shared/commissionLevel'
 import {
   buildDownlineTree, computeTeamIssued, computeMaxLegApv,
-  legRulePreventsQual, fridayWeekCount, submissionRequirementMet,
+  legRulePreventsQual, fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet,
 } from '../../../shared/promotionQualification'
+
+// Leadership titles carry no carrier appointment level, so the restructure rules
+// and the contract/leadership track split both key off this.
+const LEADERSHIP_LEVELS = new Set(['TL', 'KL', 'AO'])
 
 const INPUT_CLS = 'w-full rounded-lg border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-gray-900 dark:text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/50'
 
@@ -68,7 +72,7 @@ function CopyBlock({ lines }) {
   )
 }
 
-function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing) {
+function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth, existing, submissionWeeks = []) {
   const fmt$ = n => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const name  = person?.opt_name ?? ''
   const sfgId = person?.sfg_id ?? ''
@@ -77,7 +81,11 @@ function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth
   const base = [name, sfgId, level]
 
   if (promoType === 'Slingshot') {
-    return [...base, 'Slingshot Qualification', fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
+    // Slingshot also requires personal weekly submissions, so the form needs the
+    // specific business weeks the agent submitted in.
+    const lines = [...base, 'Slingshot Qualification', fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
+    if (submissionWeeks.length) lines.push(`Submission weeks: ${submissionWeeks.join(', ')}`)
+    return lines
   }
   if (promoType === 'TL' || promoType === 'KL') {
     const lines = [...base, `${promoType} Qualification Month ${monthNum}`, fmtMonth(cycleMonth), fmt$(apv), `${writers} writers`]
@@ -284,6 +292,27 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     return fridayWeekCount(y, mo - 1)
   }, [cycleMonth])
 
+  // Personal submitted weeks as M/D labels (e.g. "7/3"), keyed uppercase — the
+  // slingshot Jotform lists the specific weeks the agent submitted in. The API
+  // returns week numbers, which index into the month's Fridays.
+  const submittedWeekLabels = useMemo(() => {
+    if (!cycleMonth) return {}
+    const [y, mo]  = String(cycleMonth).slice(0, 7).split('-').map(Number)
+    const fridays  = fridayDatesOfMonth(y, mo - 1)
+    const m = {}
+    for (const [k, weeks] of Object.entries(submittedWeeksByAgent)) {
+      m[k.toUpperCase()] = (weeks ?? [])
+        .map(w => parseInt(String(w).trim(), 10))
+        .filter(n => Number.isFinite(n) && n >= 1 && n <= fridays.length)
+        .sort((a, b) => a - b)
+        .map(n => {
+          const d = fridays[n - 1]
+          return `${d.getMonth() + 1}/${d.getDate()}`
+        })
+    }
+    return m
+  }, [submittedWeeksByAgent, cycleMonth])
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function getThresholds(level) {
     // qualifications rows use string keys matching the level values exactly
@@ -339,6 +368,47 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     }
   }
 
+  // Tracks already finalized this cycle. A promotion takes effect for the FOLLOWING
+  // month's qualification, so an agent who promoted (standard final month or
+  // slingshot) must not immediately reappear as a candidate for the next level in
+  // the same cycle. Kept per-track so a simultaneous contract + leadership
+  // qualification still shows both.
+  const promotedTracksThisCycle = useMemo(() => {
+    const s = new Set()
+    for (const a of promotions) {
+      if (!['promotion', 'manual_promotion'].includes(a.action_type)) continue
+      const id = a.sfg_id?.toUpperCase()
+      if (!id) continue
+      if (a.level) {
+        s.add(`${id}||${LEADERSHIP_LEVELS.has(a.level) ? 'leadership' : 'contract'}`)
+      } else {
+        // Manual promotions carry no level — the agent was handled by hand, so
+        // suppress both tracks rather than guessing which one was promoted.
+        s.add(`${id}||contract`)
+        s.add(`${id}||leadership`)
+      }
+    }
+    return s
+  }, [promotions])
+
+  // Whether this level already has the cycle's month recorded against it. The
+  // month markers on agent_promotions are the source of truth; without this a
+  // level logged earlier in the cycle re-derives a month number and is offered
+  // again (a logged Month 2 would come back around as Month 1).
+  function creditedThisCycle(existing) {
+    if (!existing || !cycleMonth) return false
+    return [existing.month_1, existing.month_2, existing.month_3, existing.slingshot_month]
+      .some(m => m && String(m).slice(0, 7) === cycleMonth)
+  }
+
+  // Next unrecorded month for a level — derived from how many months are actually
+  // on the record rather than by walking a chain of conditions, which fell through
+  // to 1 whenever the expected shape didn't match.
+  function nextMonthNumber(existing, totalMonths) {
+    const recorded = [existing?.month_1, existing?.month_2, existing?.month_3].filter(Boolean).length
+    return Math.min(recorded + 1, totalMonths)
+  }
+
   // ── Qualifying agents ────────────────────────────────────────────────────────
   // Each entry represents one qualifying opportunity (contract OR leadership track).
   // A single agent may appear twice if they're qualifying on both tracks simultaneously.
@@ -356,7 +426,8 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
       // ── Contract track ────────────────────────────────────────────────────
       const nextContract = nextContractLevel(person.commission_contract?.level ?? '80')
-      if (nextContract && !skippedSet.has(sfgId + '||' + nextContract)) {
+      if (nextContract && !skippedSet.has(sfgId + '||' + nextContract) &&
+          !promotedTracksThisCycle.has(sfgId + '||contract')) {
         const q = getThresholds(nextContract)
         const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextContract)
 
@@ -371,16 +442,16 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
         if ((regularMet || slingEligible)) {
           const existing = agentPromoMap[`${sfgId}||${nextContract}`] ?? null
-          if (!existing?.is_qualified) {
-            const months = Number(q?.months) || 2
-            let monthNum = 1
-            if (existing?.month_1 && existing.month_1.slice(0, 7) !== cycleMonth && !existing?.month_2) monthNum = 2
-            if (existing?.month_1 && existing?.month_2 && existing.month_2.slice(0, 7) !== cycleMonth && months === 3) monthNum = 3
+          if (!existing?.is_qualified && !creditedThisCycle(existing)) {
+            const months   = Number(q?.months) || 2
+            const monthNum = nextMonthNumber(existing, months)
 
             const key = `${sfgId}||contract||${nextContract}||${monthNum}`
+            // Matches on level+track rather than month_number: a slingshot action
+            // records no month_number, so comparing it would never match.
             const alreadyLogged = promotions.some(
-              a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
-                   a.level === nextContract && ['promotion', 'qualifying_month'].includes(a.action_type)
+              a => a.sfg_id?.toUpperCase() === sfgId && a.level === nextContract &&
+                   ['promotion', 'qualifying_month'].includes(a.action_type)
             )
             if (!alreadyLogged) {
               result.push({
@@ -400,23 +471,22 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
       // ── Leadership track ──────────────────────────────────────────────────
       const nextLeadership = nextLeadershipLevel(person.commission_leadership?.level ?? null)
-      if (nextLeadership && !skippedSet.has(sfgId + '||' + nextLeadership)) {
+      if (nextLeadership && !skippedSet.has(sfgId + '||' + nextLeadership) &&
+          !promotedTracksThisCycle.has(sfgId + '||leadership')) {
         const q = getThresholds(nextLeadership)
         const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextLeadership)
         const regularMet = meetsThreshold(q, teamApv, writers) &&
                            !legRulePreventsQual(teamApv, q?.regular, maxLeg)
         if (regularMet) {
           const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
-          if (!existing?.is_qualified) {
-            const months = Number(q?.months) || 2
-            let monthNum = 1
-            if (existing?.month_1 && existing.month_1.slice(0, 7) !== cycleMonth && !existing?.month_2) monthNum = 2
-            if (existing?.month_1 && existing?.month_2 && existing.month_2.slice(0, 7) !== cycleMonth && months === 3) monthNum = 3
+          if (!existing?.is_qualified && !creditedThisCycle(existing)) {
+            const months   = Number(q?.months) || 2
+            const monthNum = nextMonthNumber(existing, months)
 
             const key = `${sfgId}||leadership||${nextLeadership}||${monthNum}`
             const alreadyLogged = promotions.some(
-              a => a.sfg_id?.toUpperCase() === sfgId && a.month_number === monthNum &&
-                   a.level === nextLeadership && ['promotion', 'qualifying_month'].includes(a.action_type)
+              a => a.sfg_id?.toUpperCase() === sfgId && a.level === nextLeadership &&
+                   ['promotion', 'qualifying_month'].includes(a.action_type)
             )
             if (!alreadyLogged) {
               result.push({
@@ -435,8 +505,8 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       }
     }
 
-    return result.sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
-  }, [personnel, descendantsOf, directChildrenOf, issuedPolsBySfgId, chargebacksLower, submittedSet, submittedWeekCount, fridayCount, agentPromoMap, qualByLevel, promotions, skippedSet, cycleMonth])
+    return result.sort((a, b) => agentName(a.person).localeCompare(agentName(b.person)))
+  }, [personnel, descendantsOf, directChildrenOf, issuedPolsBySfgId, chargebacksLower, submittedSet, submittedWeekCount, fridayCount, agentPromoMap, qualByLevel, promotions, skippedSet, promotedTracksThisCycle, cycleMonth])
 
   // ── Broken streaks ───────────────────────────────────────────────────────────
   const brokenStreaks = useMemo(() => {
@@ -460,7 +530,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           apv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, null),
         }
       })
-      .sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
+      .sort((a, b) => agentName(a.person).localeCompare(agentName(b.person)))
   }, [agentPromos, qualifyingAgents, cycleMonth, personnelMap, descendantsOf, issuedPolsBySfgId, chargebacksLower])
 
   const finalizedActions = promotions.filter(
@@ -479,10 +549,8 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         const totalMonths = Number(getThresholds(a.level)?.months) || 2
         return { ...a, person: personnelMap[sfgId], existing, totalMonths }
       })
-      .sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
+      .sort((a, b) => agentName(a.person).localeCompare(agentName(b.person)))
   }, [promotions, agentPromoMap, personnelMap, qualByLevel])
-
-  const LEADERSHIP_LEVELS = new Set(['TL', 'KL', 'AO'])
 
   // Restructure flags are contract-level only (leadership titles don't carry
   // a carrier appointment level, so the same-level-as-upline rule doesn't apply).
@@ -503,7 +571,8 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     const promoType = existing?.is_slingshot ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
     const { teamApv, writers } = teamNumbers(sfgId.toLowerCase(), level)
     const monthNum = a.month_number ?? (existing?.month_3 ? 3 : existing?.month_2 ? 2 : 1)
-    return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth, existing)
+    return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth, existing,
+                             submittedWeekLabels[sfgId] ?? [])
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -612,6 +681,31 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
     }
   }
 
+  // Resets every broken streak in one pass. Sequential rather than parallel so a
+  // partial failure leaves a clear boundary, and so the count reported back is
+  // the number actually reset.
+  async function resetAllStreaks() {
+    const targets = brokenStreaks.filter(ap => ap.id)
+    if (!targets.length) return
+    if (!confirm(`Reset all ${targets.length} broken streak${targets.length !== 1 ? 's' : ''}? This cannot be undone.`)) return
+    setSaving('reset-all')
+    let done = 0
+    try {
+      for (const ap of targets) {
+        await apiRequest('/api/snapshot?type=agent_promotion', 'DELETE', { id: ap.id })
+        await apiRequest('/api/snapshot?type=promotions', 'POST', {
+          cycle_id: cycle.id, sfg_id: ap.sfg_id, action_type: 'streak_reset',
+        })
+        done++
+      }
+    } catch (err) {
+      alert(`${err.message || 'Failed to reset streaks.'}\n\n${done} of ${targets.length} were reset.`)
+    } finally {
+      setSaving(null)
+      await onRefresh()
+    }
+  }
+
   async function noteFlag(actionId) {
     setSaving(actionId)
     try {
@@ -669,9 +763,17 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       {/* ── A: Broken Streaks ──────────────────────────────────────────────────── */}
       {brokenStreaks.length > 0 && (
         <section>
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
-            Broken Streaks <span className="ml-1 text-xs font-normal text-red-500">{brokenStreaks.length} agent{brokenStreaks.length !== 1 ? 's' : ''}</span>
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+              Broken Streaks <span className="ml-1 text-xs font-normal text-red-500">{brokenStreaks.length} agent{brokenStreaks.length !== 1 ? 's' : ''}</span>
+            </h2>
+            {!readOnly && brokenStreaks.some(ap => ap.id) && (
+              <button onClick={resetAllStreaks} disabled={!!saving}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50">
+                {saving === 'reset-all' ? 'Resetting all…' : 'Reset All'}
+              </button>
+            )}
+          </div>
           <div className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
@@ -727,10 +829,17 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               const slingSaving = sfgId + '-' + targetLevel + '-sling'
               const jotformKey  = sfgId + '||' + targetLevel
               const savingKey   = sfgId + '-' + targetLevel + '-month'
-              const showJotform = isFinal || jotformOpen.has(jotformKey)
+              // Slingshot finalizes in a single month, so its copy block has to be
+              // available before logging — isFinal alone is false at month 1 of 2
+              // and would hide it until after the promotion was already recorded.
+              const showJotform = isFinal || slingEligible || jotformOpen.has(jotformKey)
               // Slingshot-eligible agents will log the single-month slingshot, so
               // show that Jotform format for them.
-              const jotformLines = buildJotformLines(person, apv, writers, monthNum, slingEligible ? 'Slingshot' : promoType, cycleMonth, existing)
+              const jotformLines = buildJotformLines(
+                person, apv, writers, monthNum,
+                slingEligible ? 'Slingshot' : promoType,
+                cycleMonth, existing, submittedWeekLabels[sfgId] ?? [],
+              )
               const currentLevelLabel = track === 'contract'
                 ? `${person.commission_contract?.level ?? '80'}%`
                 : (person.commission_leadership?.level ?? 'None')

@@ -124,13 +124,29 @@ export function legRulePreventsQual(teamIssued, targetApv, maxLegApv) {
   return effectiveApv < targetApv                          // true → can't qualify
 }
 
-// Number of Fridays in a calendar month (drives the weekly-submission requirement).
-export function fridayWeekCount(year, month) {
+/**
+ * The Friday dates of a calendar month, in order — index 0 is business week 1.
+ * submit_week is the business-week Friday and submit_week_num is which Friday it
+ * is, so this maps a recorded week number back to its actual date.
+ *
+ * @param {number} year
+ * @param {number} month  0-indexed
+ * @returns {Date[]}
+ */
+export function fridayDatesOfMonth(year, month) {
+  const out = []
   const d = new Date(year, month, 1)
   while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
-  let n = 0
-  while (d.getMonth() === month) { n++; d.setDate(d.getDate() + 7) }
-  return n
+  while (d.getMonth() === month) {
+    out.push(new Date(d))
+    d.setDate(d.getDate() + 7)
+  }
+  return out
+}
+
+// Number of Fridays in a calendar month (drives the weekly-submission requirement).
+export function fridayWeekCount(year, month) {
+  return fridayDatesOfMonth(year, month).length
 }
 
 // Weekly-submission requirement: 4 of 5 in a 5-Friday month, otherwise 3 of 4.
