@@ -15,6 +15,13 @@ function fmtApv(n) {
   return `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// On-screen agent name — the friendly/preferred name, falling back to the Opt
+// name. Jotform copy blocks deliberately keep the raw Opt name instead (see
+// buildJotformLines): that payload is submitted to SFG and has to match theirs.
+function agentName(person, fallback = '') {
+  return person?.preferred_name?.trim() || person?.opt_name?.trim() || fallback
+}
+
 function fmtMonth(isoMonth) {
   if (!isoMonth) return '—'
   const [y, m] = isoMonth.split('-')
@@ -100,7 +107,15 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
   const [search, setSearch] = useState('')
 
   const filtered = personnel
-    .filter(p => !search || (p.opt_name ?? '').toLowerCase().includes(search.toLowerCase()) || (p.sfg_id ?? '').toLowerCase().includes(search.toLowerCase()))
+    // Match either name — an agent searched for by their friendly name should be
+    // findable even when the roster stores a different Opt name, and vice versa.
+    .filter(p => {
+      if (!search) return true
+      const term = search.toLowerCase()
+      return (p.preferred_name ?? '').toLowerCase().includes(term)
+          || (p.opt_name       ?? '').toLowerCase().includes(term)
+          || (p.sfg_id         ?? '').toLowerCase().includes(term)
+    })
     .slice(0, 8)
   const selected = personnel.find(p => p.sfg_id === sfgId)
 
@@ -129,7 +144,7 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
           <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">Agent</label>
           {selected ? (
             <div className="flex items-center justify-between rounded-lg border border-gray-300 dark:border-white/20 px-3 py-2">
-              <span className="text-sm text-gray-900 dark:text-white">{selected.opt_name} <span className="text-gray-400 text-xs">{selected.sfg_id}</span></span>
+              <span className="text-sm text-gray-900 dark:text-white">{agentName(selected, selected.sfg_id)} <span className="text-gray-400 text-xs">{selected.sfg_id}</span></span>
               <button onClick={() => setSfgId('')} className="text-xs text-gray-400 hover:text-red-500 ml-2">×</button>
             </div>
           ) : (
@@ -140,7 +155,7 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
                   {filtered.map(p => (
                     <button key={p.sfg_id} onClick={() => { setSfgId(p.sfg_id); setSearch('') }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5 text-gray-900 dark:text-white border-b border-gray-100 dark:border-white/10 last:border-0">
-                      {p.opt_name} <span className="text-gray-400 text-xs">{p.sfg_id}</span>
+                      {agentName(p, p.sfg_id)} <span className="text-gray-400 text-xs">{p.sfg_id}</span>
                     </button>
                   ))}
                   {!filtered.length && <div className="px-3 py-2 text-xs text-gray-400">No results</div>}
@@ -420,7 +435,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
       }
     }
 
-    return result.sort((a, b) => (a.person.opt_name ?? '').localeCompare(b.person.opt_name ?? ''))
+    return result.sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
   }, [personnel, descendantsOf, directChildrenOf, issuedPolsBySfgId, chargebacksLower, submittedSet, submittedWeekCount, fridayCount, agentPromoMap, qualByLevel, promotions, skippedSet, cycleMonth])
 
   // ── Broken streaks ───────────────────────────────────────────────────────────
@@ -445,7 +460,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
           apv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, null),
         }
       })
-      .sort((a, b) => (a.person?.opt_name ?? '').localeCompare(b.person?.opt_name ?? ''))
+      .sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
   }, [agentPromos, qualifyingAgents, cycleMonth, personnelMap, descendantsOf, issuedPolsBySfgId, chargebacksLower])
 
   const finalizedActions = promotions.filter(
@@ -464,7 +479,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
         const totalMonths = Number(getThresholds(a.level)?.months) || 2
         return { ...a, person: personnelMap[sfgId], existing, totalMonths }
       })
-      .sort((a, b) => (a.person?.opt_name ?? '').localeCompare(b.person?.opt_name ?? ''))
+      .sort((a, b) => agentName(a.person).localeCompareagentName(b.person))
   }, [promotions, agentPromoMap, personnelMap, qualByLevel])
 
   const LEADERSHIP_LEVELS = new Set(['TL', 'KL', 'AO'])
@@ -582,7 +597,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
 
   async function resetStreak(ap) {
     if (!ap.id) { alert('Cannot reset: no record ID.'); return }
-    if (!confirm(`Reset ${ap.person?.opt_name ?? ap.sfg_id}'s qualifying streak?`)) return
+    if (!confirm(`Reset ${agentName(ap.person, ap.sfg_id)}'s qualifying streak?`)) return
     setSaving(ap.sfg_id + '-reset')
     try {
       await Promise.all([
@@ -671,7 +686,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                   const q = getThresholds(ap.level)
                   return (
                     <tr key={ap.sfg_id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{ap.person?.opt_name ?? ap.sfg_id}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{agentName(ap.person, ap.sfg_id)}</td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.level}</td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/50">{fmtMonth(ap.month_1)}</td>
                       <td className="px-4 py-3 text-gray-500 dark:text-white/50">{ap.month_2 ? fmtMonth(ap.month_2) : '—'}</td>
@@ -725,7 +740,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                 <div key={key} className="rounded-2xl border border-gray-200 dark:border-white/15 overflow-hidden">
                   {/* Header */}
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
-                    <span className="font-semibold text-gray-900 dark:text-white text-sm">{person.opt_name}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white text-sm">{agentName(person, person.sfg_id)}</span>
                     <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50">
                       {currentLevelLabel} → {track === 'contract' ? `${targetLevel}%` : targetLevel}
                     </span>
@@ -826,7 +841,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
               <tbody className="divide-y divide-gray-100 dark:divide-white/10">
                 {intermediateActions.map(a => (
                   <tr key={a.id}>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{a.person?.opt_name ?? a.sfg_id}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{agentName(a.person, a.sfg_id)}</td>
                     <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ?? '—'}</td>
                     <td className="px-4 py-3">
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
@@ -873,7 +888,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
                   return (
                     <Fragment key={a.id}>
                       <tr>
-                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{person?.opt_name ?? a.sfg_id}</td>
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{agentName(person, a.sfg_id)}</td>
                         <td className="px-4 py-3 text-gray-500 dark:text-white/50 capitalize">{(a.action_type ?? '').replace('_', ' ')}</td>
                         <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ?? '—'}</td>
                         <td className="px-4 py-3">
@@ -967,7 +982,7 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
             <p className="text-sm text-gray-500 dark:text-white/50">The following promotions have unresolved flags:</p>
             <ul className="space-y-1 text-sm text-orange-600 dark:text-orange-400">
               {unresolvedFlags.map(a => (
-                <li key={a.id}>• {personnelMap[a.sfg_id?.toUpperCase()]?.opt_name ?? a.sfg_id}</li>
+                <li key={a.id}>• {agentName(personnelMap[a.sfg_id?.toUpperCase()], a.sfg_id)}</li>
               ))}
             </ul>
             <p className="text-xs text-gray-400 dark:text-white/40">Close cycle anyway?</p>

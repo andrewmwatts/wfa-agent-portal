@@ -34,6 +34,13 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   GET  ?type=context&month=YYYY-MM          → personnel + qualifications + agent_promotions
  */
 
+// Columns returned by ?type=policies — enough to populate the policy edit modal.
+const SNAPSHOT_POLICY_COLS =
+  'id, sfg_id, policy_number, applicant, carrier, policy_name, status, ' +
+  'submit_date, submit_week, issue_date, last_update, face_amount, ' +
+  'submitted_apv, issued_apv, conservation_status, conservation_date, ' +
+  'application_notes, policy_notes, snapshot_chargeback_month, snapshot_chargeback_apv'
+
 export default async function handler(req, res) {
   if (!(await requireSuperAdmin(req, res))) return
 
@@ -381,9 +388,24 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── GET policies — policy search scoped to agent + carrier ──────────────────
+  // ── GET policies — policy search scoped to agent + carrier, or lookup by id ──
   if (method === 'GET' && type === 'policies') {
-    const { sfg_id, carrier, q } = req.query
+    const { sfg_id, carrier, q, id } = req.query
+
+    // Direct lookup by policy id. Step 2's dispute cards know policy_id but may
+    // not have a carrier or policy number to search on, so they use this path.
+    if (id) {
+      try {
+        const { data, error } = await supabase
+          .from('policies').select(SNAPSHOT_POLICY_COLS).eq('id', id).maybeSingle()
+        if (error) throw error
+        return res.status(200).json(data ? [data] : [])
+      } catch (err) {
+        console.error('[snapshot/policies GET by id]', err)
+        return res.status(500).json({ error: 'Failed to load policy' })
+      }
+    }
+
     if (!sfg_id || !carrier) return res.status(400).json({ error: 'sfg_id and carrier are required' })
     const CARRIER_ALIASES = {
       'American General': ['American General', 'Corebridge'],
@@ -394,7 +416,7 @@ export default async function handler(req, res) {
     try {
       let query = supabase
         .from('policies')
-        .select('id, policy_number, applicant, carrier, policy_name, status, submit_date, submit_week, issue_date, last_update, face_amount, submitted_apv, issued_apv, conservation_status, conservation_date, application_notes, policy_notes, snapshot_chargeback_month, snapshot_chargeback_apv')
+        .select(SNAPSHOT_POLICY_COLS)
         .eq('sfg_id', sfg_id)
         .in('carrier', carrierVariants)
       if (q?.trim()) {

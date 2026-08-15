@@ -117,6 +117,22 @@ function formatCbMonth(dateStr) {
   return `${MONTHS[monthIdx]} ${parseInt(m[1])}`
 }
 
+// Postgres errors carry the reason a write was rejected (a foreign key still
+// referencing the row, a uniqueness clash). Swallowing them behind a generic
+// message makes those failures impossible to diagnose from the UI, so surface
+// the detail — this API is admin-only and the messages name schema, not user data.
+function dbErrorMessage(err, fallback) {
+  const code = err?.code
+  const raw  = [err?.message, err?.details].filter(Boolean).join(' — ')
+  if (code === '23503') {
+    return `${fallback}: it is still referenced by another record. ${raw}`
+  }
+  if (code === '23505') {
+    return `${fallback}: that would duplicate an existing record. ${raw}`
+  }
+  return raw ? `${fallback}: ${raw}` : fallback
+}
+
 function parseNum(val) {
   if (val === '' || val == null) return null
   const n = parseFloat(String(val).replace(/[$,]/g, ''))
@@ -700,7 +716,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true })
     } catch (err) {
       console.error('[policies/add]', err)
-      return res.status(500).json({ error: 'Failed to add policy' })
+      return res.status(500).json({ error: dbErrorMessage(err, 'Failed to add policy') })
     }
   }
 
@@ -832,7 +848,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true })
     } catch (err) {
       console.error('[policies/update]', err)
-      return res.status(500).json({ error: 'Failed to update policy' })
+      return res.status(500).json({ error: dbErrorMessage(err, 'Failed to update policy') })
     }
   }
 
@@ -849,7 +865,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true })
     } catch (err) {
       console.error('[policies/delete]', err)
-      return res.status(500).json({ error: 'Failed to delete policy' })
+      return res.status(500).json({ error: dbErrorMessage(err, 'Failed to delete policy') })
     }
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import PolicyModal, { PolicyModalErrorBoundary } from '../PolicyEditModal'
 import { fmtDate, fmtCurrency as fmtAmt } from '../../utils/format'
 import { nextContractLevel, nextLeadershipLevel } from '../../../shared/commissionLevel'
 
@@ -111,7 +112,9 @@ function HierarchyChain({ sfgId, disputes, includedOverride, agentMonthApv, pers
       <div className="divide-y divide-gray-100 dark:divide-white/5">
         {chain.map((id, idx) => {
           const p      = personnelMap[id]
-          const name   = p?.opt_name || p?.preferred_name || disputeNameMap[id] || id
+          // Friendly name first — matches how the server resolves dispute agent
+          // names (preferred_name || opt_name) so the two never disagree.
+          const name   = p?.preferred_name?.trim() || p?.opt_name?.trim() || disputeNameMap[id] || id
 
           // The tracker total (agentMonthApv) is the correct ground truth.
           // When a dispute is INCLUDED we're asserting Snapshot is wrong and the tracker
@@ -208,6 +211,9 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
   const [includedOverride, setIncludedOverride] = useState({})
   const [localPatches,     setLocalPatches]     = useState({})  // optimistic updates to avoid scroll-reset
   const [savingId,         setSavingId]         = useState(null)
+  const [editPolicy,       setEditPolicy]       = useState(null)
+  const [loadingPolicyId,  setLoadingPolicyId]  = useState(null)
+  const [editError,        setEditError]        = useState(null)
 
   const readOnly = !!cycle?.completed_at || !canWrite
 
@@ -245,7 +251,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     const upper = sfgId?.trim().toUpperCase()
     if (!upper) return sfgId
     const p = personnelMap[upper]
-    return disputeNameMap[upper] || p?.opt_name || p?.preferred_name || sfgId
+    return disputeNameMap[upper] || p?.preferred_name?.trim() || p?.opt_name?.trim() || sfgId
   }
 
   // Policy lookup by id
@@ -292,6 +298,39 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
   async function saveNotes(id) {
     if (notes[id] === undefined) return
     await updateDispute(id, { notes: notes[id] })
+  }
+
+  // Opens the policy behind a dispute so the DB can be corrected when a dispute
+  // is denied or excluded. Always fetches the live row by id — the policies prop
+  // comes from the snapshot reconciliation JSON, which carries only a subset of
+  // policies and goes stale after edits.
+  async function openPolicy(dispute) {
+    if (!dispute.policy_id) return
+    setLoadingPolicyId(dispute.id)
+    setEditError(null)
+    try {
+      const data = await fetch(`/api/snapshot?type=policies&id=${encodeURIComponent(dispute.policy_id)}`)
+        .then(r => r.json())
+      const match = Array.isArray(data) ? data[0] : null
+      if (!match) throw new Error('That policy no longer exists.')
+      // Map DB column names → the modal's key names so its edit draft is fully
+      // populated and saving can't write NULLs over fields it never received.
+      setEditPolicy({
+        ...match,
+        policy_no:   match.policy_number ?? '',
+        policy_type: match.policy_name   ?? '',
+        subm_apv:    match.submitted_apv          != null ? String(match.submitted_apv)          : '',
+        face_amt:    match.face_amount            != null ? String(match.face_amount)            : '',
+        cb_apv:      match.snapshot_chargeback_apv != null ? String(match.snapshot_chargeback_apv) : '',
+        cb_month:    match.snapshot_chargeback_month
+                       ? String(match.snapshot_chargeback_month).slice(0, 7)
+                       : '',
+      })
+    } catch (e) {
+      setEditError(e.message || 'Failed to open that policy.')
+    } finally {
+      setLoadingPolicyId(null)
+    }
   }
 
   // Merge optimistic local patches so status updates don't trigger a parent re-render
@@ -349,18 +388,29 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
                 )}
               </div>
 
-              {!readOnly && (
-                <div className="flex items-center gap-1">
+              <div className="flex items-center gap-3">
+                {d.policy_id && (
                   <button
-                    onClick={() => toggleIncluded(d.id, true)}
-                    className={`text-xs px-3 py-1 rounded-l-lg border transition-colors ${included ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                  >Include</button>
-                  <button
-                    onClick={() => toggleIncluded(d.id, false)}
-                    className={`text-xs px-3 py-1 rounded-r-lg border border-l-0 transition-colors ${!included ? 'bg-red-500/20 border-red-500/40 text-red-600 dark:text-red-400 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                  >Exclude</button>
-                </div>
-              )}
+                    onClick={() => openPolicy(d)}
+                    disabled={loadingPolicyId === d.id}
+                    className="text-xs font-medium text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
+                  >
+                    {loadingPolicyId === d.id ? 'Opening…' : 'Edit Policy'}
+                  </button>
+                )}
+                {!readOnly && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => toggleIncluded(d.id, true)}
+                      className={`text-xs px-3 py-1 rounded-l-lg border transition-colors ${included ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    >Include</button>
+                    <button
+                      onClick={() => toggleIncluded(d.id, false)}
+                      className={`text-xs px-3 py-1 rounded-r-lg border border-l-0 transition-colors ${!included ? 'bg-red-500/20 border-red-500/40 text-red-600 dark:text-red-400 font-medium' : 'border-gray-200 dark:border-white/15 text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    >Exclude</button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ── Card body ────────────────────────────────────────────────── */}
@@ -424,6 +474,27 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
           </div>
         )
       })}
+
+      {editError && (
+        <div className="px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300">
+          {editError}
+        </div>
+      )}
+
+      {/* Policy edit modal — corrects the DB when a dispute is denied or excluded */}
+      {editPolicy && (
+        <PolicyModalErrorBoundary onClose={() => setEditPolicy(null)}>
+          <PolicyModal
+            policy={editPolicy}
+            personnel={personnel}
+            canWrite={canWrite}
+            initialEdit={canWrite}
+            onClose={() => setEditPolicy(null)}
+            onUpdate={() => { setEditPolicy(null); onRefresh?.() }}
+            onDelete={() => { setEditPolicy(null); onRefresh?.() }}
+          />
+        </PolicyModalErrorBoundary>
+      )}
 
       {/* Completion gate */}
       {allHaveOutcome && !cycle?.completed_at && canWrite && (
