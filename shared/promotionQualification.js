@@ -16,6 +16,8 @@
  * of the business month.
  */
 
+import { creditedAmount, teamCreditedAmount } from './policySplit.js'
+
 export const SINGLE_APV_CAP = 7500
 
 // Contract levels that capped each single policy at $7,500 under the ORIGINAL rule.
@@ -46,11 +48,41 @@ export function policyApvCap(policy, nextContractLevel) {
 }
 
 // Sum of issued_apv over policies, each capped per policyApvCap() above.
+// Ignores split credit — use cappedCreditedSum/computeTeamIssued for anything
+// that has to respect shared credit.
 export function cappedIssuedSum(pols, nextContractLevel = null) {
   return (pols ?? []).reduce(
     (s, p) => s + Math.min(p.issued_apv ?? 0, policyApvCap(p, nextContractLevel)),
     0
   )
+}
+
+/**
+ * One agent's own qualifying APV: their credited share of each policy, capped
+ * per sale. "Maximum credit per sale" is per agent, so an agent holding half of
+ * a $16,000 sale counts $8,000 → capped to $7,500.
+ */
+export function cappedCreditedSum(pols, sfgId, nextContractLevel = null) {
+  return (pols ?? []).reduce(
+    (s, p) => s + Math.min(creditedAmount(p, sfgId, 'issued_apv'), policyApvCap(p, nextContractLevel)),
+    0
+  )
+}
+
+/**
+ * Deduplicates policies across a set of agents. A split policy is indexed under
+ * every agent credited on it, so iterating a team's per-agent lists would visit
+ * the same sale more than once.
+ */
+function policiesAcross(idSet, polsBySfgId) {
+  const seen = new Map()
+  for (const id of idSet) {
+    for (const p of polsBySfgId[id] ?? []) {
+      const key = p.id ?? p
+      if (!seen.has(key)) seen.set(key, p)
+    }
+  }
+  return seen.values()
 }
 
 /**
@@ -90,23 +122,29 @@ export function buildDownlineTree(personnel) {
  */
 export function computeTeamIssued(descSet, issuedPolsBySfgId, chargebackAmounts = {}, nextContractLevel = null) {
   let issued = 0
-  let cb = 0
-  for (const tid of descSet) {
-    issued += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], nextContractLevel)
-    cb += chargebackAmounts[tid] ?? 0
+  // The cap applies to the team's COMBINED share of one sale, not to each
+  // participant's slice: two agents splitting a $10,000 policy each count their
+  // full $5,000, but their shared upline counts $7,500 rather than $10,000.
+  for (const p of policiesAcross(descSet, issuedPolsBySfgId)) {
+    const share = teamCreditedAmount(p, descSet, 'issued_apv')
+    issued += Math.min(share, policyApvCap(p, nextContractLevel))
   }
+  let cb = 0
+  for (const tid of descSet) cb += chargebackAmounts[tid] ?? 0
   return issued - cb
 }
 
 /**
- * Largest single-leg issued APV (each policy capped per policyApvCap()).
+ * Largest single-leg issued APV (capped per sale, split credit respected).
  * A leg = one direct child + all of their subordinates.
  */
 export function computeMaxLegApv(directChildren, descendantsOf, issuedPolsBySfgId, nextContractLevel = null) {
   return (directChildren ?? []).reduce((best, childId) => {
     const legDesc = descendantsOf[childId] ?? new Set([childId])
     let legApv = 0
-    for (const tid of legDesc) legApv += cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], nextContractLevel)
+    for (const p of policiesAcross(legDesc, issuedPolsBySfgId)) {
+      legApv += Math.min(teamCreditedAmount(p, legDesc, 'issued_apv'), policyApvCap(p, nextContractLevel))
+    }
     return Math.max(best, legApv)
   }, 0)
 }

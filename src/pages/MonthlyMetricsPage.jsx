@@ -7,6 +7,7 @@ import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
+import { teamCreditedAmount } from '../../shared/policySplit'
 
 function parseAmt(v) {
   if (v === null || v === undefined) return 0
@@ -71,8 +72,13 @@ function fmtPct(v) {
 
 // ─── Monthly aggregation ──────────────────────────────────────────────────────
 
-function buildMonthly(policies) {
+function buildMonthly(policies, scopeIds) {
   if (!policies.length) return []
+
+  // A split policy is returned once but may be shared with an agent outside the
+  // selected scope, so every figure counts only the in-scope agents' shares.
+  // With both participants in scope the shares sum back to the whole sale.
+  const share = (p, field) => teamCreditedAmount(p, scopeIds, field)
 
   const now      = new Date()
   const curYM    = toYearMonth(now.toISOString().slice(0, 10))
@@ -103,20 +109,21 @@ function buildMonthly(policies) {
     const submYM = toYearMonth(p.submit_week)
     if (submYM) {
       const b = ensure(submYM)
-      b.subm += parseAmt(p.subm_apv)
+      b.subm += share(p, 'subm_apv')
+      // Writers is the set of agents who SUBMITTED — that's the primary only.
       if (p.sfg_id) b.agents.add(p.sfg_id.toLowerCase())
     }
 
     if (p.status?.toLowerCase() === 'issued') {
       const issYM = toYearMonth(p.issue_date) ?? submYM
-      if (issYM) ensure(issYM).iss += parseAmt(p.issued_apv)
+      if (issYM) ensure(issYM).iss += share(p, 'issued_apv')
     }
 
     // Deduct chargebacks from the month they occurred
     if (p.cb_month) {
       const cbYM = parseCbMonth(p.cb_month)
       if (cbYM) {
-        const cbAmt = parseAmt(p.cb_apv) > 0 ? parseAmt(p.cb_apv) : parseAmt(p.issued_apv)
+        const cbAmt = parseAmt(p.cb_apv) > 0 ? share(p, 'cb_apv') : share(p, 'issued_apv')
         if (cbAmt > 0) ensure(cbYM).iss -= cbAmt
       }
     }
@@ -156,6 +163,8 @@ export default function MonthlyMetricsPage() {
 
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [policies, setPolicies]               = useState([])
+  // Agents in the selected scope — split shares held outside it don't count here
+  const [scopeIds, setScopeIds]               = useState([])
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [loading, setLoading]                 = useState(false)
   const [selectedScope, setSelectedScope]     = useState('master')
@@ -177,6 +186,7 @@ export default function MonthlyMetricsPage() {
       setMasterPersonnel(masterPersonnel)
       setSelectedScope('master')
       setPolicies(rows ?? [])
+      setScopeIds((masterPersonnel ?? []).map(p => p.sfg_id))
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
@@ -197,15 +207,16 @@ export default function MonthlyMetricsPage() {
 
   async function loadPolicies(personnel) {
     const sfgIds = personnel.map(p => p.sfg_id)
-    if (!sfgIds.length) { setPolicies([]); return }
+    if (!sfgIds.length) { setPolicies([]); setScopeIds([]); return }
     const polRes = await fetch(`/api/policies?sfg_ids=${sfgIds.join(',')}`)
     if (!polRes.ok) return
     const { policies: rows } = await polRes.json()
     setPolicies(rows ?? [])
+    setScopeIds(sfgIds)
   }
 
   // ── Aggregate ─────────────────────────────────────────────────────────────
-  const monthly = useMemo(() => buildMonthly(policies), [policies])
+  const monthly = useMemo(() => buildMonthly(policies, scopeIds), [policies, scopeIds])
 
   // Table: newest first
   const tableRows  = useMemo(() => [...monthly].reverse(), [monthly])

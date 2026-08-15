@@ -7,6 +7,7 @@ import {
   buildDownlineTree, computeTeamIssued, computeMaxLegApv,
   legRulePreventsQual, fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet,
 } from '../../../shared/promotionQualification'
+import { participants } from '../../../shared/policySplit'
 
 // Leadership titles carry no carrier appointment level, so the restructure rules
 // and the contract/leadership track split both key off this.
@@ -255,13 +256,13 @@ export default function Step3Promotions({ cycle, promotions, context, canWrite, 
   // ── Downline tree + team qualification inputs (mirrors Monthly Agent Totals) ──
   const { descendantsOf, directChildrenOf } = useMemo(() => buildDownlineTree(personnel), [personnel])
 
-  // Issued policies keyed by lowercased sfg_id (for team rollup, cap, and leg rule)
+  // Issued policies keyed by lowercased sfg_id (for team rollup, cap, and leg
+  // rule). Indexed under every agent credited on the policy, not just the
+  // primary, so a split reaches both; the team sums dedupe by policy id.
   const issuedPolsBySfgId = useMemo(() => {
     const m = {}
     for (const p of monthPolicies) {
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      ;(m[id] ??= []).push(p)
+      for (const id of participants(p)) (m[id.toLowerCase()] ??= []).push(p)
     }
     return m
   }, [monthPolicies])

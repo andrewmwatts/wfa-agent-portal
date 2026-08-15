@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from './_auth.js'
 import { nowInBusinessTZ } from '../shared/businessTime.js'
+import { fetchPoliciesForAgents, explodeCreditedRows } from './_policySplits.js'
 
 // Formats a Date's own year/month/date (no UTC conversion — .toISOString()
 // would shift the day for anything constructed from business-local "today"
@@ -97,12 +98,13 @@ export default async function handler(req, res) {
       .eq('type', 'expense')
       .gte('date', startYMD)
       .lte('date', yesterdayYMD),
-    supabase
-      .from('policies')
-      .select('sfg_id, issued_apv')
-      .in('sfg_id', ids)
-      .gte('issue_date', monthStartYMD)
-      .lte('issue_date', yesterdayYMD),
+    // Includes policies where a roster agent holds only a split share, with APV
+    // rewritten to each agent's credited portion.
+    fetchPoliciesForAgents(
+      supabase, ids, 'id, sfg_id, issued_apv, issue_date',
+      q => q.gte('issue_date', monthStartYMD).lte('issue_date', yesterdayYMD),
+    ).then(rows => ({ data: explodeCreditedRows(rows, ids), error: null }))
+     .catch(error => ({ data: null, error })),
     supabase
       .from('activity_goals')
       .select('sfg_id, monthly_apv_issued')

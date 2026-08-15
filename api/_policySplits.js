@@ -12,7 +12,65 @@
  * (which blows past URL length limits) on every policy fetch.
  */
 
-import { attachSplits } from '../shared/policySplit.js'
+import { attachSplits, creditedAmount, participants, isPrimary } from '../shared/policySplit.js'
+
+const APV_FIELDS = ['submitted_apv', 'issued_apv', 'snapshot_chargeback_apv']
+
+/**
+ * Rewrites each policy's APV columns to one agent's credited share, so callers
+ * that simply sum those columns need no split awareness. Only fields actually
+ * present on the row are touched, and unsplit policies pass through untouched.
+ *
+ * Single-agent views only — a team rollup must dedupe and cap per sale instead
+ * (see computeTeamIssued).
+ */
+export function toCreditedRows(policies, sfgId) {
+  return (policies ?? []).map(p => {
+    if (!p.splits?.length) return p
+    const out = { ...p }
+    for (const f of APV_FIELDS) {
+      if (f in p) out[f] = creditedAmount(p, sfgId, f)
+    }
+    return out
+  })
+}
+
+/**
+ * One row per (policy, credited agent), with sfg_id set to that agent and the
+ * APV columns rewritten to their share. `is_primary` marks the writing agent,
+ * because application COUNTS belong to the primary while APV pro-rates — a
+ * caller tallying rows must skip non-primary ones.
+ *
+ * Use for per-agent rollups over a group; totals stay whole because the shares
+ * of one policy sum back to 100%.
+ */
+export function explodeCreditedRows(policies, sfgIds) {
+  const want = new Set((sfgIds ?? []).map(id => String(id).trim().toUpperCase()).filter(Boolean))
+  const out = []
+  for (const p of policies ?? []) {
+    for (const agentId of participants(p)) {
+      if (want.size && !want.has(agentId)) continue
+      const row = { ...p, sfg_id: agentId, is_primary: isPrimary(p, agentId) }
+      for (const f of APV_FIELDS) if (f in p) row[f] = creditedAmount(p, agentId, f)
+      out.push(row)
+    }
+  }
+  return out
+}
+
+/**
+ * Every policy on which any of `sfgIds` holds credit — as primary OR as a split
+ * partner — with `splits` attached. `columns` must include id and sfg_id.
+ */
+export async function fetchPoliciesForAgents(supabase, sfgIds, columns, applyFilter = null) {
+  const ids = (sfgIds ?? []).map(id => String(id).trim().toUpperCase()).filter(Boolean)
+  let q = supabase.from('policies').select(columns)
+  if (ids.length) q = q.in('sfg_id', ids)
+  if (applyFilter) q = applyFilter(q)
+  const { data, error } = await q
+  if (error) throw error
+  return expandAndAttachSplits(supabase, data ?? [], ids, columns, applyFilter)
+}
 
 /** Every policy_splits row. Small table — one query, filtered in memory. */
 export async function loadAllSplits(supabase) {

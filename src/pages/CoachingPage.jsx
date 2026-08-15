@@ -1406,12 +1406,15 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
   const agentProd = {}
   for (const pol of downlinePolicies) {
     if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { submAPV: 0, issdAPV: 0, cntSubm: 0, cntIssd: 0, active: false }
+    // APV is already this agent's credited share. Application counts belong to
+    // the primary, so a secondary's split row adds APV but not a count.
+    const counts = pol.is_primary !== false
     if (inPeriod(pol.submit_date, period)) {
       agentProd[pol.sfg_id].submAPV  += pol.submitted_apv ?? 0
-      agentProd[pol.sfg_id].cntSubm  += 1
+      if (counts) agentProd[pol.sfg_id].cntSubm += 1
       if (pol.status === 'Issued') {
         agentProd[pol.sfg_id].issdAPV += pol.issued_apv ?? 0
-        agentProd[pol.sfg_id].cntIssd += 1
+        if (counts) agentProd[pol.sfg_id].cntIssd += 1
       }
     }
     if (pol.status === 'Issued' && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true

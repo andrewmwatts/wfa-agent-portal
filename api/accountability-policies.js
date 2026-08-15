@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from './_auth.js'
+import { fetchPoliciesForAgents, toCreditedRows } from './_policySplits.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -51,20 +52,23 @@ export default async function handler(req, res) {
   since28.setDate(since28.getDate() - 28)
   const since28YMD = since28.toISOString().slice(0, 10)
 
-  // Fetch all policies for this agent that are either open or recently submitted
-  const { data, error } = await supabase
-    .from('policies')
-    .select(`
-      id, status, status_actual, submit_date, issue_date,
-      applicant, carrier, policy_name, policy_number,
-      face_amount, submitted_apv, issued_apv,
-      application_notes, policy_notes, last_update
-    `)
-    .eq('sfg_id', sfg_id.trim())
-    .or(`status.in.(Pending,Incomplete),status.is.null,submit_date.gte.${since28YMD}`)
-    .order('submit_date', { ascending: false, nullsFirst: false })
+  // All policies this agent holds credit on — primary or split partner — that are
+  // either open or recently submitted. APV is rewritten to their credited share.
+  let rows
+  try {
+    rows = await fetchPoliciesForAgents(
+      supabase, [sfg_id.trim()],
+      `id, sfg_id, status, status_actual, submit_date, issue_date,
+       applicant, carrier, policy_name, policy_number,
+       face_amount, submitted_apv, issued_apv,
+       application_notes, policy_notes, last_update`,
+      q => q
+        .or(`status.in.(Pending,Incomplete),status.is.null,submit_date.gte.${since28YMD}`)
+        .order('submit_date', { ascending: false, nullsFirst: false }),
+    )
+  } catch (error) {
+    return res.status(500).json({ error: error.message })
+  }
 
-  if (error) return res.status(500).json({ error: error.message })
-
-  return res.status(200).json({ policies: data ?? [] })
+  return res.status(200).json({ policies: toCreditedRows(rows, sfg_id.trim()) })
 }

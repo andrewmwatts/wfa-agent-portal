@@ -4,6 +4,11 @@ import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireSuperAdmin } from './_auth.js'
 import { buildLevelMap } from '../shared/commissionLevel.js'
+import { loadAllSplits } from './_policySplits.js'
+import {
+  attachSplits, participants, creditedAmount,
+  submissionCredit, WEEK_SUBMISSION_THRESHOLD,
+} from '../shared/policySplit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -494,7 +499,7 @@ export default async function handler(req, res) {
         const [issuedRes, cbRes, submittedRes] = await Promise.all([
           supabase
             .from('policies')
-            .select('sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
+            .select('id, sfg_id, issued_apv, status, issue_date, submit_date, submit_week')
             .gte('issue_date', monthStart)
             .lt('issue_date', nextMonth)
             .ilike('status', 'issued'),
@@ -503,7 +508,7 @@ export default async function handler(req, res) {
           // Also fetch issued_apv as fallback when snapshot_chargeback_apv is 0/null.
           supabase
             .from('policies')
-            .select('sfg_id, issued_apv, snapshot_chargeback_month, snapshot_chargeback_apv')
+            .select('id, sfg_id, issued_apv, snapshot_chargeback_month, snapshot_chargeback_apv')
             .not('snapshot_chargeback_month', 'is', null)
             .gte('snapshot_chargeback_month', monthStart)
             .lt('snapshot_chargeback_month', nextMonth),
@@ -513,27 +518,35 @@ export default async function handler(req, res) {
           // Friday; fall back to submit_date. Mirrors MonthlyAgentTotals month filter.
           supabase
             .from('policies')
-            .select('sfg_id, submit_week, submit_date, submit_week_num')
+            .select('id, sfg_id, submit_week, submit_date, submit_week_num')
             .or(`and(submit_week.gte.${monthStart},submit_week.lt.${nextMonth}),and(submit_date.gte.${monthStart},submit_date.lt.${nextMonth})`),
         ])
         if (issuedRes.error)    console.error('[snapshot/context] issuedRes error:', issuedRes.error)
         if (cbRes.error)        console.error('[snapshot/context] cbRes error:', cbRes.error)
         if (submittedRes.error) console.error('[snapshot/context] submittedRes error:', submittedRes.error)
-        monthPolicies = issuedRes.data ?? []
 
-        // Personal APV: issued_apv for the calendar month, minus actual chargebacks
-        // logged in snapshot_chargeback_month for the same month.
+        // Attach shared-credit rows so every figure below can be pro-rated.
+        const allSplits    = await loadAllSplits(supabase)
+        monthPolicies      = attachSplits(issuedRes.data ?? [], allSplits)
+        const cbPolicies   = attachSplits(cbRes.data ?? [], allSplits)
+        const submPolicies = attachSplits(submittedRes.data ?? [], allSplits)
+
+        // Personal APV: each agent's credited share of policies issued this month,
+        // minus their share of chargebacks logged in the same month.
         for (const p of monthPolicies) {
-          const key = p.sfg_id?.trim().toUpperCase()
-          if (key) agentMonthApv[key] = (agentMonthApv[key] ?? 0) + (Number(p.issued_apv) || 0)
+          for (const agentId of participants(p)) {
+            const amt = creditedAmount(p, agentId, 'issued_apv')
+            if (amt) agentMonthApv[agentId] = (agentMonthApv[agentId] ?? 0) + amt
+          }
         }
-        for (const p of cbRes.data ?? []) {
-          const key = p.sfg_id?.trim().toUpperCase()
-          if (!key) continue
+        for (const p of cbPolicies) {
           // Use snapshot_chargeback_apv; fall back to issued_apv if it is 0/null
           const cbApv = parseCbApvSvr(p.snapshot_chargeback_apv)
-          const amt   = cbApv > 0 ? cbApv : parseCbApvSvr(p.issued_apv)
-          if (amt > 0) agentMonthApv[key] = (agentMonthApv[key] ?? 0) - amt
+          const field = cbApv > 0 ? 'snapshot_chargeback_apv' : 'issued_apv'
+          for (const agentId of participants(p)) {
+            const amt = creditedAmount(p, agentId, field)
+            if (amt > 0) agentMonthApv[agentId] = (agentMonthApv[agentId] ?? 0) - amt
+          }
         }
 
         // Build children map so we can compute cumulative (group) APV for each agent
@@ -564,28 +577,43 @@ export default async function handler(req, res) {
         // Per-agent chargebacks for the month — snapshot_chargeback_apv only (no
         // issued fallback), matching MonthlyAgentTotals' chargebackMemo so Step 3
         // nets chargebacks identically.
-        for (const p of cbRes.data ?? []) {
-          const amt = parseCbApvSvr(p.snapshot_chargeback_apv)
-          if (!amt) continue
-          const key = p.sfg_id?.trim().toUpperCase()
-          if (!key) continue
-          chargebacksByAgent[key] = (chargebacksByAgent[key] ?? 0) + amt
+        for (const p of cbPolicies) {
+          if (!parseCbApvSvr(p.snapshot_chargeback_apv)) continue
+          for (const agentId of participants(p)) {
+            const amt = creditedAmount(p, agentId, 'snapshot_chargeback_apv')
+            if (amt) chargebacksByAgent[agentId] = (chargebacksByAgent[agentId] ?? 0) + amt
+          }
         }
 
-        // Per-agent distinct submit-week numbers for policies submitted this month,
-        // plus the set of agents who submitted anything (for the writers count).
-        const weekSets = {}
+        // Weekly submission credit and the writers set.
+        //
+        // Writers counts agents who SUBMITTED an application — applications belong
+        // to the primary, so holding a secondary share doesn't make someone a writer.
+        //
+        // The slingshot weekly requirement is the one exception: a split app is
+        // worth a flat 0.5 to a secondary, so two of them satisfy a week. Only
+        // weeks reaching a full submission are returned, so callers can keep
+        // counting the array length.
+        const weekCredit   = {}
         const submittedSet = new Set()
-        for (const p of submittedRes.data ?? []) {
+        for (const p of submPolicies) {
           const ym = svrYearMonth(p.submit_week) ?? svrYearMonth(p.submit_date)
           if (!ym || ym.year !== yr || ym.month !== mo) continue
-          const key = p.sfg_id?.trim().toUpperCase()
-          if (!key) continue
-          submittedSet.add(key)
+          const primary = p.sfg_id?.trim().toUpperCase()
+          if (primary) submittedSet.add(primary)
           const wk = p.submit_week_num?.trim()
-          if (wk) (weekSets[key] ??= new Set()).add(wk)
+          if (!wk) continue
+          for (const agentId of participants(p)) {
+            const credit = submissionCredit(p, agentId)
+            if (!credit) continue
+            ;(weekCredit[agentId] ??= {})[wk] = ((weekCredit[agentId][wk]) ?? 0) + credit
+          }
         }
-        for (const [key, set] of Object.entries(weekSets)) submittedWeeksByAgent[key] = [...set]
+        for (const [key, weeks] of Object.entries(weekCredit)) {
+          submittedWeeksByAgent[key] = Object.entries(weeks)
+            .filter(([, credit]) => credit >= WEEK_SUBMISSION_THRESHOLD)
+            .map(([wk]) => wk)
+        }
         submittedInMonth = [...submittedSet]
       }
 

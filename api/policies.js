@@ -6,7 +6,7 @@ import { normalizeCarrier } from '../shared/carriers.js'
 import { nowInBusinessTZ } from '../shared/businessTime.js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 import { expandAndAttachSplits } from './_policySplits.js'
-import { validateSplits } from '../shared/policySplit.js'
+import { validateSplits, participants, creditedAmount } from '../shared/policySplit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -451,6 +451,11 @@ export default async function handler(req, res) {
       const daysElapsed = Math.max(now.getDate(), 1)
       const projFactor  = daysInMonth / daysElapsed
 
+      // An unscoped request (super_admin, full list) credits everyone; a scoped
+      // one must ignore split partners who fall outside the requested agents.
+      const scopeSet = new Set(upperIds)
+      const inScope  = id => scopeSet.size === 0 || scopeSet.has(String(id).trim().toUpperCase())
+
       const pending = [], incomplete = [], lapse = []
       let submMonth = 0, submWeek = 0, submLW = 0, issMonth = 0
       const totalWriters = { month: new Set(), week: new Set(), lw: new Set() }
@@ -469,8 +474,8 @@ export default async function handler(req, res) {
         const submitDate = p.submit_date        ?? ''
         const submitWeek = p.submit_week        ?? ''
         const consvStatus = (p.conservation_status ?? '').trim()
-        const submApv    = parseAmt(p.submitted_apv)
-        const issApv     = parseAmt(p.issued_apv)
+        // Split policies are returned once per credited agent by fetchPolicies, so
+        // each pass counts only that agent's share and the totals stay whole.
         const person     = personLookup[sfgLower] ?? {}
         const agentName  = person.name || ''
         const earliest   = earliestSubmit[sfgLower]
@@ -488,48 +493,63 @@ export default async function handler(req, res) {
           last_update: p.last_update  ?? '',
         }
 
-        if (inPeriod(submitKey, monthStart, monthEnd)) {
-          totalWriters.month.add(sfgLower)
-          totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
-          if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
-            newWriters.month.add(sfgLower)
-            newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+        // Writers counts agents who SUBMITTED an application. Applications belong
+        // to the primary, so holding a secondary share doesn't make someone a writer.
+        if (inScope(sfgId)) {
+          if (inPeriod(submitKey, monthStart, monthEnd)) {
+            totalWriters.month.add(sfgLower)
+            totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+            if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
+              newWriters.month.add(sfgLower)
+              newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+            }
+          }
+          if (inPeriod(submitKey, weekStart)) {
+            totalWriters.week.add(sfgLower)
+            if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
+          }
+          if (inPeriod(submitKey, lwStart, weekStart)) {
+            totalWriters.lw.add(sfgLower)
+            if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
           }
         }
-        if (inPeriod(submitKey, weekStart)) {
-          totalWriters.week.add(sfgLower)
-          if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
-        }
-        if (inPeriod(submitKey, lwStart, weekStart)) {
-          totalWriters.lw.add(sfgLower)
-          if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
-        }
 
-        if (submApv > 0) {
-          if (inPeriod(submitKey, monthStart, monthEnd)) {
-            submMonth += submApv
-            submMonthItems.push({
-              sfg_id: sfgId, agent: agentName,
-              applicant:   (p.applicant ?? '').trim(),
-              carrier:     (p.carrier   ?? '').trim(),
-              subm_apv:    String(p.submitted_apv),
-              submit_week: submitWeek,
-              submit_date: submitDate,
+        // APV is attributed per credited agent. A split policy is returned once,
+        // so each participant's share is added here; participants outside the
+        // requested scope are skipped so scoped totals stay scoped.
+        for (const agentId of participants(p)) {
+          if (!inScope(agentId)) continue
+          const idLower   = agentId.toLowerCase()
+          const creditNm  = personLookup[idLower]?.name || (idLower === sfgLower ? agentName : '')
+          const submShare = creditedAmount(p, agentId, 'submitted_apv')
+          const issShare  = creditedAmount(p, agentId, 'issued_apv')
+
+          if (submShare > 0) {
+            if (inPeriod(submitKey, monthStart, monthEnd)) {
+              submMonth += submShare
+              submMonthItems.push({
+                sfg_id: agentId, agent: creditNm,
+                applicant:   (p.applicant ?? '').trim(),
+                carrier:     (p.carrier   ?? '').trim(),
+                subm_apv:    String(submShare),
+                submit_week: submitWeek,
+                submit_date: submitDate,
+              })
+            }
+            if (inPeriod(submitKey, weekStart))          submWeek += submShare
+            if (inPeriod(submitKey, lwStart, weekStart)) submLW   += submShare
+          }
+
+          if (issShare > 0 && inPeriod(issueDate, monthStart, monthEnd)) {
+            issMonth += issShare
+            issMonthItems.push({
+              sfg_id: agentId, agent: creditNm,
+              applicant:  (p.applicant ?? '').trim(),
+              carrier:    (p.carrier   ?? '').trim(),
+              issued_apv: String(issShare),
+              issue_date: issueDate,
             })
           }
-          if (inPeriod(submitKey, weekStart))          submWeek += submApv
-          if (inPeriod(submitKey, lwStart, weekStart)) submLW   += submApv
-        }
-
-        if (issApv > 0 && inPeriod(issueDate, monthStart, monthEnd)) {
-          issMonth += issApv
-          issMonthItems.push({
-            sfg_id: sfgId, agent: agentName,
-            applicant:  (p.applicant ?? '').trim(),
-            carrier:    (p.carrier   ?? '').trim(),
-            issued_apv: String(p.issued_apv),
-            issue_date: issueDate,
-          })
         }
 
         const statusLower = status.toLowerCase()

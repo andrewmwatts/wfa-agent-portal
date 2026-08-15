@@ -51,12 +51,18 @@ async function runAlertQuery() {
     .filter(a => !a.hire_date || new Date(a.hire_date) >= cutoff)
     .map(a => a.sfg_id)
 
-  // Also include agents with any policies (regardless of hire date)
-  const { data: policyAgents } = await sb
-    .from('policies')
-    .select('sfg_id')
-    .in('sfg_id', agents.map(a => a.sfg_id))
-  const policySet = new Set((policyAgents ?? []).map(p => p.sfg_id))
+  // Also include agents with any policies (regardless of hire date). Split
+  // partners count as active too — an agent whose only production is a shared
+  // sale still needs their carrier contracting alerts.
+  const agentIds = agents.map(a => a.sfg_id)
+  const [{ data: policyAgents }, { data: splitAgents }] = await Promise.all([
+    sb.from('policies').select('sfg_id').in('sfg_id', agentIds),
+    sb.from('policy_splits').select('sfg_id').in('sfg_id', agentIds),
+  ])
+  const policySet = new Set([
+    ...(policyAgents ?? []).map(p => p.sfg_id),
+    ...(splitAgents  ?? []).map(p => p.sfg_id),
+  ])
   const activeIds = [...new Set([...eligibleIds, ...policySet])]
 
   if (!activeIds.length) return []

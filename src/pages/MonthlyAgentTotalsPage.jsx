@@ -7,9 +7,13 @@ import { fmtCurrency as fmtAmt } from '../utils/format'
 
 import { nextContractLevel, nextLeadershipLevel, levelAsOfMonth } from '../../shared/commissionLevel'
 import {
-  policyApvCap, cappedIssuedSum, SINGLE_APV_CAP,
+  policyApvCap, cappedCreditedSum, computeTeamIssued, computeMaxLegApv, SINGLE_APV_CAP,
   legRulePreventsQual, promoStatuses, leadStatuses, requiredSubmissionWeeks,
 } from '../../shared/promotionQualification'
+import {
+  participants, creditedAmount, teamCreditedAmount, isPrimary,
+  submissionCredit, WEEK_SUBMISSION_THRESHOLD,
+} from '../../shared/policySplit'
 
 // Qualification math (50% leg rule, $7,500 cap, promo/lead statuses) lives in
 // shared/promotionQualification.js so this page and Step 3 stay in lockstep.
@@ -220,44 +224,47 @@ export default function MonthlyAgentTotalsPage() {
     })
   }, [policies, selectedYear, selectedMonth])
 
-  // ── Policy lookup by SFG ID — submit_week-based (pending / incomplete / weekly) ──
-  const polsBySfgId = useMemo(() => {
+  // Indexes a policy under every agent credited on it, not just the primary, so
+  // a split policy reaches both agents' rollups. Team sums dedupe by policy id.
+  function indexByCreditedAgent(pols) {
     const map = {}
-    for (const p of monthPolicies) {
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      ;(map[id] ??= []).push(p)
+    for (const p of pols) {
+      for (const id of participants(p)) {
+        ;(map[id.toLowerCase()] ??= []).push(p)
+      }
     }
     return map
-  }, [monthPolicies])
+  }
+
+  // Team total for a non-qualifying figure (pending / incomplete): dedupe the
+  // policy list, then take the combined share held by the team. No per-sale cap —
+  // that only applies to qualifying issued APV.
+  function sumTeamCredited(pols, idSet, field = 'issued_apv') {
+    const seen = new Map()
+    for (const p of pols) if (!seen.has(p.id)) seen.set(p.id, p)
+    let total = 0
+    for (const p of seen.values()) total += teamCreditedAmount(p, idSet, field)
+    return total
+  }
+
+  // ── Policy lookup by SFG ID — submit_week-based (pending / incomplete / weekly) ──
+  const polsBySfgId = useMemo(() => indexByCreditedAgent(monthPolicies), [monthPolicies])
 
   // ── Issued-policy lookup by SFG ID — issue_date-based ─────────────────────
   // Issued APV is recognised in the calendar month it was issued, not submitted.
   const issuedPolsBySfgId = useMemo(() => {
-    const map = {}
-    for (const p of policies) {
-      if (p.status?.toLowerCase() !== 'issued') continue
+    const inMonth = policies.filter(p => {
+      if (p.status?.toLowerCase() !== 'issued') return false
       const ym = toYearMonth(p.issue_date)
-      if (!ym || ym.year !== selectedYear || ym.month !== selectedMonth) continue
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      ;(map[id] ??= []).push(p)
-    }
-    return map
+      return ym && ym.year === selectedYear && ym.month === selectedMonth
+    })
+    return indexByCreditedAgent(inMonth)
   }, [policies, selectedYear, selectedMonth])
 
   // ── All policies by SFG ID — no date filter (for pending / incomplete) ────
   // Pending and Incomplete are current-state buckets: show ALL such policies
   // (regardless of submit date) when the selected month is the current month.
-  const allPoliciesBySfgId = useMemo(() => {
-    const map = {}
-    for (const p of policies) {
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      ;(map[id] ??= []).push(p)
-    }
-    return map
-  }, [policies])
+  const allPoliciesBySfgId = useMemo(() => indexByCreditedAgent(policies), [policies])
 
   // ── Chargebacks for the selected month ────────────────────────────────────
   // Scan ALL policies (not just month-filtered) for cb_month matching selected month.
@@ -271,10 +278,15 @@ export default function MonthlyAgentTotalsPage() {
       if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
       const amt = parseCbApv(p.snapshot_chargeback_apv)
       if (!amt) continue
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      amounts[id] = (amounts[id] ?? 0) + amt
-      ;(pols[id] ??= []).push(p)
+      // A chargeback on a shared policy is debited in the same proportion the
+      // credit was given, otherwise the primary absorbs the whole reversal.
+      for (const agentId of participants(p)) {
+        const portion = creditedAmount(p, agentId, 'snapshot_chargeback_apv')
+        if (!portion) continue
+        const id = agentId.toLowerCase()
+        amounts[id] = (amounts[id] ?? 0) + portion
+        ;(pols[id] ??= []).push(p)
+      }
     }
     return { amounts, pols }
   }, [policies, selectedYear, selectedMonth])
@@ -289,12 +301,14 @@ export default function MonthlyAgentTotalsPage() {
       if (p.chargeback_exempt !== false) continue   // null = unknown, true = exempt
       const cbYm = toYearMonth(p.conservation_date)
       if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
-      const amt = p.issued_apv ?? 0
-      if (!amt) continue
-      const id = p.sfg_id?.toLowerCase()
-      if (!id) continue
-      amounts[id] = (amounts[id] ?? 0) + amt
-      ;(pols[id] ??= []).push(p)
+      if (!(p.issued_apv ?? 0)) continue
+      for (const agentId of participants(p)) {
+        const portion = creditedAmount(p, agentId, 'issued_apv')
+        if (!portion) continue
+        const id = agentId.toLowerCase()
+        amounts[id] = (amounts[id] ?? 0) + portion
+        ;(pols[id] ??= []).push(p)
+      }
     }
     return { amounts, pols }
   }, [policies, selectedYear, selectedMonth])
@@ -344,18 +358,21 @@ export default function MonthlyAgentTotalsPage() {
 
       const hasDownlines = descSet.size > 1
 
-      // Snapshot chargebacks (posted, via cb_month / cb_apv)
+      // Snapshot chargebacks (posted, via cb_month / cb_apv). The team total is
+      // netted inside computeTeamIssued, so only the per-agent figure and the
+      // drill-down lists are needed here. dedupe() keeps a split policy from
+      // being listed twice when both participants are in the team.
+      const dedupe     = arr => [...new Map(arr.map(p => [p.id, p])).values()]
       const ownCb      = chargebackMemo.amounts[id] ?? 0
-      const teamCb     = [...descSet].reduce((s, tid) => s + (chargebackMemo.amounts[tid] ?? 0), 0)
       const ownCbPols  = chargebackMemo.pols[id] ?? []
-      const teamCbPols = [...descSet].flatMap(tid => chargebackMemo.pols[tid] ?? [])
+      const teamCbPols = dedupe([...descSet].flatMap(tid => chargebackMemo.pols[tid] ?? []))
 
       // Likely chargebacks (chargeback_exempt=false, conservation_date in selected month)
       // Only relevant for the current month — past months use actual chargebacks only.
       const ownLikelyCbAmt   = likelyCbMemo.amounts[id] ?? 0
       const teamLikelyCbAmt  = [...descSet].reduce((s, tid) => s + (likelyCbMemo.amounts[tid] ?? 0), 0)
       const ownLikelyCbPols  = isCurrentMonth && includeLikelyCb ? (likelyCbMemo.pols[id] ?? []) : []
-      const teamLikelyCbPols = isCurrentMonth && includeLikelyCb ? [...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? []) : []
+      const teamLikelyCbPols = isCurrentMonth && includeLikelyCb ? dedupe([...descSet].flatMap(tid => likelyCbMemo.pols[tid] ?? [])) : []
 
       // Status predicates
       const isIssued  = p => p.status?.toLowerCase() === 'issued'
@@ -366,9 +383,9 @@ export default function MonthlyAgentTotalsPage() {
       const agentIssuedPols     = ownIssuedPols
       const agentPendingPols    = isCurrentMonth ? ownAllPols.filter(isPending) : []
       const agentIncompletePols = isCurrentMonth ? ownAllPols.filter(isIncomp)  : []
-      const teamIssuedPolsList  = teamIssuedPols
-      const teamPendingPols     = isCurrentMonth ? teamAllPols.filter(isPending) : []
-      const teamIncompletePols  = isCurrentMonth ? teamAllPols.filter(isIncomp)  : []
+      const teamIssuedPolsList  = dedupe(teamIssuedPols)
+      const teamPendingPols     = isCurrentMonth ? dedupe(teamAllPols.filter(isPending)) : []
+      const teamIncompletePols  = isCurrentMonth ? dedupe(teamAllPols.filter(isIncomp))  : []
 
       // Levels & next targets (computed before the sums so the 125/130
       // single-policy cap can be applied to the issued team total).
@@ -391,35 +408,45 @@ export default function MonthlyAgentTotalsPage() {
       // per policy (see policyApvCap), so the level is what gets passed around.
       const capLevel = nextConLvl
 
-      // APV sums — actual chargebacks always deducted; likelyCb only for current month + toggle
-      const sumApv = arr => arr.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
+      // APV sums — every figure is the agent's CREDITED share, so a split policy
+      // contributes only that agent's portion. Actual chargebacks always
+      // deducted; likelyCb only for current month + toggle.
+      const sumApv = (arr, field = 'issued_apv') =>
+        arr.reduce((s, p) => s + creditedAmount(p, agent.sfg_id, field), 0)
       const agentIssued     = sumApv(agentIssuedPols) - ownCb - (isCurrentMonth && includeLikelyCb ? ownLikelyCbAmt  : 0)
       const agentPending    = sumApv(agentPendingPols)
       const agentIncomplete = sumApv(agentIncompletePols)
-      const teamIssued      = cappedIssuedSum(teamIssuedPolsList, capLevel) - teamCb - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
-      const teamPending     = sumApv(teamPendingPols)
-      const teamIncomplete  = sumApv(teamIncompletePols)
+      // Team sums dedupe by policy and cap the team's combined share per sale.
+      const teamIssued      = computeTeamIssued(descSet, issuedPolsBySfgId, chargebackMemo.amounts, capLevel)
+                              - (isCurrentMonth && includeLikelyCb ? teamLikelyCbAmt : 0)
+      const teamPending     = sumTeamCredited(teamPendingPols, descSet)
+      const teamIncomplete  = sumTeamCredited(teamIncompletePols, descSet)
 
-      // Writers = distinct SFG IDs in team with any submitted policy this month
-      const writers = new Set(teamPols.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)).size
+      // Writers = distinct SFG IDs in team who SUBMITTED an application this
+      // month. Applications belong to the primary, so a secondary share doesn't
+      // make someone a writer.
+      const writers = new Set(
+        teamPols.filter(p => isPrimary(p, p.sfg_id)).map(p => p.sfg_id?.toLowerCase()).filter(Boolean)
+      ).size
 
-      // 50 % leg rule — find the largest single-leg issued APV
-      // A "leg" = one direct downline + all of their subordinates
-      const directChildren = directChildrenOf[id] ?? []
-      const maxLegApv = directChildren.reduce((best, childId) => {
-        const legDesc = descendantsOf[childId] ?? new Set([childId])
-        const legApv  = [...legDesc].reduce(
-          (s, tid) => s + cappedIssuedSum(issuedPolsBySfgId[tid] ?? [], capLevel),
-          0
-        )
-        return Math.max(best, legApv)
-      }, 0)
+      // 50 % leg rule — largest single-leg issued APV
+      const maxLegApv = computeMaxLegApv(directChildrenOf[id] ?? [], descendantsOf, issuedPolsBySfgId, capLevel)
 
       // Agent personal submitted APV (submit-week-based, for the selected month)
-      const agentSubmitted = ownPols.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
+      const agentSubmitted = sumApv(ownPols, 'submitted_apv')
 
-      // Weekly submission lookup — must come before promoStatuses so submissionMet can be passed in
-      const agentWeekNums      = new Set(ownPols.map(p => p.submit_week_num?.trim()).filter(Boolean))
+      // Weekly submission lookup — must come before promoStatuses so submissionMet
+      // can be passed in. A split app is worth a flat 0.5 to a secondary agent, so
+      // two of them satisfy a week; the primary still gets a full 1.0.
+      const weekCredit = {}
+      for (const p of ownPols) {
+        const wk = p.submit_week_num?.trim()
+        if (!wk) continue
+        weekCredit[wk] = (weekCredit[wk] ?? 0) + submissionCredit(p, agent.sfg_id)
+      }
+      const agentWeekNums      = new Set(
+        Object.entries(weekCredit).filter(([, c]) => c >= WEEK_SUBMISSION_THRESHOLD).map(([wk]) => wk)
+      )
       const hasSlingshotTarget = (promoQual?.slingshot ?? null) !== null
       const slingHit           = hasSlingshotTarget && teamIssued >= promoQual.slingshot
       const requiredWeeks      = requiredSubmissionWeeks(weekColumns.length)
@@ -467,6 +494,9 @@ export default function MonthlyAgentTotalsPage() {
         ownCbPols:   isPastMonth ? ownCbPols  : [],
         teamCbPols:  isPastMonth ? teamCbPols : [],
         ownLikelyCbPols, teamLikelyCbPols,
+        // Whose share the drill-down should show for each scope
+        ownIds:  [agent.sfg_id],
+        teamIds: descSet,
       }
     })
     // Only show agents with at least one non-zero APV field (includes negatives from chargebacks)
@@ -645,13 +675,19 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
 function PolicyBreakdownModal({ modal, onClose }) {
   if (!modal) return null
 
-  const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes, capLevel = null } = modal
+  const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes,
+          capLevel = null, creditIds = null } = modal
 
+  // Credited share for whoever this breakdown is about — the agent alone, or the
+  // whole team — so a split policy shows the amount that actually landed in the
+  // column rather than the full sale.
+  const rawVal = p => (creditIds ? teamCreditedAmount(p, creditIds, apvField) : (p[apvField] ?? 0))
   // Per-policy cap — depends on each policy's issue date as well as the level
   // being chased, so it's evaluated per row rather than as one scalar.
   const capOf   = p => (apvField === 'issued_apv' ? policyApvCap(p, capLevel) : Infinity)
-  const capVal  = p => Math.min(p[apvField] ?? 0, capOf(p))
-  const anyCapped = pols.some(p => (p[apvField] ?? 0) > capOf(p))
+  const capVal  = p => Math.min(rawVal(p), capOf(p))
+  const anyCapped = pols.some(p => rawVal(p) > capOf(p))
+  const anySplit  = pols.some(p => p.splits?.length > 0)
 
   // Sort main policies by capped APV descending
   const sorted = [...pols].sort((a, b) => capVal(b) - capVal(a))
@@ -680,6 +716,11 @@ function PolicyBreakdownModal({ modal, onClose }) {
             {anyCapped && (
               <p className="text-[11px] text-gray-400 dark:text-white/40 mt-0.5">
                 Each policy counts up to {fmtAmt(SINGLE_APV_CAP)} toward qualification
+              </p>
+            )}
+            {anySplit && (
+              <p className="text-[11px] text-gray-400 dark:text-white/40 mt-0.5">
+                Split policies show the credited share, not the full sale
               </p>
             )}
           </div>
@@ -720,8 +761,16 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
                       <td className={`${tdCls} text-right tabular-nums`}>
                         {fmtAmt(capVal(p))}
-                        {(p[apvField] ?? 0) > capOf(p) && (
-                          <span className="ml-1 text-[10px] text-gray-400 dark:text-white/35">({fmtAmt(p[apvField])})</span>
+                        {rawVal(p) > capOf(p) && (
+                          <span className="ml-1 text-[10px] text-gray-400 dark:text-white/35">({fmtAmt(rawVal(p))})</span>
+                        )}
+                        {p.splits?.length > 0 && (
+                          <span
+                            title={p.splits.map(s => `${s.agent || s.sfg_id}: ${Math.round(s.credit_pct * 1000) / 10}%`).join(' · ')}
+                            className="ml-1.5 px-1 py-0.5 rounded text-[9px] font-semibold bg-accent/15 text-accent align-middle"
+                          >
+                            Split
+                          </span>
                         )}
                       </td>
                       {showNotes && (
@@ -870,29 +919,29 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
 
       {/* Agent APVs */}
       {apvCell(r.agentSubmitted, true,
-        { title: `${r.name} — Agent Submitted`, pols: r.ownPols, cbPols: [],
+        { title: `${r.name} — Agent Submitted`, pols: r.ownPols, cbPols: [], creditIds: r.ownIds,
           showAgent: false, apvField: 'submitted_apv', showNotes: true })}
       {apvCell(r.agentIssued, false,
-        { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols,
+        { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols, creditIds: r.ownIds,
           likelyCbPols: r.ownLikelyCbPols,
           showAgent: false, apvField: 'issued_apv', showNotes: false })}
       {apvCell(r.agentPending, false,
-        { title: `${r.name} — Agent Pending`, pols: r.agentPendingPols, cbPols: [],
+        { title: `${r.name} — Agent Pending`, pols: r.agentPendingPols, cbPols: [], creditIds: r.ownIds,
           showAgent: false, apvField: 'issued_apv', showNotes: true })}
       {apvCell(r.agentIncomplete, false,
-        { title: `${r.name} — Agent Incomplete`, pols: r.agentIncompletePols, cbPols: [],
+        { title: `${r.name} — Agent Incomplete`, pols: r.agentIncompletePols, cbPols: [], creditIds: r.ownIds,
           showAgent: false, apvField: 'issued_apv', showNotes: true })}
 
       {/* Team APVs */}
       {apvCell(r.teamIssued, true,
-        { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols,
+        { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols, creditIds: r.teamIds,
           likelyCbPols: r.teamLikelyCbPols, capLevel: r.capLevel,
           showAgent: true, apvField: 'issued_apv', showNotes: false })}
       {apvCell(r.teamPending, false,
-        { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [],
+        { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [], creditIds: r.teamIds,
           showAgent: true, apvField: 'issued_apv', showNotes: true })}
       {apvCell(r.teamIncomplete, false,
-        { title: `${r.name} — Team Incomplete`, pols: r.teamIncompletePols, cbPols: [],
+        { title: `${r.name} — Team Incomplete`, pols: r.teamIncompletePols, cbPols: [], creditIds: r.teamIds,
           showAgent: true, apvField: 'issued_apv', showNotes: true })}
       {numCell(r.hasDownlines ? r.writers : 0)}
 

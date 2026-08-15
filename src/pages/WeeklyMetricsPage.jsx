@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../utils/agencyScope'
+import { teamCreditedAmount } from '../../shared/policySplit'
 
 function isTruthy(val) {
   if (!val) return false
@@ -46,7 +47,7 @@ function fmtWeekDate(str) {
 
 // ─── Weekly aggregation ───────────────────────────────────────────────────────
 
-function buildWeekly(policies) {
+function buildWeekly(policies, scopeIds) {
   if (!policies.length) return []
 
   // Compute each agent's earliest-ever submit_week (= the week they first wrote)
@@ -67,7 +68,8 @@ function buildWeekly(policies) {
 
     if (!byWeek[wk]) byWeek[wk] = { date: d, apv: 0, agents: new Set(), newAgents: new Set() }
     const b = byWeek[wk]
-    b.apv += parseAmt(p.subm_apv)
+    // Only the in-scope agents' shares of a split sale; writers is the primary.
+    b.apv += teamCreditedAmount(p, scopeIds, 'subm_apv')
     if (p.sfg_id) {
       const id = p.sfg_id.toLowerCase()
       b.agents.add(id)
@@ -101,6 +103,8 @@ export default function WeeklyMetricsPage() {
   const { activeSubject, permissions } = useViewing()
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
   const [policies, setPolicies]     = useState([])
+  // Agents in the selected scope — split shares held outside it don't count here
+  const [scopeIds, setScopeIds]     = useState([])
   const [metrics, setMetrics]               = useState(null)
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [loading, setLoading]               = useState(false)
@@ -132,6 +136,7 @@ export default function WeeklyMetricsPage() {
       setMasterPersonnel(masterPersonnel)
       setSelectedScope('master')
       setPolicies(rows ?? [])
+      setScopeIds((masterPersonnel ?? []).map(p => p.sfg_id))
       setMetrics(m ?? null)
     } catch { /* ignore */ } finally {
       setLoading(false)
@@ -153,7 +158,7 @@ export default function WeeklyMetricsPage() {
 
   async function loadData(personnel) {
     const sfgIds = personnel.map(p => p.sfg_id)
-    if (!sfgIds.length) { setPolicies([]); setMetrics(null); return }
+    if (!sfgIds.length) { setPolicies([]); setScopeIds([]); setMetrics(null); return }
 
     // Fetch policies and metrics in parallel
     const [polRes, appsRes] = await Promise.all([
@@ -164,11 +169,12 @@ export default function WeeklyMetricsPage() {
     const { policies: rows } = polRes.ok ? await polRes.json() : {}
     const { metrics: m }     = appsRes.ok ? await appsRes.json() : {}
     setPolicies(rows ?? [])
+    setScopeIds(sfgIds)
     setMetrics(m ?? null)
   }
 
   // ── Aggregate ───────────────────────────────────────────────────────────────
-  const weeks = useMemo(() => buildWeekly(policies), [policies])
+  const weeks = useMemo(() => buildWeekly(policies, scopeIds), [policies, scopeIds])
 
   // Week-boundary helpers
   const ws  = useMemo(() => currentWeekStart(), [])
