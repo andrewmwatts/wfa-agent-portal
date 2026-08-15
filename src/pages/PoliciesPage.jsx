@@ -189,10 +189,21 @@ export default function PoliciesPage() {
     return [...s].sort()
   }, [policies])
 
+  // Includes split partners so an agent who only holds a secondary share on a
+  // policy is still selectable — the table shows the primary in the Agent column,
+  // but filtering has to reach both sides of a split.
   const agentOptions = useMemo(() => {
     const s = new Set(policies.map(p => p.agent).filter(Boolean))
+    for (const p of policies) for (const sp of p.splits ?? []) if (sp.agent) s.add(sp.agent)
     return [...s].sort()
   }, [policies])
+
+  // Every name credited on a policy, lowercased — primary plus any split partners.
+  function creditedNames(p) {
+    const names = [p.agent]
+    for (const s of p.splits ?? []) names.push(s.agent)
+    return names.filter(Boolean).map(n => n.toLowerCase())
+  }
 
 
   // ── Combined filter logic ──────────────────────────────────────────────────
@@ -237,14 +248,16 @@ export default function PoliciesPage() {
       // ── Carrier dropdown (normalized) ────────────────────────────────────
       if (carrierFilter !== 'all' && normalizeCarrier(p.carrier) !== carrierFilter) return false
 
-      // ── Agent dropdown ───────────────────────────────────────────────────
-      if (agentFilter !== 'all' && p.agent?.toLowerCase() !== agentFilter) return false
+      // ── Agent dropdown (matches primary or split partner) ────────────────
+      if (agentFilter !== 'all' && !creditedNames(p).includes(agentFilter)) return false
 
       // ── Not in Opt toggle ────────────────────────────────────────────────
       if (notInOptOnly && !p.not_in_opt) return false
 
-      // ── Search ───────────────────────────────────────────────────────────
-      if (q && !p.applicant?.toLowerCase().includes(q) && !p.agent?.toLowerCase().includes(q) && !p.policy_no?.toLowerCase().includes(q)) return false
+      // ── Search (agent match also covers split partners) ──────────────────
+      if (q && !p.applicant?.toLowerCase().includes(q) &&
+              !creditedNames(p).some(n => n.includes(q)) &&
+              !p.policy_no?.toLowerCase().includes(q)) return false
 
       // ── Custom date range ────────────────────────────────────────────────
       if (customStart || customEnd) {
@@ -517,7 +530,17 @@ export default function PoliciesPage() {
                     onClick={() => openFromTable(p)}
                     className="cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group"
                   >
-                    <td className="py-2.5 pr-4 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">{p.agent || '—'}</td>
+                    <td className="py-2.5 pr-4 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">
+                      {p.agent || '—'}
+                      {p.splits?.length > 0 && (
+                        <span
+                          title={p.splits.map(s => `${s.agent || s.sfg_id}: ${Math.round(s.credit_pct * 1000) / 10}%`).join(' · ')}
+                          className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent/15 text-accent align-middle"
+                        >
+                          Split
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-4 text-gray-700 dark:text-white/80 text-xs">
                       <span className="group-hover:text-accent transition-colors">{p.applicant || '—'}</span>
                     </td>

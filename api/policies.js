@@ -6,6 +6,7 @@ import { normalizeCarrier } from '../shared/carriers.js'
 import { nowInBusinessTZ } from '../shared/businessTime.js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 import { expandAndAttachSplits } from './_policySplits.js'
+import { validateSplits } from '../shared/policySplit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -801,6 +802,64 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('[policies/import]', err)
       return res.status(500).json({ error: 'Failed to import policies' })
+    }
+  }
+
+  // ── PUT /api/policies?type=splits  (set or clear shared credit) ───────────
+  // Idempotent: the supplied array replaces whatever the policy had. An empty
+  // array removes the split entirely, reverting the policy to 100% primary —
+  // needed when a carrier ends up filing a split app under a single agent.
+  if (req.method === 'PUT' && type === 'splits') {
+    const { policy_id, splits } = req.body ?? {}
+    if (!policy_id) return res.status(400).json({ error: 'Missing policy_id' })
+    if (splits != null && !Array.isArray(splits)) {
+      return res.status(400).json({ error: 'splits must be an array' })
+    }
+    const rows = splits ?? []
+
+    try {
+      const { data: pol } = await supabase
+        .from('policies').select('sfg_id').eq('id', policy_id).maybeSingle()
+      if (!pol) return res.status(404).json({ error: 'Policy not found' })
+
+      // Authorize the primary AND every agent being granted credit, so a split
+      // can't hand production to someone outside the caller's scope.
+      const scope = [pol.sfg_id, ...rows.map(r => r.sfg_id).filter(Boolean)]
+      if (!(await authorizeScope(req, res, caller, supabase, scope))) return
+
+      const normalized = rows.map(r => ({
+        sfg_id:     String(r.sfg_id ?? '').trim().toUpperCase(),
+        credit_pct: Number(r.credit_pct),
+      }))
+
+      const invalid = validateSplits(normalized, pol.sfg_id)
+      if (invalid) return res.status(400).json({ error: invalid })
+
+      // Reject unknown agents up front — policy_splits has no FK on sfg_id, so
+      // a typo would otherwise persist as a share nobody can ever see.
+      if (normalized.length) {
+        const { data: known } = await supabase
+          .from('personnel').select('sfg_id').in('sfg_id', normalized.map(r => r.sfg_id))
+        const knownSet = new Set((known ?? []).map(p => p.sfg_id?.trim().toUpperCase()))
+        const missing  = normalized.filter(r => !knownSet.has(r.sfg_id)).map(r => r.sfg_id)
+        if (missing.length) {
+          return res.status(400).json({ error: `Unknown agent${missing.length !== 1 ? 's' : ''}: ${missing.join(', ')}` })
+        }
+      }
+
+      const { error: delErr } = await supabase.from('policy_splits').delete().eq('policy_id', policy_id)
+      if (delErr) throw delErr
+
+      if (normalized.length) {
+        const { error: insErr } = await supabase.from('policy_splits')
+          .insert(normalized.map(r => ({ policy_id, sfg_id: r.sfg_id, credit_pct: r.credit_pct })))
+        if (insErr) throw insErr
+      }
+
+      return res.status(200).json({ ok: true, splits: normalized })
+    } catch (err) {
+      console.error('[policies/splits PUT]', err)
+      return res.status(500).json({ error: dbErrorMessage(err, 'Failed to save the split') })
     }
   }
 
