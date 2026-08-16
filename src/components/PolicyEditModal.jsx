@@ -172,6 +172,70 @@ export function DetailGrid({ children }) {
   return <div className="grid grid-cols-2 gap-x-8 gap-y-3">{children}</div>
 }
 
+/**
+ * Who a shared policy's APV is credited to. The Financials figures above are
+ * always the whole sale — this is how it divides, so the two are never confused.
+ * Shares are stored as percentages, so the dollar columns are derived and follow
+ * the carrier's issued amount automatically.
+ */
+export function SplitBreakdown({ splits, submApv, issuedApv, showSubmitted, primarySfgId }) {
+  const num = v => {
+    if (v == null || v === '') return 0
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,]/g, ''))
+    return isNaN(n) ? 0 : n
+  }
+  const sub    = num(submApv)
+  const issued = num(issuedApv)
+  const norm   = s => String(s ?? '').trim().toUpperCase()
+  const ordered = [...splits].sort((a, b) => Number(b.credit_pct) - Number(a.credit_pct))
+
+  return (
+    <div className="mt-4 rounded-xl border border-gray-200 dark:border-white/15 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Shared Credit</span>
+        <span className="text-[11px] text-gray-400 dark:text-white/35">{ordered.length} agents</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-[11px] uppercase tracking-wider text-gray-400 dark:text-white/35">
+            <th className="text-left  font-semibold px-3 py-1.5">Agent</th>
+            <th className="text-right font-semibold px-3 py-1.5">Share</th>
+            {showSubmitted && <th className="text-right font-semibold px-3 py-1.5">Submitted</th>}
+            <th className="text-right font-semibold px-3 py-1.5">Issued</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-white/10">
+          {ordered.map(s => {
+            const pct = Number(s.credit_pct) || 0
+            return (
+              <tr key={s.sfg_id}>
+                <td className="px-3 py-2 text-gray-900 dark:text-white">
+                  {s.agent || s.sfg_id}
+                  {norm(s.sfg_id) === norm(primarySfgId) && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50">
+                      Primary
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold text-accent">
+                  {Math.round(pct * 1000) / 10}%
+                </td>
+                {showSubmitted && (
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-white/80">{fmtAmt(sub * pct)}</td>
+                )}
+                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-white/80">{fmtAmt(issued * pct)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="px-3 py-2 text-[11px] text-gray-400 dark:text-white/35 border-t border-gray-100 dark:border-white/10">
+        The application itself counts for the primary agent only.
+      </p>
+    </div>
+  )
+}
+
 export function DetailItem({ label, value, accent }) {
   if (!value) return null
   return (
@@ -638,7 +702,7 @@ export default function PolicyModal({
                 onClick={() => setSplitOpen(true)}
                 className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-800 dark:hover:text-white transition-colors px-2 py-1 rounded-lg border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5"
               >
-                Split
+                {p?.splits?.length ? 'Edit Split' : 'Split'}
               </button>
             )}
             {canWrite && !editing && (
@@ -844,6 +908,16 @@ export default function PolicyModal({
                 {!limitedFields && !isLapse && <DetailItem label="Submitted APV" value={fmtAmt(display.subm_apv)} accent />}
                 <DetailItem label="Issued APV"    value={fmtAmt(display.issued_apv)} accent />
               </DetailGrid>
+            )}
+            {/* The figures above are the whole sale; this is who it's credited to */}
+            {p?.splits?.length > 0 && (
+              <SplitBreakdown
+                splits={p.splits}
+                submApv={display.subm_apv}
+                issuedApv={display.issued_apv}
+                showSubmitted={!limitedFields && !isLapse}
+                primarySfgId={p.sfg_id}
+              />
             )}
           </ModalSection>
 
