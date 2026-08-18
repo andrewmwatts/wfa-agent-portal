@@ -20,6 +20,8 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   GET    /api/admin?action=crosswalk
  *   PUT    /api/admin?action=crosswalk
  *   DELETE /api/admin?action=crosswalk
+ *   GET    /api/admin?action=crosswalk-gaps    → carrier/policy_name pairs used in
+ *                                                 policies but missing from the crosswalk
  *   GET    /api/admin?action=agencies
  *   PUT    /api/admin?action=agency
  *   GET    /api/admin?action=parse-errors[&all=true]
@@ -63,6 +65,22 @@ async function audit(adminSfgId, action, target_table, target_id, details) {
 function body(req) {
   try { return typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {}) }
   catch { return {} }
+}
+
+// policies is well past Supabase's default 1000-row cap, so anything scanning
+// the whole table has to page through it.
+async function fetchAllPolicies(columns) {
+  const PAGE = 10000
+  const rows = []
+  let from = 0
+  while (true) {
+    const { data, error } = await sb.from('policies').select(columns).range(from, from + PAGE - 1)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+    from += PAGE
+  }
+  return rows
 }
 
 export default async function handler(req, res) {
@@ -243,6 +261,51 @@ export default async function handler(req, res) {
     if (error) return res.status(500).json({ error: error.message })
     await audit(adminSfgId, 'delete_crosswalk', 'policy_crosswalk', `${carrier}|${policy_name}`, null)
     return res.status(200).json({ ok: true, usageCount: count ?? 0 })
+  }
+
+  // ── GET crosswalk-gaps ─────────────────────────────────────────────────────
+  // Every distinct carrier + policy_name pairing actually used in policies that
+  // has no row in policy_crosswalk. Matched case/whitespace-insensitively but
+  // otherwise on the raw carrier text, the same way subtype lookups elsewhere
+  // key the crosswalk — this table has one row per literal carrier spelling
+  // rather than a normalized one, so "Foresters" and "Foresters DFL" are
+  // deliberately distinct entries.
+  if (action === 'crosswalk-gaps' && req.method === 'GET') {
+    let policies
+    try {
+      policies = await fetchAllPolicies('carrier, policy_name, applicant, issue_date, submit_date')
+    } catch (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    const { data: crosswalkRows, error: cwErr } = await sb.from('policy_crosswalk').select('carrier, policy_name')
+    if (cwErr) return res.status(500).json({ error: cwErr.message })
+    const known = new Set(
+      (crosswalkRows ?? []).map(r => `${(r.carrier ?? '').trim().toLowerCase()}||${(r.policy_name ?? '').trim().toLowerCase()}`)
+    )
+
+    const groups = {}
+    for (const p of policies) {
+      const carrier = (p.carrier ?? '').trim()
+      if (!carrier) continue   // no carrier at all isn't a crosswalk-able combo
+      const policyName = (p.policy_name ?? '').trim()
+      const key = `${carrier.toLowerCase()}||${policyName.toLowerCase()}`
+      if (known.has(key)) continue
+
+      const g = groups[key] ??= {
+        carrier, policy_name: policyName || null, count: 0,
+        latest_date: null, example_applicant: null,
+      }
+      g.count++
+      const d = p.issue_date || p.submit_date || null
+      if (d && (!g.latest_date || d > g.latest_date)) {
+        g.latest_date = d
+        g.example_applicant = p.applicant || null
+      }
+    }
+
+    const gaps = Object.values(groups).sort((a, b) => b.count - a.count)
+    return res.status(200).json({ gaps })
   }
 
   // ── GET agencies ──────────────────────────────────────────────────────────

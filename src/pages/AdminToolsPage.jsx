@@ -437,12 +437,22 @@ function PolicyCrosswalkTab({ adminFetch }) {
   const [editDraft, setEditDraft] = useState({})
   const [saving,   setSaving]   = useState(false)
 
+  const [gaps,        setGaps]        = useState([])
+  const [gapsLoading,  setGapsLoading] = useState(true)
+  const [gapsError,    setGapsError]   = useState('')
+
   const load = useCallback(async () => {
     try { const d = await adminFetch('crosswalk'); setRows(d.rows ?? []) }
     catch { /* silent */ } finally { setLoading(false) }
   }, [adminFetch])
 
-  useEffect(() => { load() }, [load])
+  const loadGaps = useCallback(async () => {
+    setGapsLoading(true); setGapsError('')
+    try { const d = await adminFetch('crosswalk-gaps'); setGaps(d.gaps ?? []) }
+    catch (e) { setGapsError(e.message) } finally { setGapsLoading(false) }
+  }, [adminFetch])
+
+  useEffect(() => { load(); loadGaps() }, [load, loadGaps])
 
   const key = r => `${r.carrier}||${r.policy_name}`
 
@@ -452,8 +462,19 @@ function PolicyCrosswalkTab({ adminFetch }) {
   async function saveNew() {
     if (!newRow?.carrier || !newRow?.policy_name || !newRow?.subtype) { alert('All fields required'); return }
     setSaving(true)
-    try { await adminFetch('crosswalk', 'PUT', newRow); setNewRow(null); load() }
+    try {
+      await adminFetch('crosswalk', 'PUT', newRow)
+      setNewRow(null)
+      load(); loadGaps()
+    }
     catch (e) { alert(e.message) } finally { setSaving(false) }
+  }
+
+  // Prefills the existing add-row form from a gap — same PUT flow, just seeded
+  // so the admin only has to pick a subtype rather than retype carrier/policy_name.
+  function addGapToCrosswalk(g) {
+    setNewRow({ carrier: g.carrier, policy_name: g.policy_name ?? '', subtype: SUBTYPES[0] })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   async function saveEdit(original) {
@@ -479,6 +500,64 @@ function PolicyCrosswalkTab({ adminFetch }) {
 
   return (
     <div className="space-y-4">
+      <Card>
+        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5 flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-600 dark:text-white/60">
+            Unlisted Carrier/Policy Combinations
+            {!gapsLoading && gaps.length > 0 && <span className="ml-1.5 text-accent">({gaps.length})</span>}
+          </p>
+          <button onClick={loadGaps} disabled={gapsLoading}
+            className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50'}>
+            {gapsLoading ? 'Scanning…' : 'Rescan'}
+          </button>
+        </div>
+        {gapsError ? (
+          <p className="px-4 py-3 text-sm text-red-500">{gapsError}</p>
+        ) : gapsLoading ? (
+          <p className="px-4 py-3 text-sm text-gray-400">Scanning policies…</p>
+        ) : gaps.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-gray-400 dark:text-white/40">
+            Every carrier/policy combination in use is listed in the crosswalk.
+          </p>
+        ) : (
+          <table className="w-full">
+            <thead className="border-b border-gray-100 dark:border-white/10">
+              <tr>
+                <th className={TH + ' pl-4'}>Carrier</th>
+                <th className={TH}>Policy Name</th>
+                <th className={TH}>Policies</th>
+                <th className={TH}>Most recent</th>
+                <th className={TH + ' pr-4'}></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 dark:divide-white/5">
+              {gaps.map(g => (
+                <tr key={`${g.carrier}||${g.policy_name ?? ''}`}>
+                  <td className={TD + ' pl-4'}>{g.carrier}</td>
+                  <td className={TD}>
+                    {g.policy_name ?? <span className="italic text-gray-400 dark:text-white/30">blank</span>}
+                  </td>
+                  <td className={TD}>{g.count}</td>
+                  <td className={TD}>
+                    {g.latest_date ?? '—'}
+                    {g.example_applicant && <span className="text-gray-400 dark:text-white/30"> · {g.example_applicant}</span>}
+                  </td>
+                  <td className={TD + ' pr-4'}>
+                    <button onClick={() => addGapToCrosswalk(g)}
+                      className={BTN + ' bg-accent text-white hover:bg-accent/90'}>Add to Crosswalk</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      <p className="text-xs text-gray-400 dark:text-white/40 -mt-2">
+        A combination here means either a genuinely new carrier/policy type — add it below — or a
+        mislabeled policy record. For the latter, search the applicant name shown on the Policies
+        page and correct it there.
+      </p>
+
       <div className="flex gap-3 items-center">
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by carrier…" className={INP + ' max-w-xs'} />
         <button onClick={() => setNewRow({ carrier: '', policy_name: '', subtype: SUBTYPES[0] })}

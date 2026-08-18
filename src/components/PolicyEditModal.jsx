@@ -397,26 +397,34 @@ export default function PolicyModal({
     if (!isCreate && initialEdit && canWrite) startEdit()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Carrier/Policy Type suggestions — only fetched for the create-mode SuggestInput.
+  // Carrier/Policy Type suggestions — fetched whenever the modal can edit
+  // those fields (create AND edit), not just create.
   useEffect(() => {
-    if (!isCreate) return
     fetch('/api/policies?type=crosswalk')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (Array.isArray(d)) setCrosswalk(d) })
       .catch(() => {})
-  }, [isCreate])
+  }, [])
 
   const carrierSuggestions = useMemo(() => {
     const s = new Set([...existingCarriers, ...crosswalk.map(r => r.carrier).filter(Boolean)])
     return [...s].sort()
   }, [existingCarriers, crosswalk])
 
+  // Once a carrier is chosen, restrict to policy types actually paired with
+  // that carrier in the crosswalk (the canonical carrier→type registry — the
+  // same table Carrier Metrics/subtype lookups use), rather than every policy
+  // type ever used anywhere. Before a carrier is picked there's nothing to
+  // restrict by, so fall back to the full list.
   const policyTypeSuggestions = useMemo(() => {
     const carrier = (draft?.carrier ?? '').trim().toLowerCase()
-    const fromCrosswalk = carrier
-      ? crosswalk.filter(r => r.carrier?.toLowerCase() === carrier).map(r => r.policy_name)
-      : crosswalk.map(r => r.policy_name)
-    const s = new Set([...fromCrosswalk, ...existingPolicyTypes].filter(Boolean))
+    if (carrier) {
+      const s = new Set(
+        crosswalk.filter(r => r.carrier?.trim().toLowerCase() === carrier).map(r => r.policy_name).filter(Boolean)
+      )
+      return [...s].sort()
+    }
+    const s = new Set([...crosswalk.map(r => r.policy_name), ...existingPolicyTypes].filter(Boolean))
     return [...s].sort()
   }, [crosswalk, existingPolicyTypes, draft?.carrier])
 
@@ -865,22 +873,14 @@ export default function PolicyModal({
           <ModalSection title="Policy Details">
             {editing ? (
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                {isCreate ? (
-                  <div>
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Carrier <span className="text-red-400 ml-0.5">*</span></p>
-                    <SuggestInput value={draft.carrier} onChange={v => setField('carrier', v)} suggestions={carrierSuggestions} placeholder="Banner, Foresters…" />
-                  </div>
-                ) : (
-                  <EditField label="Carrier" value={draft.carrier} onChange={v => setField('carrier', v)} />
-                )}
-                {isCreate ? (
-                  <div>
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Policy Type</p>
-                    <SuggestInput value={draft.policy_type} onChange={v => setField('policy_type', v)} suggestions={policyTypeSuggestions} placeholder="Term 20, WL…" />
-                  </div>
-                ) : (
-                  <EditField label="Policy Type" value={draft.policy_type} onChange={v => setField('policy_type', v)} />
-                )}
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Carrier {isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
+                  <SuggestInput value={draft.carrier} onChange={v => setField('carrier', v)} suggestions={carrierSuggestions} placeholder="Banner, Foresters…" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Policy Type</p>
+                  <SuggestInput value={draft.policy_type} onChange={v => setField('policy_type', v)} suggestions={policyTypeSuggestions} placeholder="Term 20, WL…" />
+                </div>
                 <EditField label="Policy No." value={draft.policy_no} onChange={v => setField('policy_no', v)} />
                 {!limitedFields && <EditField label="Face Amount" value={draft.face_amt} onChange={v => setField('face_amt', v)} />}
               </div>
