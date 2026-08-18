@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { fmtDate, fmtDateTime } from '../utils/format'
@@ -58,15 +59,32 @@ async function fetchGapPolicies(g, ah) {
 // Free-text input with a filtered dropdown of existing subtypes — lets an admin
 // pick a known value or type a new one without ever going stale like a
 // hardcoded list would.
+//
+// Rendered through a portal rather than as an absolutely-positioned child: this
+// combo sits inside a Card, and Card uses overflow-hidden for its rounded
+// corners, which silently clipped the dropdown to the card's edge.
 function SubtypeCombo({ value, onChange, options }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const [pos,  setPos]  = useState(null)   // { top, left, width } in viewport coords
+  const wrapRef = useRef(null)
 
   useEffect(() => {
-    function onMouseDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function onMouseDown(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [])
+
+  // Position is computed at open time from the input's real screen location,
+  // and closes on scroll rather than tracking every possible scroll ancestor —
+  // this is a click-to-open dropdown, not a long-lived popover.
+  useEffect(() => {
+    if (!open) return
+    const r = wrapRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    function onScroll() { setOpen(false) }
+    window.addEventListener('scroll', onScroll, true)
+    return () => window.removeEventListener('scroll', onScroll, true)
+  }, [open])
 
   const filtered = useMemo(() => {
     const q = (value ?? '').trim().toLowerCase()
@@ -75,7 +93,7 @@ function SubtypeCombo({ value, onChange, options }) {
   }, [value, options])
 
   return (
-    <div className="relative" ref={ref}>
+    <div ref={wrapRef}>
       <input
         type="text"
         value={value ?? ''}
@@ -85,8 +103,11 @@ function SubtypeCombo({ value, onChange, options }) {
         className={INP + ' text-xs py-1'}
         autoComplete="off"
       />
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+      {open && filtered.length > 0 && pos && createPortal(
+        <ul
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
+          className="bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto"
+        >
           {filtered.map(o => (
             <li key={o}>
               <button
@@ -99,7 +120,8 @@ function SubtypeCombo({ value, onChange, options }) {
               </button>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   )
