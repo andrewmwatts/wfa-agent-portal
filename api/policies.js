@@ -376,6 +376,81 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── GET /api/policies?type=by-combo&carrier=X&policy_name=Y  (admin only) ──
+  // Every policy matching a specific carrier/policy_name pairing, shaped the
+  // same as the plain list GET below. Backs Admin Tools' crosswalk gap finder,
+  // so an unlisted combination can be corrected without leaving that page.
+  if (req.method === 'GET' && type === 'by-combo') {
+    if (!(await requireSuperAdmin(req, res))) return
+    const carrierParam = (req.query.carrier ?? '').trim()
+    const nameParam     = (req.query.policy_name ?? '').trim()
+    if (!carrierParam) return res.status(400).json({ error: 'carrier is required' })
+
+    try {
+      // Narrow at the DB level with a case-insensitive carrier match, then do
+      // the exact trim/case-insensitive pairing in JS — simpler than juggling
+      // Postgres's NULL-never-matches-ilike behavior for blank policy_name.
+      const rows = await fetchPolicies(supabase, null, q => q.ilike('carrier', carrierParam))
+      const matches = rows.filter(p =>
+        (p.carrier ?? '').trim().toLowerCase() === carrierParam.toLowerCase() &&
+        (p.policy_name ?? '').trim().toLowerCase() === nameParam.toLowerCase()
+      )
+
+      const sfgIds = [...new Set(matches.map(p => p.sfg_id?.trim().toUpperCase()).filter(Boolean))]
+      const { data: people } = sfgIds.length
+        ? await supabase.from('personnel').select('sfg_id, preferred_name, opt_name').in('sfg_id', sfgIds)
+        : { data: [] }
+      const personLookup = {}
+      for (const p of people ?? []) {
+        const id = p.sfg_id?.toLowerCase()
+        if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
+      }
+
+      const policies = matches.map(p => {
+        const person = personLookup[(p.sfg_id ?? '').trim().toLowerCase()] ?? {}
+        return {
+          id:                  p.id,
+          sfg_id:              p.sfg_id                         ?? '',
+          agent:               person.name || '',
+          agent_email:         '',
+          applicant:           p.applicant                      ?? '',
+          carrier:             p.carrier                        ?? '',
+          policy_type:         p.policy_name                    ?? '',
+          policy_no:           p.policy_number                  ?? '',
+          face_amt:            p.face_amount != null ? String(p.face_amount) : '',
+          subm_apv:            p.submitted_apv   ?? null,
+          issued_apv:          p.issued_apv      ?? null,
+          status:              p.status                         ?? '',
+          submit_date:         p.submit_date                    ?? '',
+          submit_week:         p.submit_week                    ?? '',
+          submit_week_num:     p.submit_week_num                ?? '',
+          issue_date:          p.issue_date                     ?? '',
+          application_notes:   p.application_notes              ?? '',
+          policy_notes:        p.policy_notes                   ?? '',
+          not_in_opt:          p.not_in_opt        ?? false,
+          split_reset:         p.split_reset       ?? false,
+          chargeback_exempt:   p.chargeback_exempt ?? null,
+          cb_month:            formatCbMonth(p.snapshot_chargeback_month),
+          cb_apv:              p.snapshot_chargeback_apv != null ? String(p.snapshot_chargeback_apv) : '',
+          conservation_status: p.conservation_status            ?? '',
+          conservation_date:   p.conservation_date              ?? '',
+          last_update:         p.last_update                    ?? '',
+          ...(p.splits ? {
+            splits: p.splits.map(s => ({
+              ...s,
+              agent: personLookup[(s.sfg_id ?? '').trim().toLowerCase()]?.name || '',
+            })),
+          } : {}),
+        }
+      })
+
+      return res.status(200).json({ policies })
+    } catch (err) {
+      console.error('[policies/by-combo]', err)
+      return res.status(500).json({ error: 'Failed to load matching policies' })
+    }
+  }
+
   // ── GET /api/policies?type=apps&sfg_ids=X  (or &root=X&mode=master) ─────────
   if (req.method === 'GET' && type === 'apps') {
     const raw = req.query.sfg_ids ?? req.query.sfg_id ?? ''

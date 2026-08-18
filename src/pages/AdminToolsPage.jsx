@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { fmtDate, fmtDateTime } from '../utils/format'
+import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 const TH  = 'text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 pb-2 pr-4 whitespace-nowrap'
@@ -37,10 +38,72 @@ const PORTAL_PAGES = [
   'Admin Tools','Other',
 ]
 
-const SUBTYPES = [
-  'Accidental','Health','Disability / Annuity','Children\'s','Instant Issue',
-  'Instant/Simplified','IUL','Medical','Simplified','Simplified/Medical',
-]
+// Subtype used to be a hardcoded list here, which drifted from what's actually
+// stored: three of its options ("Accidental", "Health", "Disability / Annuity")
+// matched nothing in policy_crosswalk, while two real values in use ("Accidental,
+// Health, Disability" and "Annuity") weren't offered at all. PolicyCrosswalkTab
+// now derives the option list from the crosswalk rows it already has loaded, so
+// it can't go stale, and SubtypeCombo below still lets a genuinely new subtype
+// be typed in rather than requiring a code change.
+
+// Every policy matching one carrier/policy_name pairing, shaped for PolicyModal.
+async function fetchGapPolicies(g, ah) {
+  const params = new URLSearchParams({ type: 'by-combo', carrier: g.carrier, policy_name: g.policy_name ?? '' })
+  const res = await fetch(`/api/policies?${params}`, { headers: ah() })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to load matching policies')
+  return data.policies ?? []
+}
+
+// Free-text input with a filtered dropdown of existing subtypes — lets an admin
+// pick a known value or type a new one without ever going stale like a
+// hardcoded list would.
+function SubtypeCombo({ value, onChange, options }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function onMouseDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = (value ?? '').trim().toLowerCase()
+    const list = q ? options.filter(o => o.toLowerCase().includes(q)) : options
+    return list.slice(0, 10)
+  }, [value, options])
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        type="text"
+        value={value ?? ''}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        placeholder="Subtype…"
+        className={INP + ' text-xs py-1'}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+          {filtered.map(o => (
+            <li key={o}>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(o); setOpen(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/10 text-gray-900 dark:text-white transition-colors"
+              >
+                {o}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -90,7 +153,7 @@ export default function AdminToolsPage() {
 
       {tab === 'users'     && <UserManagementTab     adminFetch={adminFetch} />}
       {tab === 'bugs'      && <BugReportsTab         adminFetch={adminFetch} />}
-      {tab === 'crosswalk' && <PolicyCrosswalkTab    adminFetch={adminFetch} />}
+      {tab === 'crosswalk' && <PolicyCrosswalkTab    adminFetch={adminFetch} ah={ah} />}
       {tab === 'agencies'  && <AgencySettingsTab     adminFetch={adminFetch} />}
       {tab === 'errors'    && <ParseErrorsTab        adminFetch={adminFetch} />}
       {tab === 'messages'  && <SystemMessagesTab     adminFetch={adminFetch} />}
@@ -428,7 +491,7 @@ function BugReportsTab({ adminFetch }) {
 
 // ─── Tool 3: Policy Crosswalk Editor ──────────────────────────────────────────
 
-function PolicyCrosswalkTab({ adminFetch }) {
+function PolicyCrosswalkTab({ adminFetch, ah }) {
   const [rows,     setRows]     = useState([])
   const [loading,  setLoading]  = useState(true)
   const [filter,   setFilter]   = useState('')
@@ -440,6 +503,15 @@ function PolicyCrosswalkTab({ adminFetch }) {
   const [gaps,        setGaps]        = useState([])
   const [gapsLoading,  setGapsLoading] = useState(true)
   const [gapsError,    setGapsError]   = useState('')
+
+  // Editing a policy straight from a gap row — how many match determines
+  // whether we can jump right to the modal or need a picker first.
+  const [personnel,      setPersonnel]      = useState([])
+  const [pickerGap,       setPickerGap]      = useState(null)   // gap | null
+  const [pickerPolicies,  setPickerPolicies] = useState([])
+  const [pickerLoading,   setPickerLoading]  = useState(false)
+  const [pickerError,     setPickerError]    = useState('')
+  const [editPolicy,      setEditPolicy]     = useState(null)   // policy | null
 
   const load = useCallback(async () => {
     try { const d = await adminFetch('crosswalk'); setRows(d.rows ?? []) }
@@ -454,10 +526,26 @@ function PolicyCrosswalkTab({ adminFetch }) {
 
   useEffect(() => { load(); loadGaps() }, [load, loadGaps])
 
+  // Full roster for the modal's Agent lookup — fetched once, unscoped (allowed
+  // here since every caller on this page is already confirmed super_admin).
+  useEffect(() => {
+    fetch('/api/personnel', { headers: ah() })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setPersonnel(Array.isArray(d) ? d : []))
+      .catch(() => {})
+  }, [ah])
+
   const key = r => `${r.carrier}||${r.policy_name}`
 
   const carriers = [...new Set(rows.map(r => r.carrier))].sort()
   const filteredCarriers = filter ? carriers.filter(c => c.toLowerCase().includes(filter.toLowerCase())) : carriers
+
+  // Subtype choices come from what's actually in the crosswalk right now, so
+  // this can't drift into offering options nothing uses (see SUBTYPES comment).
+  const subtypeOptions = useMemo(() => {
+    const s = new Set(rows.map(r => r.subtype).filter(Boolean))
+    return [...s].sort()
+  }, [rows])
 
   async function saveNew() {
     if (!newRow?.carrier || !newRow?.policy_name || !newRow?.subtype) { alert('All fields required'); return }
@@ -473,8 +561,41 @@ function PolicyCrosswalkTab({ adminFetch }) {
   // Prefills the existing add-row form from a gap — same PUT flow, just seeded
   // so the admin only has to pick a subtype rather than retype carrier/policy_name.
   function addGapToCrosswalk(g) {
-    setNewRow({ carrier: g.carrier, policy_name: g.policy_name ?? '', subtype: SUBTYPES[0] })
+    setNewRow({ carrier: g.carrier, policy_name: g.policy_name ?? '', subtype: subtypeOptions[0] ?? '' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Loads the policies behind a gap. A single match skips straight to the edit
+  // modal; more than one opens a picker so the admin chooses which record to fix.
+  async function openGapPolicies(g) {
+    setPickerError('')
+    if (g.count === 1) {
+      setPickerLoading(true)
+      try {
+        const list = await fetchGapPolicies(g, ah)
+        if (list[0]) setEditPolicy(list[0])
+        else setPickerError('That policy could not be found — it may have changed since the scan.')
+      } catch (e) {
+        setPickerError(e.message)
+      } finally {
+        setPickerLoading(false)
+      }
+      return
+    }
+    setPickerGap(g)
+    setPickerLoading(true)
+    try { setPickerPolicies(await fetchGapPolicies(g, ah)) }
+    catch (e) { setPickerError(e.message) }
+    finally { setPickerLoading(false) }
+  }
+
+  // A policy edited from here may resolve the gap (carrier/policy name
+  // corrected) or leave it as-is (any other field changed) — either way the
+  // scan needs to be re-run rather than guessed at.
+  function afterPolicyEdit() {
+    setEditPolicy(null)
+    setPickerGap(null)
+    loadGaps()
   }
 
   async function saveEdit(original) {
@@ -543,24 +664,32 @@ function PolicyCrosswalkTab({ adminFetch }) {
                     {g.example_applicant && <span className="text-gray-400 dark:text-white/30"> · {g.example_applicant}</span>}
                   </td>
                   <td className={TD + ' pr-4'}>
-                    <button onClick={() => addGapToCrosswalk(g)}
-                      className={BTN + ' bg-accent text-white hover:bg-accent/90'}>Add to Crosswalk</button>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => openGapPolicies(g)} disabled={pickerLoading}
+                        className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50'}>
+                        {pickerLoading ? '…' : `Edit${g.count > 1 ? ` (${g.count})` : ''}`}
+                      </button>
+                      <button onClick={() => addGapToCrosswalk(g)}
+                        className={BTN + ' bg-accent text-white hover:bg-accent/90'}>Add to Crosswalk</button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        {pickerError && !pickerGap && (
+          <p className="px-4 py-2 text-xs text-red-500 border-t border-gray-100 dark:border-white/10">{pickerError}</p>
+        )}
       </Card>
       <p className="text-xs text-gray-400 dark:text-white/40 -mt-2">
-        A combination here means either a genuinely new carrier/policy type — add it below — or a
-        mislabeled policy record. For the latter, search the applicant name shown on the Policies
-        page and correct it there.
+        A combination here means either a genuinely new carrier/policy type — add it via Add to
+        Crosswalk below — or a mislabeled policy record, which Edit opens directly for correcting.
       </p>
 
       <div className="flex gap-3 items-center">
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by carrier…" className={INP + ' max-w-xs'} />
-        <button onClick={() => setNewRow({ carrier: '', policy_name: '', subtype: SUBTYPES[0] })}
+        <button onClick={() => setNewRow({ carrier: '', policy_name: '', subtype: subtypeOptions[0] ?? '' })}
           className={BTN + ' bg-accent text-white hover:bg-accent/90'}>+ Add Row</button>
       </div>
 
@@ -573,9 +702,7 @@ function PolicyCrosswalkTab({ adminFetch }) {
             <div><label className={LBL}>Policy Name</label>
               <input value={newRow.policy_name} onChange={e => setNewRow(r => ({...r, policy_name: e.target.value}))} className={INP} /></div>
             <div><label className={LBL}>Subtype</label>
-              <select value={newRow.subtype} onChange={e => setNewRow(r => ({...r, subtype: e.target.value}))} className={INP}>
-                {SUBTYPES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select></div>
+              <SubtypeCombo value={newRow.subtype} onChange={v => setNewRow(r => ({...r, subtype: v}))} options={subtypeOptions} /></div>
           </div>
           <div className="flex gap-2">
             <button onClick={saveNew} disabled={saving} className={BTN + ' bg-accent text-white hover:bg-accent/90 disabled:opacity-50'}>Save</button>
@@ -602,9 +729,7 @@ function PolicyCrosswalkTab({ adminFetch }) {
                         <input value={editDraft.carrier} onChange={e => setEditDraft(d => ({...d, carrier: e.target.value}))} className={INP + ' text-xs py-1'} /></td>
                       <td className={TD}><input value={editDraft.policy_name} onChange={e => setEditDraft(d => ({...d, policy_name: e.target.value}))} className={INP + ' text-xs py-1'} /></td>
                       <td className={TD}>
-                        <select value={editDraft.subtype} onChange={e => setEditDraft(d => ({...d, subtype: e.target.value}))} className={INP + ' text-xs py-1'}>
-                          {SUBTYPES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select></td>
+                        <SubtypeCombo value={editDraft.subtype} onChange={v => setEditDraft(d => ({...d, subtype: v}))} options={subtypeOptions} /></td>
                       <td className={TD + ' pr-4'}>
                         <div className="flex gap-1">
                           <button onClick={() => saveEdit(r)} disabled={saving} className={BTN + ' bg-accent text-white hover:bg-accent/90'}>Save</button>
@@ -630,6 +755,69 @@ function PolicyCrosswalkTab({ adminFetch }) {
           </table>
         </Card>
       ))}
+
+      {/* Picker — which policy to fix, when a gap covers more than one */}
+      {pickerGap && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={e => { if (e.target === e.currentTarget) setPickerGap(null) }}>
+          <div className="bg-white dark:bg-primary rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+              {pickerGap.carrier} — {pickerGap.policy_name ?? <span className="italic">blank policy name</span>}
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-white/50 mb-4">
+              {pickerPolicies.length} polic{pickerPolicies.length === 1 ? 'y' : 'ies'} — pick one to correct.
+            </p>
+            {pickerLoading ? (
+              <p className="text-sm text-gray-400">Loading…</p>
+            ) : pickerError ? (
+              <p className="text-sm text-red-500">{pickerError}</p>
+            ) : (
+              <table className="w-full">
+                <thead className="border-b border-gray-100 dark:border-white/10">
+                  <tr>
+                    <th className={TH}>Applicant</th>
+                    <th className={TH}>Agent</th>
+                    <th className={TH}>Status</th>
+                    <th className={TH}>Submitted</th>
+                    <th className={TH + ' pr-0'}></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-white/5">
+                  {pickerPolicies.map(p => (
+                    <tr key={p.id}>
+                      <td className={TD}>{p.applicant || '—'}</td>
+                      <td className={TD}>{p.agent || p.sfg_id}</td>
+                      <td className={TD}>{p.status || '—'}</td>
+                      <td className={TD}>{fmtDate(p.submit_date) || '—'}</td>
+                      <td className={TD + ' pr-0'}>
+                        <button onClick={() => { setPickerGap(null); setEditPolicy(p) }}
+                          className={BTN + ' bg-accent text-white hover:bg-accent/90'}>Edit</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <button onClick={() => setPickerGap(null)}
+              className={BTN + ' mt-4 border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* The actual fix — same policy editor used on the Policies page */}
+      {editPolicy && (
+        <PolicyModalErrorBoundary onClose={() => setEditPolicy(null)}>
+          <PolicyModal
+            policy={editPolicy}
+            personnel={personnel}
+            canWrite
+            initialEdit
+            onClose={() => setEditPolicy(null)}
+            onUpdate={afterPolicyEdit}
+            onDelete={afterPolicyEdit}
+          />
+        </PolicyModalErrorBoundary>
+      )}
     </div>
   )
 }
