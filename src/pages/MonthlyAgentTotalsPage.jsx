@@ -11,7 +11,7 @@ import {
   legRulePreventsQual, promoStatuses, leadStatuses, requiredSubmissionWeeks,
 } from '../../shared/promotionQualification'
 import {
-  participants, creditedAmount, teamCreditedAmount, isPrimary,
+  participants, creditedAmount, teamCreditedAmount, creditPct, isPrimary,
   submissionCredit, WEEK_SUBMISSION_THRESHOLD,
 } from '../../shared/policySplit'
 
@@ -68,6 +68,16 @@ function parseCbApv(str) {
   if (typeof str === 'number') return str
   const n = parseFloat(str.replace(/[$,]/g, ''))
   return isNaN(n) ? 0 : n
+}
+
+// Amount a "possible chargeback" projects: the entered Snapshot Chargeback APV
+// when one has actually been typed in, else the full issued APV. Checked as a
+// blank/null field rather than parseCbApv's return value, so a deliberately
+// entered $0 is respected instead of silently falling back.
+function likelyCbAmount(p) {
+  const raw = p.snapshot_chargeback_apv
+  const entered = raw != null && String(raw).trim() !== ''
+  return entered ? parseCbApv(raw) : (p.issued_apv ?? 0)
 }
 
 function hlCls(status) {
@@ -301,9 +311,10 @@ export default function MonthlyAgentTotalsPage() {
       if (p.chargeback_exempt !== false) continue   // null = unknown, true = exempt
       const cbYm = toYearMonth(p.conservation_date)
       if (!cbYm || cbYm.year !== selectedYear || cbYm.month !== selectedMonth) continue
-      if (!(p.issued_apv ?? 0)) continue
+      const baseAmt = likelyCbAmount(p)
+      if (!baseAmt) continue
       for (const agentId of participants(p)) {
-        const portion = creditedAmount(p, agentId, 'issued_apv')
+        const portion = baseAmt * creditPct(p, agentId)
         if (!portion) continue
         const id = agentId.toLowerCase()
         amounts[id] = (amounts[id] ?? 0) + portion
@@ -695,7 +706,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
   // Running total (capped positive policies minus chargebacks and likely chargebacks)
   const total = pols.reduce((s, p) => s + capVal(p), 0)
               - cbPols.reduce((s, p) => s + parseCbApv(p.snapshot_chargeback_apv), 0)
-              - likelyCbPols.reduce((s, p) => s + (p.issued_apv ?? 0), 0)
+              - likelyCbPols.reduce((s, p) => s + likelyCbAmount(p), 0)
 
   const thCls = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 whitespace-nowrap'
   const tdCls = 'px-4 py-2 text-xs text-gray-700 dark:text-white/80'
@@ -803,7 +814,7 @@ function PolicyBreakdownModal({ modal, onClose }) {
                       <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.carrier || '—'}</td>
                       {showAgent && <td className={`${tdCls} text-gray-500 dark:text-white/55`}>{p.agent || '—'}</td>}
                       <td className={`${tdCls} text-right tabular-nums text-orange-500 dark:text-orange-400 font-medium`}>
-                        {fmtAmt(-(p.issued_apv ?? 0))}
+                        {fmtAmt(-likelyCbAmount(p))}
                       </td>
                       {showNotes && <td />}
                     </tr>
