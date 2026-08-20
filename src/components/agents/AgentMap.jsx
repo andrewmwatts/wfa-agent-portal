@@ -212,7 +212,16 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
   return (
     <div className="space-y-4">
       <style>{`
-        .leaflet-container { background: ${isDark ? '#0f1f22' : '#e8eef0'}; font: inherit; }
+        /*
+          Leaflet's CSS gives .leaflet-container position:relative but never a
+          z-index, so it never forms its own stacking context — its internal
+          panes/controls (up to z-index 1000) escape upward and can paint above
+          unrelated later elements elsewhere on the page, e.g. this map
+          rendering on top of the agent-detail modal instead of underneath it.
+          z-index: 0 gives it a stacking context of its own so nothing inside
+          it can outrank the rest of the page.
+        */
+        .leaflet-container { background: ${isDark ? '#0f1f22' : '#e8eef0'}; font: inherit; z-index: 0; }
         ${isDark ? '.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }' : ''}
       `}</style>
 
