@@ -421,6 +421,7 @@ export default function PoliciesPage() {
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
             className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[140px]">
             <option value="all" style={optionStyle}>All Statuses</option>
+            <option value="" style={optionStyle}>— None —</option>
             {statusOptions.map(s => (
               <option key={s} value={s} style={optionStyle}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
             ))}

@@ -8,7 +8,6 @@ const EMPTY = {
   hire_date:      '',
   birth_date:     '',
   upline_sfg_id:  '',
-  status:         '',
   phone:          '',
   city:           '',
   state:          '',
@@ -63,7 +62,7 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
           hire_date:      form.hire_date             || null,
           birth_date:     form.birth_date            || null,
           upline_sfg_id:  uplineId                   || null,
-          status:         form.status.trim()         || 'Active',
+          status:         'Active',
           phone:          form.phone.trim()          || null,
           city:           form.city.trim()           || null,
           state:          form.state.trim()          || null,
@@ -115,10 +114,6 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
               <Field label="SFG ID" required error={errors.sfg_id}>
                 <input type="text" value={form.sfg_id} onChange={e => set('sfg_id', e.target.value)}
                   placeholder="SFG0000000" className={inputCls(errors.sfg_id)} />
-              </Field>
-              <Field label="Status">
-                <input type="text" value={form.status} onChange={e => set('status', e.target.value)}
-                  placeholder="Active" className={inputCls()} />
               </Field>
             </Row>
             <Row>
