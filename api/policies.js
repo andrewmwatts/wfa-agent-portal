@@ -396,9 +396,13 @@ export default async function handler(req, res) {
         (p.policy_name ?? '').trim().toLowerCase() === nameParam.toLowerCase()
       )
 
-      const sfgIds = [...new Set(matches.map(p => p.sfg_id?.trim().toUpperCase()).filter(Boolean))]
-      const { data: people } = sfgIds.length
-        ? await supabase.from('personnel').select('sfg_id, preferred_name, opt_name').in('sfg_id', sfgIds)
+      const sfgIds = new Set(matches.map(p => p.sfg_id?.trim().toUpperCase()).filter(Boolean))
+      for (const p of matches) for (const s of p.splits ?? []) {
+        const id = (s.sfg_id ?? '').trim().toUpperCase()
+        if (id) sfgIds.add(id)
+      }
+      const { data: people } = sfgIds.size
+        ? await supabase.from('personnel').select('sfg_id, preferred_name, opt_name').in('sfg_id', [...sfgIds])
         : { data: [] }
       const personLookup = {}
       for (const p of people ?? []) {
@@ -725,6 +729,26 @@ export default async function handler(req, res) {
       for (const p of people) {
         const id = p.sfg_id?.toLowerCase()
         if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
+      }
+
+      // A split partner outside the requested scope won't be in personLookup yet —
+      // top it up so their display name resolves instead of falling back to sfg_id.
+      const missingSplitIds = new Set()
+      for (const p of rows) {
+        for (const s of p.splits ?? []) {
+          const id = (s.sfg_id ?? '').trim().toLowerCase()
+          if (id && !personLookup[id]) missingSplitIds.add(id.toUpperCase())
+        }
+      }
+      if (missingSplitIds.size) {
+        const { data: extra, error } = await supabase.from('personnel')
+          .select('sfg_id, preferred_name, opt_name')
+          .in('sfg_id', [...missingSplitIds])
+        if (error) throw error
+        for (const p of extra ?? []) {
+          const id = p.sfg_id?.toLowerCase()
+          if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
+        }
       }
 
       const policies = rows.map(p => {
