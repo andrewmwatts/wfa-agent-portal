@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
-import { isOwnerRecord, getBaseshopIds } from '../utils/agencyScope'
+import { isOwnerRecord, getBaseshopIds } from '../../shared/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
 import { nextContractLevel, nextLeadershipLevel, levelAsOfMonth } from '../../shared/commissionLevel'

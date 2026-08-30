@@ -32,7 +32,7 @@ export const NAV_SECTIONS = [
       { path: '/portal/contracting',          label: 'Contracting',          roles: LEADER_ROLES },
       { path: '/portal/accountability',       label: 'Accountability',       roles: OWNER_ROLES  },
       { path: '/portal/coaching',             label: 'Coaching',             roles: LEADER_ROLES },
-      { path: '/portal/promotions',           label: 'Promotions',           roles: OWNER_ROLES  },
+      { path: '/portal/promotions',           label: 'Promotions'                                },
       { path: '/portal/agents',               label: 'Agents',               roles: LEADER_ROLES },
     ],
   },

@@ -1,5 +1,5 @@
 import { useTheme } from '../context/ThemeContext'
-import { buildOwnersList } from '../utils/agencyScope'
+import { buildOwnersList } from '../../shared/agencyScope'
 
 /**
  * ScopeDropdown

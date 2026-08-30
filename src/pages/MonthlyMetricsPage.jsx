@@ -6,7 +6,7 @@ import {
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
-import { getBaseshopIds } from '../utils/agencyScope'
+import { getBaseshopIds } from '../../shared/agencyScope'
 import { teamCreditedAmount } from '../../shared/policySplit'
 
 function parseAmt(v) {

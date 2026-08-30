@@ -6,7 +6,7 @@ import { useViewing } from '../context/ViewingContext'
 import AddAgentModal from '../components/AddAgentModal'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
-import { getBaseshopIds } from '../utils/agencyScope'
+import { getBaseshopIds } from '../../shared/agencyScope'
 import { toInputDate, fmtDate } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
 

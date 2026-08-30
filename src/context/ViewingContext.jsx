@@ -31,7 +31,12 @@ function makePerms(readable = [], writable = []) {
   )
 }
 
-// Sections each role can read
+// Sections each role can read. `snapshot` (the Promotions/reconciliation
+// workflow) is readable by every role — the API scopes individual records to
+// the caller's own hierarchy, the same way Policies/Agents/Metrics do, so
+// opening the section here doesn't expose anyone else's data. Writing to it
+// stays gated separately (see ALWAYS_WRITE / write_sections below) and is
+// currently super_admin-only regardless of this list.
 function sectionsByRole(role) {
   switch (role) {
     case 'super_admin':
@@ -40,9 +45,9 @@ function sectionsByRole(role) {
     case 'owner':
       return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'accountability', 'snapshot', 'activity', 'income']
     case 'leader':
-      return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'activity', 'income']
+      return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'snapshot', 'activity', 'income']
     default: // agent
-      return ['myInfo', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'project100', 'activity', 'income']
+      return ['myInfo', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'project100', 'snapshot', 'activity', 'income']
   }
 }
 

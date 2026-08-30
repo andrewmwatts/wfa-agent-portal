@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
-import { requireSuperAdmin } from './_auth.js'
+import { requireAuth, getAllowedSfgIds, authorizeScope } from './_auth.js'
 import { buildLevelMap } from '../shared/commissionLevel.js'
 import { loadAllSplits } from './_policySplits.js'
 import {
@@ -46,8 +46,32 @@ const SNAPSHOT_POLICY_COLS =
   'submitted_apv, issued_apv, conservation_status, conservation_date, ' +
   'application_notes, policy_notes, snapshot_chargeback_month, snapshot_chargeback_apv'
 
+// The workflow itself (running reconciliation, resolving discrepancies, logging
+// promotion actions) stays super_admin-only for now — reads are hierarchy-scoped
+// below so a caller can see what was done for their own downline, but writes are
+// deliberately not opened up yet. Call at the top of every POST/PUT/DELETE branch.
+function requireWrite(caller, res) {
+  if (caller.role !== 'super_admin') {
+    res.status(403).json({ error: 'Forbidden: the promotions workflow is view-only for your role right now' })
+    return false
+  }
+  return true
+}
+
+// True if `id` (an sfg_id) falls within the caller's allowed scope.
+// `allowed === null` means unrestricted (super_admin / bypass).
+function inScope(allowed, id) {
+  return allowed === null || allowed.has(String(id ?? '').trim().toUpperCase())
+}
+
+function scopeRowsBySfgId(rows, allowed) {
+  if (allowed === null) return rows
+  return (rows ?? []).filter(r => inScope(allowed, r.sfg_id))
+}
+
 export default async function handler(req, res) {
-  if (!(await requireSuperAdmin(req, res))) return
+  const caller = await requireAuth(req, res)
+  if (!caller) return
 
   const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
@@ -74,6 +98,7 @@ export default async function handler(req, res) {
 
   // ── POST cycle ───────────────────────────────────────────────────────────────
   if (method === 'POST' && type === 'cycles') {
+    if (!requireWrite(caller, res)) return
     const { month, created_by } = req.body ?? {}
     if (!month) return res.status(400).json({ error: 'month is required' })
     try {
@@ -113,6 +138,8 @@ export default async function handler(req, res) {
       const allSfgIds = [...new Set(
         [...recs.map(r => r.sfg_id), ...dispRows.map(d => d.sfg_id)].filter(Boolean)
       )]
+
+      const allowed = await getAllowedSfgIds(caller, supabase)
 
       let reconciliations = recs
       let disputes        = dispRows
@@ -162,9 +189,9 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         cycle: cycleRes.data,
-        reconciliations,
-        disputes,
-        promotions: promoRes.data ?? [],
+        reconciliations: scopeRowsBySfgId(reconciliations, allowed),
+        disputes:        scopeRowsBySfgId(disputes, allowed),
+        promotions:      scopeRowsBySfgId(promoRes.data, allowed),
       })
     } catch (err) {
       console.error('[snapshot/cycle GET]', err)
@@ -174,6 +201,7 @@ export default async function handler(req, res) {
 
   // ── PUT cycle ────────────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'cycle') {
+    if (!requireWrite(caller, res)) return
     const { id, step, completed_at } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     const patch = {}
@@ -200,7 +228,8 @@ export default async function handler(req, res) {
         .eq('cycle_id', cycle_id)
         .order('delta')
       if (error) throw error
-      return res.status(200).json(data ?? [])
+      const allowed = await getAllowedSfgIds(caller, supabase)
+      return res.status(200).json(scopeRowsBySfgId(data, allowed))
     } catch (err) {
       console.error('[snapshot/reconciliations GET]', err)
       return res.status(500).json({ error: 'Failed to load reconciliations' })
@@ -209,6 +238,7 @@ export default async function handler(req, res) {
 
   // ── PUT resolution ───────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'resolution') {
+    if (!requireWrite(caller, res)) return
     const { id, resolution, resolution_note } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {
@@ -233,6 +263,7 @@ export default async function handler(req, res) {
 
   // ── PUT claude_hypothesis ────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'hypothesis') {
+    if (!requireWrite(caller, res)) return
     const { id, claude_hypothesis } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {
@@ -258,7 +289,8 @@ export default async function handler(req, res) {
         .select('*')
         .eq('cycle_id', cycle_id)
       if (error) throw error
-      return res.status(200).json(data ?? [])
+      const allowed = await getAllowedSfgIds(caller, supabase)
+      return res.status(200).json(scopeRowsBySfgId(data, allowed))
     } catch (err) {
       console.error('[snapshot/disputes GET]', err)
       return res.status(500).json({ error: 'Failed to load disputes' })
@@ -267,6 +299,7 @@ export default async function handler(req, res) {
 
   // ── POST dispute ─────────────────────────────────────────────────────────────
   if (method === 'POST' && type === 'disputes') {
+    if (!requireWrite(caller, res)) return
     const { cycle_id, reconciliation_id, sfg_id, policy_id,
             disputed_amount, dispute_type, notes } = req.body ?? {}
     if (!cycle_id || !sfg_id) return res.status(400).json({ error: 'cycle_id and sfg_id are required' })
@@ -295,6 +328,7 @@ export default async function handler(req, res) {
 
   // ── PUT dispute ──────────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'dispute') {
+    if (!requireWrite(caller, res)) return
     const { id, included, notes, disputed_amount, outcome, outcome_date, submitted_at } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     const patch = {}
@@ -316,6 +350,7 @@ export default async function handler(req, res) {
 
   // ── DELETE dispute ───────────────────────────────────────────────────────────
   if (method === 'DELETE' && type === 'dispute') {
+    if (!requireWrite(caller, res)) return
     const { id } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {
@@ -338,7 +373,8 @@ export default async function handler(req, res) {
         .select('*')
         .eq('cycle_id', cycle_id)
       if (error) throw error
-      return res.status(200).json(data ?? [])
+      const allowed = await getAllowedSfgIds(caller, supabase)
+      return res.status(200).json(scopeRowsBySfgId(data, allowed))
     } catch (err) {
       console.error('[snapshot/promotions GET]', err)
       return res.status(500).json({ error: 'Failed to load promotions' })
@@ -347,6 +383,7 @@ export default async function handler(req, res) {
 
   // ── POST promotion_action ────────────────────────────────────────────────────
   if (method === 'POST' && type === 'promotions') {
+    if (!requireWrite(caller, res)) return
     const { cycle_id, sfg_id, action_type, month_number, level,
             agent_promotions_id, is_manual, notes } = req.body ?? {}
     if (!cycle_id || !sfg_id || !action_type) {
@@ -377,6 +414,7 @@ export default async function handler(req, res) {
 
   // ── PUT promotion_action ─────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'promotion') {
+    if (!requireWrite(caller, res)) return
     const { id, hierarchy_flag_noted, jotform_submitted_at, notes } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     const patch = {}
@@ -404,6 +442,7 @@ export default async function handler(req, res) {
         const { data, error } = await supabase
           .from('policies').select(SNAPSHOT_POLICY_COLS).eq('id', id).maybeSingle()
         if (error) throw error
+        if (data && !(await authorizeScope(req, res, caller, supabase, [data.sfg_id]))) return
         return res.status(200).json(data ? [data] : [])
       } catch (err) {
         console.error('[snapshot/policies GET by id]', err)
@@ -412,6 +451,7 @@ export default async function handler(req, res) {
     }
 
     if (!sfg_id || !carrier) return res.status(400).json({ error: 'sfg_id and carrier are required' })
+    if (!(await authorizeScope(req, res, caller, supabase, [sfg_id]))) return
     const CARRIER_ALIASES = {
       'American General': ['American General', 'Corebridge'],
       'TransAmerica':     ['TransAmerica', 'Transamerica Group'],
@@ -623,15 +663,23 @@ export default async function handler(req, res) {
         return { ...p, commission_contract: levels.contract, commission_leadership: levels.leadership, commission_prestige: levels.prestige }
       })
 
+      // Team/company-wide math above (childrenOf, teamApv) needs the full,
+      // unfiltered tree to sum correctly — scope only the response payload.
+      const allowed  = await getAllowedSfgIds(caller, supabase)
+      const inRange  = id => inScope(allowed, id)
+      const scopeMap = obj => allowed === null
+        ? obj
+        : Object.fromEntries(Object.entries(obj).filter(([k]) => inRange(k)))
+
       return res.status(200).json({
-        personnel,
-        qualifications: qualRes.data ?? [],
-        promotions:     promoRes.data ?? [],
-        monthPolicies,
-        agentMonthApv,
-        chargebacksByAgent,
-        submittedWeeksByAgent,
-        submittedInMonth,
+        personnel:             personnel.filter(p => inRange(p.sfg_id)),
+        qualifications:        qualRes.data ?? [],
+        promotions:            scopeRowsBySfgId(promoRes.data, allowed),
+        monthPolicies:         scopeRowsBySfgId(monthPolicies, allowed),
+        agentMonthApv:         scopeMap(agentMonthApv),
+        chargebacksByAgent:    scopeMap(chargebacksByAgent),
+        submittedWeeksByAgent: scopeMap(submittedWeeksByAgent),
+        submittedInMonth:      allowed === null ? submittedInMonth : submittedInMonth.filter(inRange),
       })
     } catch (err) {
       console.error('[snapshot/context GET]', err)
@@ -641,6 +689,7 @@ export default async function handler(req, res) {
 
   // ── Agent promotions write (for Step 3 qualifying) ───────────────────────────
   if (method === 'POST' && type === 'agent_promotion') {
+    if (!requireWrite(caller, res)) return
     const { sfg_id, promotion_type, level, month_1, month_2, month_3,
             slingshot_month, is_slingshot, is_qualified, qualified_date } = req.body ?? {}
     if (!sfg_id || !promotion_type || !level) {
@@ -691,6 +740,7 @@ export default async function handler(req, res) {
 
   // ── Delete agent_promotions row (streak reset) ───────────────────────────────
   if (method === 'DELETE' && type === 'agent_promotion') {
+    if (!requireWrite(caller, res)) return
     const { id } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {

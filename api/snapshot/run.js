@@ -424,8 +424,29 @@ export default async function handler(req, res) {
       })
     }
 
-    // ── 9. Replace reconciliations for this cycle ────────────────────────────
-    await supabase.from('snapshot_reconciliations').delete().eq('cycle_id', cycleId)
+    // ── 9. Replace reconciliations for the agents in THIS run ────────────────
+    //
+    // Scoped to the agents this run actually covered, not the whole cycle. A
+    // Snapshot export only ever covers one owner's downline, so a cycle is fed
+    // incrementally by however many exports it takes to cover its scope —
+    // wiping the whole cycle here would delete (and discard the resolutions on)
+    // every agent absent from the file currently being uploaded.
+    //
+    // Every sfg_id seen in this run lands in one of these two sets, so an agent
+    // who was discrepant last run and is clean now still gets their stale row
+    // removed. An agent absent from this run's file keeps their existing rows —
+    // that is the point, and it is also why a re-run cannot tell "out of scope"
+    // apart from "dropped out entirely". Once a cycle carries an explicit
+    // declared scope, this can tighten to that scope instead.
+    const runSfgIds = [...new Set([...cleanAgents, ...discrepantAgents])]
+    if (runSfgIds.length > 0) {
+      const { error } = await supabase
+        .from('snapshot_reconciliations')
+        .delete()
+        .eq('cycle_id', cycleId)
+        .in('sfg_id', runSfgIds)
+      if (error) throw error
+    }
     if (upsertRows.length > 0) {
       const { error } = await supabase.from('snapshot_reconciliations').insert(upsertRows)
       if (error) throw error
