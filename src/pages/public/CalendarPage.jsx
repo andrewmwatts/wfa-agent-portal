@@ -267,7 +267,7 @@ function MaccSchedule() {
 
       <div style={{ marginTop: 14 }}>
         <a
-          href="https://us02web.zoom.us/j/84536103772"
+          href="https://us02web.zoom.us/j/84536103772?pwd=ccneAyVfOtOaKcbbmeX8iPfSKUVrug.1"
           target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 13, color: '#EE2666', fontFamily: 'Inter, sans-serif', textDecoration: 'none', fontWeight: 500 }}
         >
