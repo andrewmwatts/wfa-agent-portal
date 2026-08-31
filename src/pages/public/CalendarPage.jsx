@@ -267,14 +267,14 @@ function MaccSchedule() {
 
       <div style={{ marginTop: 14 }}>
         <a
-          href="https://us02web.zoom.us/j/3580944678?pwd=bjVqVmJZMS9LaDJSMEFidkI4NWozQT09"
+          href="https://us02web.zoom.us/j/84536103772"
           target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 13, color: '#EE2666', fontFamily: 'Inter, sans-serif', textDecoration: 'none', fontWeight: 500 }}
         >
           Join the MACC Room →
         </a>
         <p style={{ fontSize: 12, color: '#7A9499', margin: '6px 0 0', fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
-          Meeting ID: 358 094 4678<br />
+          Meeting ID: 845 3610 3772<br />
           Passcode: grit
         </p>
       </div>
