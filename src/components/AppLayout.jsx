@@ -111,17 +111,22 @@ export default function AppLayout() {
 
 // ── Header ─────────────────────────────────────────────────────────────────────
 
-// Open padlock for the way back out to the public site — deliberately the same
-// body and stroke as the closed padlock on the public nav's "Agent portal" CTA,
-// so the pair reads as one idea (locked = going in, unlocked = coming out). That
+// Open padlock for the way back out to the public site — the same body and the
+// same shackle as the closed padlock on the public nav's "Agent portal" CTA, so
+// the pair reads as one idea (locked = going in, unlocked = coming out). That
 // pairing is what lets the icon carry the meaning alone on mobile, where the
 // label is hidden.
 function UnlockIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="11" width="18" height="11" rx="2" />
-      <path d="M7 11V7a5 5 0 019.9-1" />
+      {/* Shackle swung fully clear and hooked over the right side, free end
+          hanging past the body. The conventional "unlock" glyph just drops the
+          left leg, which at header size still reads as a closed lock; only a
+          shackle visibly out of its hole survives the downscale. Radius and
+          leg length match the closed padlock so the two stay a matched pair. */}
+      <path d="M12 11V7a5 5 0 0110 0v2" />
     </svg>
   )
 }
