@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PublicLayout from '../../components/public/PublicLayout'
+import { supabase } from '../../lib/supabaseClient'
 
 function VideoIcon() {
   return (
@@ -41,11 +43,15 @@ function BookIcon() {
   )
 }
 
-const QUICK_LINKS = [
+// videoCount is filled in live from the published resources; until it arrives
+// the sentence simply omits the number rather than quoting a stale one.
+const quickLinks = (videoCount) => [
   {
     icon: <VideoIcon />,
     title: 'Video library',
-    body: '440+ training calls across WFH, Reset Room, BABB, TPC, S+U, and more.',
+    body: videoCount == null
+      ? 'Training calls across WFH, Reset Room, BABB, TPC, S+U, and more.'
+      : `${videoCount} training calls across WFH, Reset Room, BABB, TPC, S+U, and more.`,
     link: { label: 'Browse videos →', to: '/videos', active: true },
   },
   {
@@ -69,6 +75,24 @@ const QUICK_LINKS = [
 ]
 
 export default function Landing() {
+  const [videoCount, setVideoCount] = useState(null)
+
+  // head:true returns the count without any rows, so this stays cheap on the
+  // landing page. A failure just leaves the number out.
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('resources')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_published', true)
+      .then(({ count, error }) => {
+        if (!cancelled && !error && typeof count === 'number') setVideoCount(count)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const cards = quickLinks(videoCount)
+
   return (
     <PublicLayout>
       {/* Hero banner */}
@@ -90,7 +114,7 @@ export default function Landing() {
       <div style={{ background: '#fff', padding: '32px clamp(16px, 4vw, 28px)' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-            {QUICK_LINKS.map(card => (
+            {cards.map(card => (
               <div key={card.title}
                 style={{ background: '#fff', border: '0.5px solid #DDE6E8', borderRadius: 10, padding: '20px 20px 16px' }}>
                 {card.icon}

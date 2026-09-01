@@ -14,11 +14,15 @@ export default function SeriesStrip({ slug, videos, totalCount, onSeeAll, onVide
   const name = meta?.name ?? slug
   const host = meta?.host
 
+  // totalCount is the exact number of videos in the strip, so it is stated
+  // plainly rather than as an approximation.
+  const countText = `${totalCount} ${totalCount === 1 ? 'video' : 'videos'}`
+
   const metaText = slug === '__additional__'
-    ? `Live Dialing, Getting Unstuck, and other sessions · ${totalCount}+ videos`
+    ? `Live Dialing, Getting Unstuck, and other sessions · ${countText}`
     : host
-    ? `${host} & guests · ${totalCount}+ videos`
-    : `${totalCount}+ videos`
+    ? `${host} & guests · ${countText}`
+    : countText
 
   return (
     <div>

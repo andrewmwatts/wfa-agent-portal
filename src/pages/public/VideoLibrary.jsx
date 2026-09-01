@@ -90,7 +90,12 @@ export default function VideoLibrary() {
     setShowAllFlat(false); setActiveSeries(null); setSearchQuery('')
   }
 
-  const videoCount = allVideos.length || 440
+  // Exact count once loaded. The number is left out entirely while loading
+  // rather than falling back to a placeholder — without a "+" softening it, a
+  // stale figure would read as a precise claim.
+  const countSentence = allVideos.length > 0
+    ? `${allVideos.length} videos across all calls and series.`
+    : 'Videos across all calls and series.'
 
   return (
     <PublicLayout>
@@ -101,7 +106,7 @@ export default function VideoLibrary() {
             Training video library
           </h1>
           <p style={{ fontSize: 13, color: '#4A6568', margin: '0 0 16px', maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
-            {videoCount}+ videos across all calls and series. Search by topic, speaker, or browse below.
+            {countSentence} Search by topic, speaker, or browse below.
           </p>
           <SearchBar value={searchQuery} onChange={handleSearchChange} />
         </div>
