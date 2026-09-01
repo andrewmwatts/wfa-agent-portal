@@ -111,6 +111,21 @@ export default function AppLayout() {
 
 // ── Header ─────────────────────────────────────────────────────────────────────
 
+// Open padlock for the way back out to the public site — deliberately the same
+// body and stroke as the closed padlock on the public nav's "Agent portal" CTA,
+// so the pair reads as one idea (locked = going in, unlocked = coming out). That
+// pairing is what lets the icon carry the meaning alone on mobile, where the
+// label is hidden.
+function UnlockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 019.9-1" />
+    </svg>
+  )
+}
+
 function Header({ userProfile, onSignOut, onMenuClick }) {
   const { theme, toggleTheme } = useTheme()
   const logoUrl                = useAgencyLogo()
@@ -141,11 +156,16 @@ function Header({ userProfile, onSignOut, onMenuClick }) {
 
       {/* Right: agent resources link + theme toggle + user menu */}
       <div className="flex items-center gap-1 sm:gap-2">
+        {/* Icon always shows; the label drops away on mobile, where the header
+            has no room for it and the padlock has to stand on its own. */}
         <a
           href="/"
-          className="hidden sm:inline-flex items-center text-xs font-medium text-gray-500 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/80 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 mr-1"
+          title="Agent Resources"
+          aria-label="Agent Resources"
+          className="inline-flex items-center gap-1.5 h-8 px-2 text-xs font-medium text-gray-500 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/80 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 mr-1"
         >
-          Agent Resources
+          <UnlockIcon />
+          <span className="hidden sm:inline">Agent Resources</span>
         </a>
         <button
           onClick={toggleTheme}
