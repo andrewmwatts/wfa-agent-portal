@@ -120,13 +120,16 @@ function UnlockIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="11" width="18" height="11" rx="2" />
-      {/* Shackle swung fully clear and hooked over the right side, free end
-          hanging past the body. The conventional "unlock" glyph just drops the
-          left leg, which at header size still reads as a closed lock; only a
-          shackle visibly out of its hole survives the downscale. Radius and
-          leg length match the closed padlock so the two stay a matched pair. */}
-      <path d="M12 11V7a5 5 0 0110 0v2" />
+      {/* Body is narrower than the closed padlock's (15 vs 18 wide, same height)
+          purely to clear room for the shackle — at the closed body's width the
+          hook has nowhere to swing inside a 24-unit box, and gets cramped back
+          over the body where it reads as closed again. */}
+      <rect x="2" y="11" width="15" height="11" rx="2" />
+      {/* The shackle hinges where the closed padlock's right leg sits and swings
+          out past the body, free end hanging clear. Dropping the left leg (the
+          conventional "unlock" glyph) or merely tilting it both still read as a
+          closed lock once scaled down to header size. */}
+      <path d="M13 11V6a4.5 4.5 0 019 0v3" />
     </svg>
   )
 }
