@@ -3,6 +3,8 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, getAllowedSfgIds, authorizeScope } from './_auth.js'
+import { dbErrorMessage } from './_dbError.js'
+import { getBaseshopIds, ownerIdsFromPromotions } from '../shared/agencyScope.js'
 import { buildLevelMap } from '../shared/commissionLevel.js'
 import { loadAllSplits } from './_policySplits.js'
 import {
@@ -69,6 +71,26 @@ function scopeRowsBySfgId(rows, allowed) {
   return (rows ?? []).filter(r => inScope(allowed, r.sfg_id))
 }
 
+// Normalized lookup key for an sfg_id, so name maps are case/whitespace safe.
+function key(sfgId) {
+  return String(sfgId ?? '').trim().toUpperCase()
+}
+
+// sfg_id → display name, for whichever ids a handler needs to label.
+async function resolveNames(supabase, sfgIds) {
+  const ids = [...new Set((sfgIds ?? []).map(key).filter(Boolean))]
+  if (!ids.length) return {}
+  const { data } = await supabase
+    .from('personnel')
+    .select('sfg_id, preferred_name, opt_name')
+    .in('sfg_id', ids)
+  const out = {}
+  for (const p of data ?? []) {
+    if (p.sfg_id) out[key(p.sfg_id)] = p.preferred_name?.trim() || p.opt_name?.trim() || null
+  }
+  return out
+}
+
 export default async function handler(req, res) {
   const caller = await requireAuth(req, res)
   if (!caller) return
@@ -86,35 +108,184 @@ export default async function handler(req, res) {
     try {
       const { data, error } = await supabase
         .from('snapshot_cycles')
-        .select('id, month, step, snapshot_date_from, snapshot_date_to, created_at, completed_at, created_by')
+        .select('id, month, step, snapshot_date_from, snapshot_date_to, created_at, ' +
+                'completed_at, created_by, owner_sfg_id, snapshot_cycle_scopes(owner_sfg_id)')
         .order('month', { ascending: false })
       if (error) throw error
-      return res.status(200).json(data ?? [])
+
+      const rows = (data ?? []).map(({ snapshot_cycle_scopes, ...c }) => ({
+        ...c,
+        scopes: (snapshot_cycle_scopes ?? []).map(s => s.owner_sfg_id),
+      }))
+
+      // A cycle is visible when any baseshop it covers is within the caller's
+      // reach — which is how an owner sees the cycle their upline ran that
+      // included their agency. Legacy cycles carry no scope rows and predate
+      // scoping, so they stay visible; their contents are still row-scoped.
+      const allowed = await getAllowedSfgIds(caller, supabase)
+      const visible = allowed === null
+        ? rows
+        : rows.filter(c => !c.scopes.length || c.scopes.some(id => inScope(allowed, id)))
+
+      const names = await resolveNames(supabase,
+        visible.flatMap(c => [c.owner_sfg_id, c.created_by, ...c.scopes]))
+
+      return res.status(200).json(visible.map(c => ({
+        ...c,
+        owner_name:   names[key(c.owner_sfg_id)] ?? c.owner_sfg_id ?? null,
+        created_by_name: names[key(c.created_by)] ?? c.created_by ?? null,
+        scope_names:  c.scopes.map(id => names[key(id)] ?? id),
+      })))
     } catch (err) {
       console.error('[snapshot/cycles GET]', err)
       return res.status(500).json({ error: 'Failed to load cycles' })
     }
   }
 
-  // ── POST cycle ───────────────────────────────────────────────────────────────
-  if (method === 'POST' && type === 'cycles') {
-    if (!requireWrite(caller, res)) return
-    const { month, created_by } = req.body ?? {}
+  // ── GET owners ───────────────────────────────────────────────────────────────
+  // The agency owners the caller could run a cycle for, each with the owner
+  // directly above them, so the scope picker can render the owner tree and
+  // cascade an exclusion down it — declining to run an owner's agency must also
+  // decline everything beneath them rather than reaching past them to their subs.
+  if (method === 'GET' && type === 'owners') {
+    try {
+      const [{ data: people }, { data: promoRows }] = await Promise.all([
+        supabase.from('personnel').select('sfg_id, opt_name, preferred_name, upline_sfg_id'),
+        supabase.from('agent_promotions')
+          .select('sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'),
+      ])
+      const ownerIds = ownerIdsFromPromotions(promoRows)
+      const allowed  = await getAllowedSfgIds(caller, supabase)
+
+      const byId = {}
+      for (const p of people ?? []) if (p.sfg_id) byId[key(p.sfg_id)] = p
+
+      // Nearest owner strictly above this one — the owner tree's parent edge.
+      const parentOwner = (sfgId) => {
+        let cur = byId[key(sfgId)]?.upline_sfg_id
+        while (cur) {
+          const up = key(cur)
+          if (ownerIds.has(up)) return up
+          cur = byId[up]?.upline_sfg_id
+        }
+        return null
+      }
+
+      const owners = [...ownerIds]
+        .filter(id => byId[id] && inScope(allowed, id))
+        .map(id => {
+          const p = byId[id]
+          return {
+            sfg_id:        p.sfg_id,
+            name:          p.preferred_name?.trim() || p.opt_name?.trim() || p.sfg_id,
+            parent_owner:  parentOwner(id),
+            baseshop_size: getBaseshopIds(id, people ?? [], ownerIds).size,
+          }
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      return res.status(200).json(owners)
+    } catch (err) {
+      console.error('[snapshot/owners GET]', err)
+      return res.status(500).json({ error: 'Failed to load agency owners' })
+    }
+  }
+
+  // ── GET cycle-claims ─────────────────────────────────────────────────────────
+  // Which baseshops already sit in a cycle for this month, so the scope picker
+  // can warn that selecting one would duplicate work someone else is doing.
+  // Overlap is allowed by design — an owner can hand a leg back mid-month — so
+  // this informs the warning rather than enforcing anything.
+  if (method === 'GET' && type === 'cycle-claims') {
+    const month = req.query.month?.trim()
     if (!month) return res.status(400).json({ error: 'month is required' })
     try {
       const { data, error } = await supabase
         .from('snapshot_cycles')
-        .insert({ month: month.trim(), step: 1, created_by: created_by ?? null })
+        .select('id, owner_sfg_id, completed_at, snapshot_cycle_scopes(owner_sfg_id)')
+        .eq('month', month)
+      if (error) throw error
+
+      const allowed = await getAllowedSfgIds(caller, supabase)
+      const claims  = []
+      for (const c of data ?? []) {
+        for (const s of c.snapshot_cycle_scopes ?? []) {
+          // Only report claims on baseshops the caller could actually select.
+          if (!inScope(allowed, s.owner_sfg_id)) continue
+          claims.push({
+            owner_sfg_id:       s.owner_sfg_id,
+            cycle_id:           c.id,
+            cycle_owner_sfg_id: c.owner_sfg_id,
+            completed_at:       c.completed_at,
+          })
+        }
+      }
+
+      const names = await resolveNames(supabase,
+        claims.flatMap(c => [c.owner_sfg_id, c.cycle_owner_sfg_id]))
+
+      return res.status(200).json(claims.map(c => ({
+        ...c,
+        owner_name:       names[key(c.owner_sfg_id)]       ?? c.owner_sfg_id,
+        cycle_owner_name: names[key(c.cycle_owner_sfg_id)] ?? c.cycle_owner_sfg_id,
+      })))
+    } catch (err) {
+      console.error('[snapshot/cycle-claims GET]', err)
+      return res.status(500).json({ error: 'Failed to load cycle claims' })
+    }
+  }
+
+  // ── POST cycle ───────────────────────────────────────────────────────────────
+  // A cycle belongs to one agency owner and covers the baseshops they selected.
+  // Overlapping another owner's cycle for the same month is allowed on purpose —
+  // the app warns instead, since a leg can legitimately be handed back mid-month.
+  if (method === 'POST' && type === 'cycles') {
+    if (!requireWrite(caller, res)) return
+    const { month, owner_sfg_id, scope_owner_sfg_ids } = req.body ?? {}
+    if (!month) return res.status(400).json({ error: 'month is required' })
+
+    const owner  = owner_sfg_id?.trim().toUpperCase() || null
+    const scopes = [...new Set(
+      (Array.isArray(scope_owner_sfg_ids) ? scope_owner_sfg_ids : [])
+        .map(id => String(id).trim().toUpperCase()).filter(Boolean)
+    )]
+
+    // The owner and every selected baseshop must sit inside the caller's own
+    // hierarchy — no running a cycle for an agency you don't have reach into.
+    if (!(await authorizeScope(req, res, caller, supabase, [owner, ...scopes].filter(Boolean)))) return
+
+    try {
+      const { data, error } = await supabase
+        .from('snapshot_cycles')
+        .insert({
+          month:        month.trim(),
+          step:         1,
+          owner_sfg_id: owner,
+          // Who physically ran it, taken from the authenticated caller rather
+          // than the request body. 'BYPASS' is the local-dev identity and would
+          // violate the personnel FK.
+          created_by:   caller.sfg_id && caller.sfg_id !== 'BYPASS' ? caller.sfg_id : null,
+        })
         .select()
         .single()
-      if (error) {
-        if (error.code === '23505') return res.status(409).json({ error: 'A cycle for this month already exists' })
-        throw error
+      if (error) throw error
+
+      if (scopes.length) {
+        const { error: scopeErr } = await supabase
+          .from('snapshot_cycle_scopes')
+          .insert(scopes.map(id => ({ cycle_id: data.id, owner_sfg_id: id })))
+        if (scopeErr) {
+          // Don't leave a scopeless cycle behind — it would read as legacy
+          // "covers everything", which is the opposite of what was asked for.
+          await supabase.from('snapshot_cycles').delete().eq('id', data.id)
+          throw scopeErr
+        }
       }
-      return res.status(200).json(data)
+
+      return res.status(200).json({ ...data, scopes })
     } catch (err) {
       console.error('[snapshot/cycles POST]', err)
-      return res.status(500).json({ error: 'Failed to create cycle' })
+      return res.status(500).json({ error: dbErrorMessage(err, 'Failed to create cycle') })
     }
   }
 
@@ -712,6 +883,29 @@ export default async function handler(req, res) {
         is_slingshot:   is_slingshot   ?? false,
         is_qualified:   is_qualified   ?? false,
         qualified_date: qualified_date ?? null,
+      }
+
+      // One calendar month may only count once toward an agent's streak at a
+      // given level.
+      //
+      // The client sends the whole record — existing months plus the new one in
+      // the slot it computed. If two cycles run the same baseshop at once, the
+      // second one can load the first one's saved month, compute the *next*
+      // slot, and write the same calendar month twice, advancing the agent a
+      // month early. Neither write is lost and the row looks unremarkable
+      // afterwards, so this is caught here rather than left to be noticed later.
+      const ym    = v => (v ? String(v).slice(0, 7) : null)
+      const slots = [record.month_1, record.month_2, record.month_3].map(ym).filter(Boolean)
+      const seen  = new Set()
+      for (const m of slots) {
+        if (seen.has(m)) {
+          return res.status(409).json({
+            error: `${m} is already recorded as a qualifying month for this agent at ${level}. ` +
+                   'Another cycle most likely logged it first — refresh Step 3 and re-check ' +
+                   'this agent before logging the month again.',
+          })
+        }
+        seen.add(m)
       }
 
       // Look up any existing row explicitly rather than relying on upsert's

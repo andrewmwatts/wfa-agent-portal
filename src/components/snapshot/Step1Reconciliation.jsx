@@ -210,7 +210,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          month:           cycle.month,
+          cycle_id:        cycle.id,
           snapshot_window: monthWindow(cycle.month),
           snapshot_agents: parsed.agents,
         }),
@@ -454,6 +454,21 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
               <SummaryChip label="Clean"        value={runResult.summary.clean_agents}      color="green" />
               <SummaryChip label="Discrepant"   value={runResult.summary.discrepant_agents} color="red"   />
               <SummaryChip label="Total Agents" value={runResult.summary.total_agents}       />
+              {/* An agency this cycle covers that the uploaded file says nothing
+                  about almost always means the wrong export was uploaded — every
+                  unmentioned agent would otherwise read as a full-APV discrepancy. */}
+              {runResult.coverage?.some(c => c.agents_in_file === 0) && (
+                <div className="col-span-2 sm:col-span-4 rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2">
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1">
+                    This file covers no agents for {runResult.coverage.filter(c => c.agents_in_file === 0).length} selected {runResult.coverage.filter(c => c.agents_in_file === 0).length === 1 ? 'agency' : 'agencies'}:
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {runResult.coverage.filter(c => c.agents_in_file === 0).map(c => c.owner_name).join(', ')}
+                    {' — '}check you uploaded the right export before resolving anything.
+                  </p>
+                </div>
+              )}
+
               {runResult.unmatched_agents?.length > 0 && (
                 <div className="col-span-2 sm:col-span-4">
                   <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1">Unmatched agent names from Snapshot:</p>

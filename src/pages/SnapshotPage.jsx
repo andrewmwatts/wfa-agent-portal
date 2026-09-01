@@ -13,7 +13,7 @@ function safeJson(val) {
 const STEP_LABELS = ['Reconciliation', 'Disputes', 'Promotions']
 
 export default function SnapshotPage() {
-  const { permissions } = useViewing()
+  const { permissions, activeSubject } = useViewing()
 
   const [cycles,        setCycles]        = useState([])
   const [activeCycleId, setActiveCycleId] = useState(null)
@@ -26,6 +26,12 @@ export default function SnapshotPage() {
   const [newCycleMonth, setNewCycleMonth] = useState('')   // 'MM'
   const [newCycleYear,  setNewCycleYear]  = useState('')   // 'YYYY'
   const [creating,      setCreating]      = useState(false)
+
+  // Step 0 (scope selection) — which agency owners this cycle will cover
+  const [owners,        setOwners]        = useState([])
+  const [ownersLoading, setOwnersLoading] = useState(false)
+  const [claims,        setClaims]        = useState([])   // owners already in a cycle this month
+  const [excluded,      setExcluded]      = useState(() => new Set())
 
   const canWrite = permissions.snapshot.write
 
@@ -99,24 +105,106 @@ export default function SnapshotPage() {
     setActiveStep(step)
   }
 
+  // ── Step 0: scope selection ──────────────────────────────────────────────────
+  //
+  // Exclusions are stored as an explicit set rather than by unchecking
+  // descendants, so ancestry does the cascading: declining an owner's agency
+  // automatically declines everyone beneath them, and re-including that owner
+  // restores the subtree without having to remember what was under it. Reaching
+  // past an owner who said they'd handle their own reconciliation to run one of
+  // their sub-agencies is exactly the thing this prevents.
+  const ownerById = useMemo(() => {
+    const m = {}
+    for (const o of owners) m[o.sfg_id.toUpperCase()] = o
+    return m
+  }, [owners])
+
+  const excludedByAncestor = useCallback((sfgId) => {
+    let cur = ownerById[sfgId?.toUpperCase()]?.parent_owner
+    while (cur) {
+      if (excluded.has(cur.toUpperCase())) return true
+      cur = ownerById[cur.toUpperCase()]?.parent_owner
+    }
+    return false
+  }, [ownerById, excluded])
+
+  const isSelected = useCallback((sfgId) => {
+    const id = sfgId?.toUpperCase()
+    return !excluded.has(id) && !excludedByAncestor(id)
+  }, [excluded, excludedByAncestor])
+
+  function toggleOwner(sfgId) {
+    const id = sfgId.toUpperCase()
+    setExcluded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectedOwnerIds = useMemo(
+    () => owners.filter(o => isSelected(o.sfg_id)).map(o => o.sfg_id),
+    [owners, isSelected]
+  )
+
+  // Whose cycle this is: the viewed subject when they're an owner, otherwise the
+  // top of the owner tree they can see (a super_admin running it on their behalf).
+  const cycleOwner = useMemo(() => {
+    const self = ownerById[activeSubject?.sfg_id?.toUpperCase()]
+    if (self) return self
+    return owners.find(o => !o.parent_owner) ?? owners[0] ?? null
+  }, [ownerById, activeSubject?.sfg_id, owners])
+
+  const claimByOwner = useMemo(() => {
+    const m = {}
+    for (const c of claims) m[c.owner_sfg_id?.toUpperCase()] = c
+    return m
+  }, [claims])
+
   // ── Open new-cycle modal pre-filled to previous month ────────────────────────
   function openNewCycleModal() {
     const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
     setNewCycleMonth(String(prev.getMonth() + 1).padStart(2, '0'))
     setNewCycleYear(String(prev.getFullYear()))
+    setExcluded(new Set())
     setNewCycleOpen(true)
+
+    setOwnersLoading(true)
+    fetch('/api/snapshot?type=owners')
+      .then(r => r.json())
+      .then(d => setOwners(Array.isArray(d) ? d : []))
+      .catch(() => setOwners([]))
+      .finally(() => setOwnersLoading(false))
   }
+
+  // Who already has these baseshops in a cycle this month — drives the overlap
+  // warning. Overlap is allowed on purpose, so this informs rather than blocks.
+  useEffect(() => {
+    if (!newCycleOpen || !newCycleMonth || !newCycleYear) { setClaims([]); return }
+    const month = `${newCycleYear}-${newCycleMonth}`
+    let cancelled = false
+    fetch(`/api/snapshot?type=cycle-claims&month=${month}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setClaims(Array.isArray(d) ? d : []) })
+      .catch(() => { if (!cancelled) setClaims([]) })
+    return () => { cancelled = true }
+  }, [newCycleOpen, newCycleMonth, newCycleYear])
 
   // ── Create new cycle ──────────────────────────────────────────────────────────
   async function createCycle() {
-    if (!newCycleMonth || !newCycleYear) return
+    if (!newCycleMonth || !newCycleYear || !selectedOwnerIds.length) return
     const month = `${newCycleYear}-${newCycleMonth}`
     setCreating(true)
     try {
       const data = await fetch('/api/snapshot?type=cycles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month }),
+        body: JSON.stringify({
+          month,
+          owner_sfg_id:       cycleOwner?.sfg_id ?? null,
+          scope_owner_sfg_ids: selectedOwnerIds,
+        }),
       }).then(r => r.json())
       if (data.error) { alert(data.error); return }
       const updated = await loadCycles()
@@ -365,12 +453,78 @@ export default function SnapshotPage() {
                 })()}
               </div>
             </div>
+            {/* Scope — which agencies this cycle covers */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">
+                Agencies to reconcile
+              </label>
+              <p className="text-[11px] text-gray-400 dark:text-white/35 mb-2 leading-relaxed">
+                Unselecting an agency also unselects everything beneath it. Excluded
+                agencies stay out of every step of this cycle.
+              </p>
+
+              {ownersLoading ? (
+                <p className="text-xs text-gray-400 dark:text-white/40 py-2">Loading agencies…</p>
+              ) : owners.length === 0 ? (
+                <p className="text-xs text-gray-400 dark:text-white/40 py-2">No agencies available.</p>
+              ) : (
+                <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-white/15 divide-y divide-gray-100 dark:divide-white/10">
+                  {owners.map(o => {
+                    const id       = o.sfg_id.toUpperCase()
+                    const selected = isSelected(o.sfg_id)
+                    const viaParent = !excluded.has(id) && !selected   // switched off by an ancestor
+                    const depth    = o.parent_owner ? 1 : 0
+                    const claim    = claimByOwner[id]
+                    return (
+                      <label
+                        key={o.sfg_id}
+                        className={`flex items-start gap-2.5 px-3 py-2 cursor-pointer transition-colors
+                          ${viaParent ? 'opacity-45' : 'hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                        style={{ paddingLeft: 12 + depth * 20 }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={viaParent}
+                          onChange={() => toggleOwner(o.sfg_id)}
+                          className="mt-0.5 accent-accent"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm text-gray-900 dark:text-white truncate">
+                            {o.name}
+                            <span className="ml-2 text-[11px] text-gray-400 dark:text-white/35">
+                              {o.baseshop_size} agents
+                            </span>
+                          </span>
+                          {claim && (
+                            <span className="block text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                              Already in {claim.cycle_owner_name ?? 'another'}&rsquo;s cycle
+                              {claim.completed_at ? ' (closed)' : ' (open)'} — running it here
+                              duplicates that work.
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+
+              {cycleOwner && (
+                <p className="text-[11px] text-gray-400 dark:text-white/35 mt-2">
+                  Running as <span className="text-gray-600 dark:text-white/60 font-medium">{cycleOwner.name}</span>
+                  {' · '}{selectedOwnerIds.length} of {owners.length} agencies selected
+                </p>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2">
               <button onClick={() => setNewCycleOpen(false)}
                 className="px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">
                 Cancel
               </button>
-              <button onClick={createCycle} disabled={!newCycleMonth || !newCycleYear || creating}
+              <button onClick={createCycle}
+                disabled={!newCycleMonth || !newCycleYear || !selectedOwnerIds.length || creating}
                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 disabled:opacity-50">
                 {creating ? 'Creating…' : 'Create Cycle'}
               </button>

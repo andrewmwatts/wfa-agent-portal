@@ -6,6 +6,7 @@ import { normalizeCarrier } from '../shared/carriers.js'
 import { nowInBusinessTZ } from '../shared/businessTime.js'
 import { requireAuth, authorizeScope, getAllowedSfgIds, requireSuperAdmin } from './_auth.js'
 import { expandAndAttachSplits } from './_policySplits.js'
+import { dbErrorMessage } from './_dbError.js'
 import { validateSplits, participants, creditedAmount } from '../shared/policySplit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -122,18 +123,6 @@ function formatCbMonth(dateStr) {
 // referencing the row, a uniqueness clash). Swallowing them behind a generic
 // message makes those failures impossible to diagnose from the UI, so surface
 // the detail — this API is admin-only and the messages name schema, not user data.
-function dbErrorMessage(err, fallback) {
-  const code = err?.code
-  const raw  = [err?.message, err?.details].filter(Boolean).join(' — ')
-  if (code === '23503') {
-    return `${fallback}: it is still referenced by another record. ${raw}`
-  }
-  if (code === '23505') {
-    return `${fallback}: that would duplicate an existing record. ${raw}`
-  }
-  return raw ? `${fallback}: ${raw}` : fallback
-}
-
 function parseNum(val) {
   if (val === '' || val == null) return null
   const n = parseFloat(String(val).replace(/[$,]/g, ''))

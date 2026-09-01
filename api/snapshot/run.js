@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireSuperAdmin } from '../_auth.js'
 import { loadAllSplits, fetchPoliciesForAgents, explodeCreditedRows } from '../_policySplits.js'
 import { attachSplits, participants, creditedAmount } from '../../shared/policySplit.js'
+import { getBaseshopIds, ownerIdsFromPromotions } from '../../shared/agencyScope.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../../.vercel/.env.development.local') })
@@ -175,47 +176,41 @@ export default async function handler(req, res) {
   )
 
   const {
-    month,
+    cycle_id,
     min_diff = 1.50,
     snapshot_window,
     snapshot_agents = [],
   } = req.body ?? {}
 
-  if (!month || !snapshot_window?.from || !snapshot_window?.to) {
-    return res.status(400).json({ error: 'month, snapshot_window.from, and snapshot_window.to are required' })
+  if (!cycle_id || !snapshot_window?.from || !snapshot_window?.to) {
+    return res.status(400).json({ error: 'cycle_id, snapshot_window.from, and snapshot_window.to are required' })
   }
 
   try {
-    // ── 1. Upsert snapshot_cycles ────────────────────────────────────────────
-    let cycleId
-    {
-      const { data: existing } = await supabase
-        .from('snapshot_cycles')
-        .select('id')
-        .eq('month', month)
-        .maybeSingle()
-
-      if (existing) {
-        cycleId = existing.id
-        await supabase.from('snapshot_cycles').update({
-          snapshot_date_from: snapshot_window.from,
-          snapshot_date_to:   snapshot_window.to,
-        }).eq('id', cycleId)
-      } else {
-        const { data, error } = await supabase
-          .from('snapshot_cycles')
-          .insert({ month, step: 1, snapshot_date_from: snapshot_window.from, snapshot_date_to: snapshot_window.to })
-          .select('id')
-          .single()
-        if (error) throw error
-        cycleId = data.id
-      }
+    // ── 1. Resolve the cycle ─────────────────────────────────────────────────
+    // Addressed by id, not month: a month can now hold one cycle per agency
+    // owner, so month alone no longer identifies which run this belongs to.
+    const { data: cycle, error: cycleErr } = await supabase
+      .from('snapshot_cycles')
+      .select('id, month, completed_at')
+      .eq('id', cycle_id)
+      .single()
+    if (cycleErr || !cycle) return res.status(404).json({ error: 'Cycle not found' })
+    if (cycle.completed_at) {
+      return res.status(409).json({ error: 'This cycle is closed — reopen it before re-running.' })
     }
+    const cycleId = cycle.id
+    const month   = cycle.month
+
+    await supabase.from('snapshot_cycles').update({
+      snapshot_date_from: snapshot_window.from,
+      snapshot_date_to:   snapshot_window.to,
+    }).eq('id', cycleId)
 
     // ── 2. Build name crosswalk from personnel ───────────────────────────────
     const { data: people } = await supabase
       .from('personnel')
-      .select('sfg_id, opt_name')
+      .select('sfg_id, opt_name, upline_sfg_id')
 
     const nameCrosswalk = {}  // opt_name.toLowerCase() → sfg_id
     const nameFromSfgId = {}  // sfg_id.toUpperCase()  → opt_name
@@ -224,9 +219,39 @@ export default async function handler(req, res) {
       if (p.sfg_id)  nameFromSfgId[p.sfg_id.trim().toUpperCase()]  = p.opt_name ?? ''
     }
 
+    // ── 2b. Restrict to the baseshops this cycle declared ────────────────────
+    // Opt can only export an owner plus their whole downline, so the uploaded
+    // file is routinely a superset of what this cycle is responsible for. The
+    // file is authoritative for the numbers; the cycle's scope decides which
+    // agents those numbers apply to, and everything else is ignored rather than
+    // reported as a discrepancy. A legacy cycle has no scope rows and keeps the
+    // old behavior of covering everyone in the file.
+    const { data: scopeRows } = await supabase
+      .from('snapshot_cycle_scopes')
+      .select('owner_sfg_id')
+      .eq('cycle_id', cycleId)
+    const scopeOwners = (scopeRows ?? []).map(r => r.owner_sfg_id).filter(Boolean)
+
+    let scopeIds = null                       // null = unscoped (legacy cycle)
+    const baseshopOf = {}                     // owner sfg_id → Set of their agents
+    if (scopeOwners.length) {
+      const { data: promoRows } = await supabase
+        .from('agent_promotions')
+        .select('sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot')
+      const ownerIds = ownerIdsFromPromotions(promoRows)
+      scopeIds = new Set()
+      for (const owner of scopeOwners) {
+        const ids = getBaseshopIds(owner, people ?? [], ownerIds)
+        baseshopOf[owner.toUpperCase()] = new Set([...ids].map(id => id.toUpperCase()))
+        for (const id of ids) scopeIds.add(id.toUpperCase())
+      }
+    }
+    const inCycleScope = id => scopeIds === null || scopeIds.has(String(id ?? '').trim().toUpperCase())
+
     // ── 3. Match snapshot agents → sfg_ids (skip $0 entries) ────────────────
     const warnings = []
     const snapshotBySfgCarrier = {}  // `${sfg_id}||${carrier}` → APV
+    let outOfScopeRows = 0
 
     for (const row of snapshot_agents) {
       if (!row.snapshot_apv || Number(row.snapshot_apv) === 0) continue
@@ -236,6 +261,9 @@ export default async function handler(req, res) {
         warnings.push({ agent_name: row.agent_name, carrier, snapshot_apv: row.snapshot_apv })
         continue
       }
+      // Belongs to a baseshop this cycle isn't running — someone else's to
+      // reconcile, so it is not an unmatched-agent warning.
+      if (!inCycleScope(sfgId)) { outOfScopeRows++; continue }
       const key = `${sfgId}||${carrier}`
       snapshotBySfgCarrier[key] = (snapshotBySfgCarrier[key] ?? 0) + (Number(row.snapshot_apv) || 0)
     }
@@ -264,6 +292,7 @@ export default async function handler(req, res) {
       const carrier = normalizeSnapshotCarrier(p.carrier)
       for (const agentId of participants(p)) {
         if (!knownSfgIds.has(agentId)) continue
+        if (!inCycleScope(agentId)) continue
         const key = `${agentId}||${carrier}`
         ;(policyBuckets[key] ??= []).push({
           ...p,
@@ -452,6 +481,25 @@ export default async function handler(req, res) {
       if (error) throw error
     }
 
+    // Per-owner coverage. An owner the cycle claims but the file says nothing
+    // about almost always means the wrong export was uploaded — selecting four
+    // agencies and uploading one owner's file would otherwise silently report
+    // every unmentioned agent as a discrepancy worth their entire APV.
+    const agentsInFile = new Set(
+      Object.keys(snapshotBySfgCarrier).map(k => k.split('||')[0].toUpperCase())
+    )
+    const coverage = scopeOwners.map(owner => {
+      const shop = baseshopOf[owner.toUpperCase()] ?? new Set()
+      let covered = 0
+      for (const id of agentsInFile) if (shop.has(id)) covered++
+      return {
+        owner_sfg_id:   owner,
+        owner_name:     nameFromSfgId[owner.toUpperCase()] || owner,
+        agents_in_file: covered,
+        baseshop_size:  shop.size,
+      }
+    })
+
     return res.status(200).json({
       cycle_id: cycleId,
       month,
@@ -459,11 +507,14 @@ export default async function handler(req, res) {
       duplicate_policies,
       discrepancies,
       unmatched_agents: warnings,
+      coverage,
       summary: {
         total_snapshot_agents: snapshot_agents.length,
         discrepant_agents:     discrepantAgents.size,
         clean_agents:          cleanAgents.size,
         unmatched:             warnings.length,
+        out_of_scope_rows:     outOfScopeRows,
+        uncovered_owners:      coverage.filter(c => c.agents_in_file === 0).length,
       },
     })
   } catch (err) {
