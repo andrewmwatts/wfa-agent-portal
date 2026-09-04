@@ -111,7 +111,9 @@ function buildMonthly(policies, scopeIds) {
       const b = ensure(submYM)
       b.subm += share(p, 'subm_apv')
       // Writers is the set of agents who SUBMITTED — that's the primary only.
-      if (p.sfg_id) b.agents.add(p.sfg_id.toLowerCase())
+      // An agent whose every submission this month is flagged "not in Opt"
+      // doesn't count; one in-Opt app is enough to include them.
+      if (p.sfg_id && !p.not_in_opt) b.agents.add(p.sfg_id.toLowerCase())
     }
 
     if (p.status?.toLowerCase() === 'issued') {
