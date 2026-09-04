@@ -72,7 +72,9 @@ function buildWeekly(policies, scopeIds) {
     b.apv += teamCreditedAmount(p, scopeIds, 'subm_apv')
     if (p.sfg_id) {
       const id = p.sfg_id.toLowerCase()
-      b.agents.add(id)
+      // An agent whose every submission this week is flagged "not in Opt"
+      // doesn't count toward Total Writers; one in-Opt app is enough.
+      if (!p.not_in_opt) b.agents.add(id)
       // New writer = this is the agent's first-ever submission week
       if (earliestWeek[id] === wk) b.newAgents.add(id)
     }

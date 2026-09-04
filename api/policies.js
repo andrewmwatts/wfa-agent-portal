@@ -563,21 +563,26 @@ export default async function handler(req, res) {
 
         // Writers counts agents who SUBMITTED an application. Applications belong
         // to the primary, so holding a secondary share doesn't make someone a writer.
+        // An agent whose every submission in the period is flagged "not in Opt"
+        // doesn't count toward Total Writers; one in-Opt app is enough.
+        const inOpt = !p.not_in_opt
         if (inScope(sfgId)) {
           if (inPeriod(submitKey, monthStart, monthEnd)) {
-            totalWriters.month.add(sfgLower)
-            totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+            if (inOpt) {
+              totalWriters.month.add(sfgLower)
+              totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+            }
             if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
               newWriters.month.add(sfgLower)
               newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
             }
           }
           if (inPeriod(submitKey, weekStart)) {
-            totalWriters.week.add(sfgLower)
+            if (inOpt) totalWriters.week.add(sfgLower)
             if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
           }
           if (inPeriod(submitKey, lwStart, weekStart)) {
-            totalWriters.lw.add(sfgLower)
+            if (inOpt) totalWriters.lw.add(sfgLower)
             if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
           }
         }
