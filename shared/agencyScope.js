@@ -88,6 +88,42 @@ export function getBaseshopIds(ownerSfgId, allPersonnel, ownerIds = null) {
 }
 
 /**
+ * All Agency-Owner-qualified people anywhere in root's downline (root itself
+ * excluded). Unlike getBaseshopIds, descent never stops at an owner boundary —
+ * an owner nested two layers down must still be found even if their direct
+ * upline is also an owner, since this is used to decide whether root oversees
+ * more than one baseshop (director) rather than to partition agents into one.
+ *
+ * @param rootSfgId    the person whose downline to search
+ * @param allPersonnel every personnel record (needs sfg_id + upline_sfg_id)
+ * @param ownerIds     Set of owner sfg_ids (any case), e.g. from ownerIdsFromPromotions
+ * @returns Set of UPPERCASE sfg_ids
+ */
+export function findOwnerDescendants(rootSfgId, allPersonnel, ownerIds) {
+  const owners = new Set([...ownerIds].map(id => String(id).toUpperCase()))
+
+  const childrenOf = {}
+  for (const p of allPersonnel) {
+    const up = p.upline_sfg_id?.trim().toLowerCase()
+    if (!up) continue
+    ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())
+  }
+
+  const seen  = new Set()
+  const found = new Set()
+  function traverse(id) {
+    if (seen.has(id)) return   // guards against a cycle in the upline data
+    seen.add(id)
+    for (const child of (childrenOf[id] ?? [])) {
+      if (owners.has(child.toUpperCase())) found.add(child.toUpperCase())
+      traverse(child)
+    }
+  }
+  traverse(rootSfgId.toLowerCase())
+  return found
+}
+
+/**
  * Build the ordered list of owners for the scope dropdown.
  * The viewer (selfId) is always first so they can quickly select their own baseshop.
  * Sub-owners follow in alphabetical order.

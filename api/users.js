@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { google } from 'googleapis'
 import { getCaller } from './_auth.js'
+import { findOwnerDescendants, ownerIdsFromPromotions } from '../shared/agencyScope.js'
 
 // Case-insensitive SFG ID equality
 const sameSfg = (a, b) => !!a && !!b && String(a).toUpperCase() === String(b).toUpperCase()
@@ -23,6 +24,7 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   DELETE /api/users?action=delegate      → revoke delegation
  *   POST  /api/users?action=invite         → send delegate invite email
  *   POST  /api/users?action=sync-hidden    → sync hidden agent IDs from Google Sheet
+ *   POST  /api/users?action=sync-role      → upgrade owner→director if downline gained an AO
  *   PATCH /api/users                       → update user_settings (hide/unhide agent)
  */
 
@@ -73,6 +75,23 @@ async function findAgencyOwner(supabase, startSfgId, selfRole = 'agent') {
     currentId = uplineId
   }
   return null
+}
+
+// resolveRole only ever returns 'agent' | 'leader' | 'owner' — it has no way to
+// tell a single-baseshop owner from someone who oversees other owners, since it
+// only looks at the person's own promotion row. This checks the one thing that
+// distinguishes them: does anyone in this person's downline also qualify as an
+// Agency Owner? Used to upgrade 'owner' → 'director' after the fact, since that
+// can only be known once the downline hierarchy is in place.
+async function isOwnerWithOwnerDownline(supabase, sfgId) {
+  const [{ data: personnel }, { data: promos }] = await Promise.all([
+    supabase.from('personnel').select('sfg_id, upline_sfg_id'),
+    supabase.from('agent_promotions')
+      .select('sfg_id, promotion_type, level, month_1, month_2, month_3, slingshot_month, is_slingshot'),
+  ])
+  const ownerIds = ownerIdsFromPromotions(promos ?? [])
+  const descendants = findOwnerDescendants(sfgId, personnel ?? [], ownerIds)
+  return descendants.size > 0
 }
 
 // ── accept-invite helper ──────────────────────────────────────────────────────
@@ -230,6 +249,50 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('[users/provision] unexpected error:', err)
       return res.status(500).json({ error: 'Failed to create portal account' })
+    }
+  }
+
+  // ── POST ?action=sync-role — self-service, run on every login ──────────────
+  // resolveRole (at provision time) can only see 'owner', never 'director', since
+  // that requires knowing the downline — which can change after the account
+  // already exists. This is deliberately upgrade-only: it only ever moves a
+  // plain 'owner' to 'director' when their downline has gained another
+  // fully-qualified Agency Owner, and never touches any other role.
+  if (req.method === 'POST' && action === 'sync-role') {
+    let user_id
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body ?? {})
+      user_id = body.user_id
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON body' })
+    }
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' })
+
+    const caller = await getCaller(req)
+    if (!caller) return res.status(401).json({ error: 'Unauthorized' })
+    if (caller.role !== 'super_admin' && caller.id !== user_id) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    try {
+      const { data: user, error: userErr } = await supabase
+        .from('users').select('role, sfg_id').eq('id', user_id).maybeSingle()
+      if (userErr) throw userErr
+      if (!user || user.role !== 'owner' || !user.sfg_id) {
+        return res.status(200).json({ role: user?.role ?? null })
+      }
+
+      if (!(await isOwnerWithOwnerDownline(supabase, user.sfg_id))) {
+        return res.status(200).json({ role: 'owner' })
+      }
+
+      const { error: updateErr } = await supabase
+        .from('users').update({ role: 'director' }).eq('id', user_id)
+      if (updateErr) throw updateErr
+      return res.status(200).json({ role: 'director' })
+    } catch (err) {
+      console.error('[users/sync-role]', err)
+      return res.status(500).json({ error: 'Failed to sync role' })
     }
   }
 

@@ -3,6 +3,26 @@ import { supabase } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
 
+// resolveRole (at account-creation time) can only ever assign 'owner', never
+// 'director' — telling them apart requires knowing the downline, which can
+// change after the account already exists. Re-checked on every login so it's
+// self-healing; a no-op fetch for every role except 'owner'.
+async function syncRoleIfOwner(profile, accessToken) {
+  if (!profile || profile.role !== 'owner' || !accessToken) return profile
+  try {
+    const res = await fetch('/api/users?action=sync-role', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body:    JSON.stringify({ user_id: profile.id }),
+    })
+    if (!res.ok) return profile
+    const { role } = await res.json()
+    return role && role !== profile.role ? { ...profile, role } : profile
+  } catch {
+    return profile
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession]           = useState(undefined) // undefined = loading
   const [userProfile, setUserProfile]   = useState(null)
@@ -31,6 +51,9 @@ export function AuthProvider({ children }) {
       if (session?.user) {
         const profile = await fetchUserProfile(session.user.id)
         setUserProfile(profile)
+        syncRoleIfOwner(profile, session.access_token).then(updated => {
+          if (updated !== profile) setUserProfile(updated)
+        })
       }
     })
 
@@ -50,6 +73,9 @@ export function AuthProvider({ children }) {
             if (profile) {
               setUserProfile(profile)
               setPendingInvite(false)
+              syncRoleIfOwner(profile, session.access_token).then(updated => {
+                if (updated !== profile) setUserProfile(updated)
+              })
             } else {
               const meta = session.user.user_metadata ?? {}
               if (meta.sfg_id) {
@@ -120,6 +146,9 @@ export function AuthProvider({ children }) {
     }
 
     setUserProfile(profile)
+    syncRoleIfOwner(profile, data.session?.access_token).then(updated => {
+      if (updated !== profile) setUserProfile(updated)
+    })
     return data
   }
 

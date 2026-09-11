@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { useAuth } from './AuthContext'
+import { useViewing } from './ViewingContext'
 import { useTheme } from './ThemeContext'
 
 const AgencyContext = createContext(null)
@@ -87,11 +87,17 @@ function applyBranding(colors = {}) {
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 export function AgencyProvider({ children }) {
-  const { userProfile } = useAuth()
+  // Branding follows whoever is currently being viewed, not just the real
+  // logged-in user — for everyone but a super_admin "viewing as" someone else,
+  // activeSubject is always self, so this is identical to reading the real
+  // profile. This is what lets Admin Tools "Test Drive" an agency's real
+  // branding via the same "Viewing as" switcher used everywhere else.
+  const { activeSubject } = useViewing()
+  const agencyOwner = activeSubject?.agency_owner
   const [agency, setAgency] = useState(null)
 
   useEffect(() => {
-    if (!userProfile?.agency_owner) {
+    if (!agencyOwner) {
       applyBranding()
       setAgency(null)
       return
@@ -100,7 +106,7 @@ export function AgencyProvider({ children }) {
     supabase
       .from('agencies')
       .select('owner_sfg_id, name, logo_url_light, logo_url_dark, primary_color, secondary_color, accent_color')
-      .eq('owner_sfg_id', userProfile.agency_owner)
+      .eq('owner_sfg_id', agencyOwner)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
@@ -113,7 +119,7 @@ export function AgencyProvider({ children }) {
           accent:    data.accent_color,
         } : undefined)
       })
-  }, [userProfile?.agency_owner])
+  }, [agencyOwner])
 
   return (
     <AgencyContext.Provider value={{ agency }}>

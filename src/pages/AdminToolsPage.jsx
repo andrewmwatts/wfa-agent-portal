@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useViewing } from '../context/ViewingContext'
 import { fmtDate, fmtDateTime } from '../utils/format'
 import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
 
@@ -176,7 +178,7 @@ export default function AdminToolsPage() {
       {tab === 'users'     && <UserManagementTab     adminFetch={adminFetch} />}
       {tab === 'bugs'      && <BugReportsTab         adminFetch={adminFetch} />}
       {tab === 'crosswalk' && <PolicyCrosswalkTab    adminFetch={adminFetch} ah={ah} />}
-      {tab === 'agencies'  && <AgencySettingsTab     adminFetch={adminFetch} />}
+      {tab === 'agencies'  && <AgencySettingsTab     adminFetch={adminFetch} ah={ah} />}
       {tab === 'errors'    && <ParseErrorsTab        adminFetch={adminFetch} />}
       {tab === 'messages'  && <SystemMessagesTab     adminFetch={adminFetch} />}
       {tab === 'videos'    && <VideoLibraryTab       ah={ah} />}
@@ -846,8 +848,10 @@ function PolicyCrosswalkTab({ adminFetch, ah }) {
 
 // ─── Tool 4: Agency Display Settings ─────────────────────────────────────────
 
-function AgencySettingsTab({ adminFetch }) {
+function AgencySettingsTab({ adminFetch, ah }) {
   const { theme } = useTheme()
+  const { subjects, setActiveSubject } = useViewing()
+  const navigate = useNavigate()
   const [agencies, setAgencies] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [loadErr,  setLoadErr]  = useState('')
@@ -855,6 +859,12 @@ function AgencySettingsTab({ adminFetch }) {
   const [draft,    setDraft]    = useState({})
   const [saving,   setSaving]   = useState(false)
   const [err,      setErr]      = useState('')
+
+  // Full personnel roster — lazy-loaded only once the "+ Add" picker is opened,
+  // so this tab's normal load stays cheap.
+  const [personnel, setPersonnel] = useState(null)
+  const [addOpen,   setAddOpen]   = useState(false)
+  const [addQuery,  setAddQuery]  = useState('')
 
   const load = useCallback(async () => {
     setLoadErr('')
@@ -883,11 +893,91 @@ function AgencySettingsTab({ adminFetch }) {
     catch (e) { setErr(e.message) } finally { setSaving(false) }
   }
 
+  // Opens the personnel picker — a new agency row can be configured for anyone
+  // in personnel, even if they've never logged into the portal, so their
+  // branding is ready to go the first time they do.
+  async function openAdd() {
+    setAddOpen(true)
+    if (personnel === null) {
+      try {
+        const res = await fetch('/api/personnel', { headers: ah() })
+        setPersonnel(res.ok ? await res.json() : [])
+      } catch { setPersonnel([]) }
+    }
+  }
+
+  const existingIds = useMemo(() => new Set(agencies.map(a => a.sfg_id)), [agencies])
+  const addResults = useMemo(() => {
+    const q = addQuery.trim().toLowerCase()
+    if (!q || !personnel) return []
+    return personnel
+      .filter(p => !existingIds.has(p.sfg_id) &&
+        ((p.preferred_name || p.opt_name || '').toLowerCase().includes(q) || p.sfg_id.toLowerCase().includes(q)))
+      .slice(0, 8)
+  }, [addQuery, personnel, existingIds])
+
+  function addDraftRow(p) {
+    // _isDraft marks a row that exists only in local state so far — Cancel
+    // removes it outright instead of leaving an empty phantom entry, unlike an
+    // existing owner/director who legitimately just hasn't set branding yet.
+    const entry = { sfg_id: p.sfg_id, preferred_name: p.preferred_name || p.opt_name || p.sfg_id, agency: null, _isDraft: true }
+    setAgencies(list => [entry, ...list])
+    startEdit(entry)
+    setAddOpen(false)
+    setAddQuery('')
+  }
+
+  function cancelEdit(a) {
+    setEditing(null)
+    if (a._isDraft) setAgencies(list => list.filter(row => row.sfg_id !== a.sfg_id))
+  }
+
+  function testDrive(sfgId) {
+    const idx = subjects.findIndex(s => s.profile.sfg_id === sfgId)
+    if (idx < 0) return
+    setActiveSubject(idx)
+    navigate('/portal/dashboard')
+  }
+
   if (loading) return <p className="text-sm text-gray-400">Loading…</p>
   if (loadErr) return <p className="text-sm text-red-500">Error: {loadErr}</p>
 
   return (
     <div className="space-y-3">
+      {/* + Add — pre-configure branding for someone who hasn't logged in yet */}
+      <div className="relative">
+        {addOpen ? (
+          <input
+            autoFocus
+            type="text"
+            value={addQuery}
+            onChange={e => setAddQuery(e.target.value)}
+            onBlur={() => setTimeout(() => setAddOpen(false), 150)}
+            placeholder={personnel === null ? 'Loading roster…' : 'Search name or SFG ID…'}
+            disabled={personnel === null}
+            className={INP + ' max-w-sm'}
+          />
+        ) : (
+          <button onClick={openAdd}
+            className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'}>
+            + Add Agency Settings
+          </button>
+        )}
+        {addOpen && addResults.length > 0 && (
+          <ul className="absolute z-50 top-full mt-1 w-full max-w-sm bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden">
+            {addResults.map(p => (
+              <li key={p.sfg_id}>
+                <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => addDraftRow(p)}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 flex items-center justify-between gap-3 transition-colors">
+                  <span className="text-gray-900 dark:text-white truncate">{p.preferred_name || p.opt_name}</span>
+                  <span className="text-xs text-gray-400 dark:text-white/40 shrink-0 font-mono">{p.sfg_id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {agencies.map(a => (
         <Card key={a.sfg_id} className="p-4">
           {editing === a.sfg_id ? (
@@ -920,7 +1010,7 @@ function AgencySettingsTab({ adminFetch }) {
               <Err msg={err} />
               <div className="flex gap-2">
                 <button onClick={() => saveAgency(a.sfg_id)} disabled={saving} className={BTN + ' bg-accent text-white hover:bg-accent/90 disabled:opacity-50'}>Save</button>
-                <button onClick={() => setEditing(null)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
+                <button onClick={() => cancelEdit(a)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -946,8 +1036,21 @@ function AgencySettingsTab({ adminFetch }) {
                     c ? <div key={i} className="w-5 h-5 rounded-full border border-white/20" style={{ background: c }} title={c} /> : null
                   )}
                 </div>
+                {subjects.some(s => s.profile.sfg_id === a.sfg_id) ? null : (
+                  <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10">
+                    Draft — no portal login yet
+                  </span>
+                )}
               </div>
-              <button onClick={() => startEdit(a)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'}>Edit</button>
+              <div className="flex gap-2">
+                {subjects.some(s => s.profile.sfg_id === a.sfg_id) && (
+                  <button onClick={() => testDrive(a.sfg_id)}
+                    className={BTN + ' bg-accent/10 text-accent hover:bg-accent/20'}>
+                    Test Drive →
+                  </button>
+                )}
+                <button onClick={() => startEdit(a)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'}>Edit</button>
+              </div>
             </div>
           )}
         </Card>
