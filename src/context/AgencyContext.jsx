@@ -78,7 +78,14 @@ function contrastRatio(hexA, hexB) {
   return (L1 + 0.05) / (L2 + 0.05)
 }
 
-const MIN_ACCENT_CONTRAST = 4.5 // WCAG AA for normal text
+// Deliberately not a WCAG tier (even the most lenient, 3:1 for large text/UI
+// components, was still re-tuning colors real agencies had already chosen and
+// found perfectly readable — e.g. Watts pink on its teal secondary sits at
+// ~2.1:1, Davis's mint accent on white at ~1.82:1). This is a much lower,
+// empirically-set floor meant only to catch a pairing that's genuinely close
+// to invisible (e.g. Larsen's yellow on white measured ~1.33:1) — a safety
+// net, not a general beautifier or an accessibility-compliance guarantee.
+const MIN_ACCENT_CONTRAST = 1.7
 
 // Agency colors are picked once against no particular background in mind, so
 // pastel or midtone choices can end up unreadable as text against whichever
