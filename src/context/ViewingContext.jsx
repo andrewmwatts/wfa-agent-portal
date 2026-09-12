@@ -134,7 +134,7 @@ export function ViewingProvider({ children }) {
       // Super admin can view as any portal user
       const { data: allUsers } = await supabase
         .from('users')
-        .select('id, sfg_id, role, full_name, email, is_assistant, is_active, upline_sfg_id, owner_since, agency_owner')
+        .select('id, sfg_id, role, full_name, email, is_assistant, is_active, upline_sfg_id, owner_since')
         .neq('id', viewer.id)
         .order('full_name')
 

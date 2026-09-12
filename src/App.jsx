@@ -53,8 +53,8 @@ export default function App() {
     <>
     <ThemeProvider>
     <AuthProvider>
-      <ViewingProvider>
       <AgencyProvider>
+      <ViewingProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -121,8 +121,8 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
-      </AgencyProvider>
       </ViewingProvider>
+      </AgencyProvider>
     </AuthProvider>
     </ThemeProvider>
     <PWAUpdatePrompt />

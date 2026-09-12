@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useViewing } from '../context/ViewingContext'
@@ -851,9 +850,8 @@ function PolicyCrosswalkTab({ adminFetch, ah }) {
 
 function AgencySettingsTab({ adminFetch, ah }) {
   const { theme } = useTheme()
-  const { subjects, setActiveSubject } = useViewing()
+  const { subjects } = useViewing()
   const { preview, setPreview } = useAgency()
-  const navigate = useNavigate()
   const [agencies, setAgencies] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [loadErr,  setLoadErr]  = useState('')
@@ -932,13 +930,6 @@ function AgencySettingsTab({ adminFetch, ah }) {
   function cancelEdit(a) {
     setEditing(null)
     if (a._isDraft) setAgencies(list => list.filter(row => row.sfg_id !== a.sfg_id))
-  }
-
-  function testDrive(sfgId) {
-    const idx = subjects.findIndex(s => s.profile.sfg_id === sfgId)
-    if (idx < 0) return
-    setActiveSubject(idx)
-    navigate('/portal/dashboard')
   }
 
   // Applies a set of colors across the whole app for the current super_admin
@@ -1062,12 +1053,6 @@ function AgencySettingsTab({ adminFetch, ah }) {
                 )}
               </div>
               <div className="flex gap-2">
-                {subjects.some(s => s.profile.sfg_id === a.sfg_id) && (
-                  <button onClick={() => testDrive(a.sfg_id)}
-                    className={BTN + ' bg-accent/10 text-accent hover:bg-accent/20'}>
-                    Test Drive →
-                  </button>
-                )}
                 {a.agency && (
                   <button
                     onClick={() => togglePreview(a.sfg_id, a.agency)}

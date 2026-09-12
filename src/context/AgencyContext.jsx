@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { useViewing } from './ViewingContext'
+import { useAuth } from './AuthContext'
 import { useTheme } from './ThemeContext'
 
 const AgencyContext = createContext(null)
@@ -10,6 +10,10 @@ const AgencyContext = createContext(null)
 function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null
+}
+
+function rgbToHex([r, g, b]) {
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
 }
 
 function rgbToHsl(r, g, b) {
@@ -59,6 +63,45 @@ function adjustLightness(hex, delta) {
   return hslToRgb(h, s, Math.max(0, Math.min(100, l + delta)))
 }
 
+// ── WCAG contrast ──────────────────────────────────────────────────────────────
+
+function relativeLuminance([r, g, b]) {
+  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+  const [rl, gl, bl] = [lin(r), lin(g), lin(b)]
+  return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl
+}
+
+function contrastRatio(hexA, hexB) {
+  const a = hexToRgb(hexA), b = hexToRgb(hexB)
+  if (!a || !b) return 21 // unparsable — fail open rather than fight a color we can't read
+  const [L1, L2] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+  return (L1 + 0.05) / (L2 + 0.05)
+}
+
+const MIN_ACCENT_CONTRAST = 4.5 // WCAG AA for normal text
+
+// Agency colors are picked once against no particular background in mind, so
+// pastel or midtone choices can end up unreadable as text against whichever
+// surface they land on. Nudges `hex`'s lightness (keeping its hue/saturation)
+// away from `bgHex` until it reaches `minRatio` contrast, or bottoms/tops out.
+// A color that already clears the bar is returned unchanged.
+function ensureContrast(hex, bgHex, minRatio = MIN_ACCENT_CONTRAST) {
+  if (contrastRatio(hex, bgHex) >= minRatio) return hex
+  const rgb = hexToRgb(hex)
+  if (!rgb) return hex
+  const [h, s, l] = rgbToHsl(...rgb)
+  // Whichever extreme (black or white) contrasts better against this
+  // background tells us which way to push lightness.
+  const darken = contrastRatio('#000000', bgHex) >= contrastRatio('#ffffff', bgHex)
+  let cur = l
+  for (let i = 0; i < 40 && cur > 0 && cur < 100; i++) {
+    cur = darken ? Math.max(0, cur - 2.5) : Math.min(100, cur + 2.5)
+    const candidate = rgbToHex(hslToRgb(h, s, cur))
+    if (contrastRatio(candidate, bgHex) >= minRatio) return candidate
+  }
+  return rgbToHex(hslToRgb(h, s, cur))
+}
+
 // Write a color + its light/dark variants to CSS custom properties.
 // Format: bare RGB components ("0 83 101") so Tailwind's /opacity syntax works.
 function setColorVars(root, name, hex) {
@@ -77,29 +120,38 @@ const DEFAULTS = {
   accent:    '#EE2666',
 }
 
-function applyBranding(colors = {}) {
+// The page background text-accent actually sits on per theme: a fixed light
+// surface in light mode (cards and page backgrounds are plain white/near-white
+// regardless of agency branding), and the agency's own secondary color in dark
+// mode (that's literally what dark:bg-secondary renders) — so that one comes
+// from the branding itself rather than a fixed constant.
+const LIGHT_BG = '#FFFFFF'
+
+function applyBranding(colors = {}, theme = 'light') {
   const root = document.documentElement
-  setColorVars(root, 'primary',   colors.primary   || DEFAULTS.primary)
-  setColorVars(root, 'secondary', colors.secondary || DEFAULTS.secondary)
-  setColorVars(root, 'accent',    colors.accent    || DEFAULTS.accent)
+  const primary   = colors.primary   || DEFAULTS.primary
+  const secondary = colors.secondary || DEFAULTS.secondary
+  const accentRaw = colors.accent    || DEFAULTS.accent
+  const bg      = theme === 'dark' ? secondary : LIGHT_BG
+  const accent  = ensureContrast(accentRaw, bg)
+
+  setColorVars(root, 'primary',   primary)
+  setColorVars(root, 'secondary', secondary)
+  setColorVars(root, 'accent',    accent)
 }
 
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 export function AgencyProvider({ children }) {
-  // Branding follows whoever is currently being viewed, not just the real
-  // logged-in user — for everyone but a super_admin "viewing as" someone else,
-  // activeSubject is always self, so this is identical to reading the real
-  // profile. This is what lets Admin Tools "Test Drive" an agency's real
-  // branding via the same "Viewing as" switcher used everywhere else.
-  const { activeSubject } = useViewing()
-  const agencyOwner = activeSubject?.agency_owner
+  const { userProfile } = useAuth()
+  const { theme } = useTheme()
+  const agencyOwner = userProfile?.agency_owner
   const [realAgency, setRealAgency] = useState(null)
 
   // A super_admin previewing branding from Admin Tools — including unsaved
   // in-progress edits, or an owner/director with no portal account yet —
-  // without switching who they're logged in or "viewing as" as. Overrides
-  // realAgency everywhere below until cleared.
+  // without switching who they're logged in as. Overrides realAgency
+  // everywhere below until cleared.
   const [preview, setPreview] = useState(null)
 
   useEffect(() => {
@@ -118,13 +170,15 @@ export function AgencyProvider({ children }) {
 
   const agency = preview ?? realAgency
 
+  // Re-applied on every theme toggle too, since the accent's contrast check
+  // is against a different background in light vs. dark mode.
   useEffect(() => {
     applyBranding(agency ? {
       primary:   agency.primary_color,
       secondary: agency.secondary_color,
       accent:    agency.accent_color,
-    } : undefined)
-  }, [agency])
+    } : undefined, theme)
+  }, [agency, theme])
 
   return (
     <AgencyContext.Provider value={{ agency, preview, setPreview }}>
