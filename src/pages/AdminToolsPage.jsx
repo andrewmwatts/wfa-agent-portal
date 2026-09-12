@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useViewing } from '../context/ViewingContext'
+import { useAgency } from '../context/AgencyContext'
 import { fmtDate, fmtDateTime } from '../utils/format'
 import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
 
@@ -851,6 +852,7 @@ function PolicyCrosswalkTab({ adminFetch, ah }) {
 function AgencySettingsTab({ adminFetch, ah }) {
   const { theme } = useTheme()
   const { subjects, setActiveSubject } = useViewing()
+  const { preview, setPreview } = useAgency()
   const navigate = useNavigate()
   const [agencies, setAgencies] = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -939,6 +941,15 @@ function AgencySettingsTab({ adminFetch, ah }) {
     navigate('/portal/dashboard')
   }
 
+  // Applies a set of colors across the whole app for the current super_admin
+  // session, without switching identity — works for unsaved edits and for
+  // anyone in personnel, portal account or not. Toggles off if this row is
+  // already the one being previewed.
+  function togglePreview(sfgId, colors) {
+    setPreview(p => p?.sfg_id === sfgId ? null : { ...colors, sfg_id: sfgId })
+  }
+  const isPreviewing = sfgId => preview?.sfg_id === sfgId
+
   if (loading) return <p className="text-sm text-gray-400">Loading…</p>
   if (loadErr) return <p className="text-sm text-red-500">Error: {loadErr}</p>
 
@@ -1011,6 +1022,14 @@ function AgencySettingsTab({ adminFetch, ah }) {
               <div className="flex gap-2">
                 <button onClick={() => saveAgency(a.sfg_id)} disabled={saving} className={BTN + ' bg-accent text-white hover:bg-accent/90 disabled:opacity-50'}>Save</button>
                 <button onClick={() => cancelEdit(a)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-500'}>Cancel</button>
+                <button
+                  onClick={() => togglePreview(a.sfg_id, draft)}
+                  className={BTN + (isPreviewing(a.sfg_id)
+                    ? ' bg-accent/10 text-accent border border-accent/30'
+                    : ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5')}
+                >
+                  {isPreviewing(a.sfg_id) ? 'Stop previewing' : 'Preview live →'}
+                </button>
               </div>
             </div>
           ) : (
@@ -1047,6 +1066,16 @@ function AgencySettingsTab({ adminFetch, ah }) {
                   <button onClick={() => testDrive(a.sfg_id)}
                     className={BTN + ' bg-accent/10 text-accent hover:bg-accent/20'}>
                     Test Drive →
+                  </button>
+                )}
+                {a.agency && (
+                  <button
+                    onClick={() => togglePreview(a.sfg_id, a.agency)}
+                    className={BTN + (isPreviewing(a.sfg_id)
+                      ? ' bg-accent/10 text-accent border border-accent/30'
+                      : ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5')}
+                  >
+                    {isPreviewing(a.sfg_id) ? 'Stop previewing' : 'Preview live →'}
                   </button>
                 )}
                 <button onClick={() => startEdit(a)} className={BTN + ' border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'}>Edit</button>

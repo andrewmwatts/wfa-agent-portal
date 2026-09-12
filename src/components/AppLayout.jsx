@@ -5,6 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useAgencyLogo } from '../context/AgencyContext'
 import Sidebar from './Sidebar'
 import ViewingBanner from './ViewingBanner'
+import AgencyPreviewBanner from './AgencyPreviewBanner'
 import UserMenu from './UserMenu'
 import { registerPushSubscription } from '../utils/pushNotifications'
 
@@ -81,6 +82,7 @@ export default function AppLayout() {
       {/* Main content: pushed down by header, pushed right by sidebar on desktop */}
       <div className="pt-14 lg:pl-56 flex flex-col min-h-screen">
         <ViewingBanner />
+        <AgencyPreviewBanner />
 
         {/* System message banners */}
         {visibleMessages.map(m => {

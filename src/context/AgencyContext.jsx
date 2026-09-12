@@ -94,14 +94,16 @@ export function AgencyProvider({ children }) {
   // branding via the same "Viewing as" switcher used everywhere else.
   const { activeSubject } = useViewing()
   const agencyOwner = activeSubject?.agency_owner
-  const [agency, setAgency] = useState(null)
+  const [realAgency, setRealAgency] = useState(null)
+
+  // A super_admin previewing branding from Admin Tools — including unsaved
+  // in-progress edits, or an owner/director with no portal account yet —
+  // without switching who they're logged in or "viewing as" as. Overrides
+  // realAgency everywhere below until cleared.
+  const [preview, setPreview] = useState(null)
 
   useEffect(() => {
-    if (!agencyOwner) {
-      applyBranding()
-      setAgency(null)
-      return
-    }
+    if (!agencyOwner) { setRealAgency(null); return }
 
     supabase
       .from('agencies')
@@ -109,20 +111,23 @@ export function AgencyProvider({ children }) {
       .eq('owner_sfg_id', agencyOwner)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (error) {
-          console.error('[AgencyContext] fetch error:', error)
-        }
-        setAgency(data ?? null)
-        applyBranding(data ? {
-          primary:   data.primary_color,
-          secondary: data.secondary_color,
-          accent:    data.accent_color,
-        } : undefined)
+        if (error) console.error('[AgencyContext] fetch error:', error)
+        setRealAgency(data ?? null)
       })
   }, [agencyOwner])
 
+  const agency = preview ?? realAgency
+
+  useEffect(() => {
+    applyBranding(agency ? {
+      primary:   agency.primary_color,
+      secondary: agency.secondary_color,
+      accent:    agency.accent_color,
+    } : undefined)
+  }, [agency])
+
   return (
-    <AgencyContext.Provider value={{ agency }}>
+    <AgencyContext.Provider value={{ agency, preview, setPreview }}>
       {children}
     </AgencyContext.Provider>
   )
