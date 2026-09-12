@@ -889,7 +889,14 @@ function AgencySettingsTab({ adminFetch, ah }) {
 
   async function saveAgency(sfgId) {
     setSaving(true); setErr('')
-    try { await adminFetch('agency', 'PUT', { owner_sfg_id: sfgId, ...draft }); setEditing(null); load() }
+    // Trim every field — a hex color with a stray pasted-in space/tab parses
+    // as nothing and silently renders as whatever agency's colors were
+    // applied last, which reads as "the colors are wrong" rather than
+    // "the colors are missing."
+    const cleaned = Object.fromEntries(
+      Object.entries(draft).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+    )
+    try { await adminFetch('agency', 'PUT', { owner_sfg_id: sfgId, ...cleaned }); setEditing(null); load() }
     catch (e) { setErr(e.message) } finally { setSaving(false) }
   }
 

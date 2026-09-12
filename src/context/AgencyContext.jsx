@@ -7,8 +7,11 @@ const AgencyContext = createContext(null)
 
 // ── Color utilities ────────────────────────────────────────────────────────────
 
+// Trimmed defensively — colors are free-text admin input (or pasted from
+// elsewhere, e.g. a spreadsheet cell), and a stray leading/trailing character
+// like a tab makes this fail to match with no visible sign why.
 function hexToRgb(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex ?? '').trim())
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null
 }
 
@@ -111,12 +114,16 @@ function ensureContrast(hex, bgHex, minRatio = MIN_ACCENT_CONTRAST) {
 
 // Write a color + its light/dark variants to CSS custom properties.
 // Format: bare RGB components ("0 83 101") so Tailwind's /opacity syntax works.
+// A hex that still won't parse at this point falls back to mid-gray rather
+// than silently skipping the write — leaving a CSS variable untouched means
+// it keeps whatever the *previous* agency's value was, which reads as "this
+// agency's colors are wrong" rather than "this agency's colors are missing."
 function setColorVars(root, name, hex) {
-  const base = hexToRgb(hex)
-  if (!base) return
+  const resolved = hexToRgb(hex) ? hex : '#888888'
+  const base = hexToRgb(resolved)
   root.style.setProperty(`--color-${name}`,       base.join(' '))
-  const light = adjustLightness(hex, +8)
-  const dark  = adjustLightness(hex, -8)
+  const light = adjustLightness(resolved, +8)
+  const dark  = adjustLightness(resolved, -8)
   if (light) root.style.setProperty(`--color-${name}-light`, light.join(' '))
   if (dark)  root.style.setProperty(`--color-${name}-dark`,  dark.join(' '))
 }
@@ -134,11 +141,18 @@ const DEFAULTS = {
 // from the branding itself rather than a fixed constant.
 const LIGHT_BG = '#FFFFFF'
 
+// Falls back to a known-good default for anything that isn't actually a
+// parseable hex color — not just empty/missing, so a malformed saved value
+// (stray whitespace, truncated input) can't silently propagate.
+function resolvedColor(value, fallback) {
+  return hexToRgb(value) ? String(value).trim() : fallback
+}
+
 function applyBranding(colors = {}, theme = 'light') {
   const root = document.documentElement
-  const primary   = colors.primary   || DEFAULTS.primary
-  const secondary = colors.secondary || DEFAULTS.secondary
-  const accentRaw = colors.accent    || DEFAULTS.accent
+  const primary   = resolvedColor(colors.primary,   DEFAULTS.primary)
+  const secondary = resolvedColor(colors.secondary, DEFAULTS.secondary)
+  const accentRaw = resolvedColor(colors.accent,    DEFAULTS.accent)
   const bg      = theme === 'dark' ? secondary : LIGHT_BG
   const accent  = ensureContrast(accentRaw, bg)
 
