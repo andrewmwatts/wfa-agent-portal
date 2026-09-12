@@ -51,8 +51,15 @@ export default defineConfig({
         name:             'WFA Agent Portal',
         short_name:       'WFA Portal',
         description:      'Watts Family Agency Agent Portal',
-        theme_color:      '#005365',
-        background_color: '#005365',
+        // Neutral rather than WFA's own teal — this is the OS-level
+        // installed-app identity (title bar, splash screen), shared by every
+        // agency's users alike, so it shouldn't read as "belonging" to WFA
+        // specifically for someone whose in-app branding is a different
+        // palette entirely. In-app chrome follows the logged-in agency's own
+        // colors dynamically (see AgencyContext.jsx); this can't — it's fixed
+        // at PWA-install time — so neutral is the least jarring fixed choice.
+        theme_color:      '#1a1a1a',
+        background_color: '#1a1a1a',
         display:          'standalone',
         orientation:      'portrait',
         start_url:        '/',

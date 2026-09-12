@@ -159,6 +159,16 @@ function applyBranding(colors = {}, theme = 'light') {
   setColorVars(root, 'primary',   primary)
   setColorVars(root, 'secondary', secondary)
   setColorVars(root, 'accent',    accent)
+
+  // Browser chrome (mobile status bar / address bar strip) for a regular,
+  // non-installed tab — matches whatever the header itself actually renders
+  // as: a solid primary block in dark mode (AppLayout's dark:bg-primary), a
+  // near-white tint in light mode (bg-primary/[0.09] over white reads as
+  // barely-there). This is separate from the installed PWA's own title bar/
+  // splash screen (vite.config.js), which is fixed at install time and can't
+  // follow whoever happens to be logged in.
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', theme === 'dark' ? primary : LIGHT_BG)
 }
 
 // ── Provider ───────────────────────────────────────────────────────────────────
