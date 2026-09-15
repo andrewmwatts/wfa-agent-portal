@@ -206,7 +206,7 @@ export default function Login() {
                 required
                 value={sfgId}
                 onChange={e => setSfgId(e.target.value)}
-                placeholder="SFG-XXXXX"
+                placeholder="SFGXXXXX"
                 className={inputCls}
               />
             </Field>
