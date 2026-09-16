@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import PublicLayout from '../../components/public/PublicLayout'
 import SearchBar from '../../components/public/SearchBar'
 import ChipRow from '../../components/public/ChipRow'
@@ -13,6 +13,15 @@ function ArrowLeftIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  )
+}
+
+function TagIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.59 1.41l9.58 9.58a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.82z"/>
+      <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>
     </svg>
   )
 }
@@ -108,7 +117,17 @@ export default function VideoLibrary() {
           <p style={{ fontSize: 13, color: '#4A6568', margin: '0 0 16px', maxWidth: 560, fontFamily: 'Inter, sans-serif' }}>
             {countSentence} Search by topic, speaker, or browse below.
           </p>
-          <SearchBar value={searchQuery} onChange={handleSearchChange} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <SearchBar value={searchQuery} onChange={handleSearchChange} />
+            <Link to="/videos/browse" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              background: '#fff', border: '0.5px solid #C8D6D8', borderRadius: 8,
+              padding: '8px 14px', fontSize: 13, fontWeight: 500, color: '#005365',
+              textDecoration: 'none', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap',
+            }}>
+              <TagIcon /> Browse Tags &amp; Speakers
+            </Link>
+          </div>
         </div>
       </div>
 

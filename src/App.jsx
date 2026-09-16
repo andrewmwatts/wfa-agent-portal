@@ -32,6 +32,7 @@ import SnapshotPage from './pages/SnapshotPage'
 import IncomePage from './pages/IncomePage'
 import Landing from './pages/public/Landing'
 import VideoLibrary from './pages/public/VideoLibrary'
+import VideoBrowse from './pages/public/VideoBrowse'
 import CalendarPage from './pages/public/CalendarPage'
 import UnderwritingPage from './pages/public/UnderwritingPage'
 import NewYorkOptionsPage from './pages/public/NewYorkOptionsPage'
@@ -108,6 +109,7 @@ export default function App() {
             {/* Public site */}
             <Route path="/"           element={<Landing />} />
             <Route path="/videos"     element={<VideoLibrary />} />
+            <Route path="/videos/browse" element={<VideoBrowse />} />
             <Route path="/resources"  element={<ComingSoon title="Documents & guides" />} />
             <Route path="/calendar"   element={<CalendarPage />} />
             <Route path="/guidelines" element={<UnderwritingPage />} />
