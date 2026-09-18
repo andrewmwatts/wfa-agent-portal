@@ -201,7 +201,7 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function Step3Promotions({ cycle, promotions, context, canWrite, onCycleClose, onRefresh }) {
+export default function Step4Promotions({ cycle, promotions, context, canWrite, onCycleClose, onRefresh }) {
   const {
     personnel    = [],
     qualifications = [],

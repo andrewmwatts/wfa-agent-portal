@@ -25,7 +25,8 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   PUT  ?type=cycle    { id, step?, completed_at? }
  *
  *   GET  ?type=reconciliations&cycle_id=uuid  → list reconciliations for cycle
- *   PUT  ?type=resolution { id, resolution, resolution_note }
+ *   PUT  ?type=resolution { id, resolution, resolution_note, phase? }
+ *                          phase 'final' addresses Final Review's table instead of Step 1's
  *
  *   GET  ?type=disputes&cycle_id=uuid         → list disputes for cycle
  *   POST ?type=disputes  { cycle_id, reconciliation_id, sfg_id, policy_id,
@@ -294,26 +295,34 @@ export default async function handler(req, res) {
     const { id } = req.query
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {
-      const [cycleRes, reconRes, disputeRes, promoRes] = await Promise.all([
+      const [cycleRes, reconRes, finalRes, disputeRes, promoRes] = await Promise.all([
         supabase.from('snapshot_cycles').select('*').eq('id', id).single(),
         supabase.from('snapshot_reconciliations').select('*').eq('cycle_id', id).order('delta'),
+        // Final Review's results live in their own table, created by
+        // scripts/migration-snapshot-final-review.sql. Until that has been run this
+        // query errors, which must not take the rest of the cycle down with it.
+        supabase.from('snapshot_final_reconciliations').select('*').eq('cycle_id', id).order('delta'),
         supabase.from('snapshot_disputes').select('*').eq('cycle_id', id),
         supabase.from('snapshot_promotion_actions').select('*').eq('cycle_id', id),
       ])
       if (cycleRes.error) throw cycleRes.error
       if (disputeRes.error) console.error('[snapshot/cycle GET] disputes query error:', disputeRes.error)
+      const finalReady = !finalRes.error
+      if (finalRes.error) console.warn('[snapshot/cycle GET] final review table unavailable:', finalRes.error.message)
 
-      // Resolve agent names server-side for both reconciliations and disputes
-      const recs     = reconRes.data  ?? []
-      const dispRows = disputeRes.data ?? []
+      // Resolve agent names server-side for reconciliations (both passes) and disputes
+      const recs      = reconRes.data  ?? []
+      const finalRecs = finalRes.data  ?? []
+      const dispRows  = disputeRes.data ?? []
       const allSfgIds = [...new Set(
-        [...recs.map(r => r.sfg_id), ...dispRows.map(d => d.sfg_id)].filter(Boolean)
+        [...recs.map(r => r.sfg_id), ...finalRecs.map(r => r.sfg_id), ...dispRows.map(d => d.sfg_id)].filter(Boolean)
       )]
 
       const allowed = await getAllowedSfgIds(caller, supabase)
 
-      let reconciliations = recs
-      let disputes        = dispRows
+      let reconciliations      = recs
+      let finalReconciliations = finalRecs
+      let disputes             = dispRows
       if (allSfgIds.length > 0) {
         const { data: people } = await supabase
           .from('personnel')
@@ -326,10 +335,9 @@ export default async function handler(req, res) {
               p.preferred_name?.trim() || p.opt_name?.trim() || null
           }
         }
-        reconciliations = recs.map(r => ({
-          ...r,
-          agent_name: nameMap[r.sfg_id?.trim().toUpperCase()] || r.sfg_id,
-        }))
+        const named = r => ({ ...r, agent_name: nameMap[r.sfg_id?.trim().toUpperCase()] || r.sfg_id })
+        reconciliations      = recs.map(named)
+        finalReconciliations = finalRecs.map(named)
         disputes = dispRows.map(d => ({
           ...d,
           agent_name: nameMap[d.sfg_id?.trim().toUpperCase()] || d.sfg_id,
@@ -360,7 +368,9 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         cycle: cycleRes.data,
-        reconciliations: scopeRowsBySfgId(reconciliations, allowed),
+        reconciliations:       scopeRowsBySfgId(reconciliations, allowed),
+        final_reconciliations: scopeRowsBySfgId(finalReconciliations, allowed),
+        final_review_ready:    finalReady,
         disputes:        scopeRowsBySfgId(disputes, allowed),
         promotions:      scopeRowsBySfgId(promoRes.data, allowed),
       })
@@ -410,7 +420,7 @@ export default async function handler(req, res) {
   // ── PUT resolution ───────────────────────────────────────────────────────────
   if (method === 'PUT' && type === 'resolution') {
     if (!requireWrite(caller, res)) return
-    const { id, resolution, resolution_note } = req.body ?? {}
+    const { id, resolution, resolution_note, phase } = req.body ?? {}
     if (!id) return res.status(400).json({ error: 'id is required' })
     try {
       const patch = resolution
@@ -420,8 +430,9 @@ export default async function handler(req, res) {
         const VALID = new Set(['legitimate', 'disputed', 'no_action'])
         if (!VALID.has(resolution)) return res.status(400).json({ error: 'Invalid resolution value' })
       }
+      // Step 1's rows and Final Review's live in separate tables; `phase` picks one.
       const { error } = await supabase
-        .from('snapshot_reconciliations')
+        .from(phase === 'final' ? 'snapshot_final_reconciliations' : 'snapshot_reconciliations')
         .update(patch)
         .eq('id', id)
       if (error) throw error
@@ -786,7 +797,7 @@ export default async function handler(req, res) {
         agentMonthApv = cumulApv
 
         // Per-agent chargebacks for the month — snapshot_chargeback_apv only (no
-        // issued fallback), matching MonthlyAgentTotals' chargebackMemo so Step 3
+        // issued fallback), matching MonthlyAgentTotals' chargebackMemo so Promotions
         // nets chargebacks identically.
         for (const p of cbPolicies) {
           if (!parseCbApvSvr(p.snapshot_chargeback_apv)) continue
@@ -858,7 +869,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Agent promotions write (for Step 3 qualifying) ───────────────────────────
+  // ── Agent promotions write (for Promotions qualifying) ────────────────────────
   if (method === 'POST' && type === 'agent_promotion') {
     if (!requireWrite(caller, res)) return
     const { sfg_id, promotion_type, level, month_1, month_2, month_3,
@@ -901,7 +912,7 @@ export default async function handler(req, res) {
         if (seen.has(m)) {
           return res.status(409).json({
             error: `${m} is already recorded as a qualifying month for this agent at ${level}. ` +
-                   'Another cycle most likely logged it first — refresh Step 3 and re-check ' +
+                   'Another cycle most likely logged it first — refresh Promotions and re-check ' +
                    'this agent before logging the month again.',
           })
         }

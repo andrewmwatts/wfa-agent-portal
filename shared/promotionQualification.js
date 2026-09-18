@@ -1,6 +1,6 @@
 /**
  * Promotion qualification — shared logic used by both the Monthly Agent Totals
- * page and Step 3 of the Snapshot (Promotions) workflow, so the two can never
+ * page and the Promotions step of the Snapshot workflow, so the two can never
  * drift on how a promotion is qualified.
  *
  * Qualification is evaluated on TEAM issued APV (an agent plus their whole

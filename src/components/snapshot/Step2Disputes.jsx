@@ -500,7 +500,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
       {allHaveOutcome && !cycle?.completed_at && canWrite && (
         <div className="flex justify-end">
           <button onClick={onStepComplete} className="text-sm font-semibold bg-accent text-white px-6 py-2 rounded-xl hover:bg-accent/90 transition-colors">
-            Proceed to Promotions →
+            Proceed to Final Review →
           </button>
         </div>
       )}

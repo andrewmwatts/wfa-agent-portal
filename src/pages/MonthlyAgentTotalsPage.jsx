@@ -16,7 +16,7 @@ import {
 } from '../../shared/policySplit'
 
 // Qualification math (50% leg rule, $7,500 cap, promo/lead statuses) lives in
-// shared/promotionQualification.js so this page and Step 3 stay in lockstep.
+// shared/promotionQualification.js so this page and Snapshot's Promotions step stay in lockstep.
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 

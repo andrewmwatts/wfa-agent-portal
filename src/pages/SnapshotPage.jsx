@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import Step1Reconciliation from '../components/snapshot/Step1Reconciliation'
 import Step2Disputes from '../components/snapshot/Step2Disputes'
-import Step3Promotions from '../components/snapshot/Step3Promotions'
+import Step3FinalReview from '../components/snapshot/Step3FinalReview'
+import Step4Promotions from '../components/snapshot/Step4Promotions'
 
 function safeJson(val) {
   if (!val) return []
@@ -10,7 +11,10 @@ function safeJson(val) {
   try { return JSON.parse(val) } catch { return [] }
 }
 
-const STEP_LABELS = ['Reconciliation', 'Disputes', 'Promotions']
+// A step's number is its position here, and is what a cycle's `step` records. Final
+// Review was added between Disputes and Promotions, so cycles closed before it existed
+// hold step 3 (then Promotions); a closed cycle opens on the LAST step for that reason.
+const STEP_LABELS = ['Reconciliation', 'Disputes', 'Final Review', 'Promotions']
 
 export default function SnapshotPage() {
   const { permissions, activeSubject } = useViewing()
@@ -72,7 +76,7 @@ export default function SnapshotPage() {
       if (cd.error) throw new Error(cd.error)
       setCycleData(cd)
       setContext(ctx)
-      setActiveStep(cd.cycle.step ?? 1)
+      setActiveStep(cd.cycle.completed_at ? STEP_LABELS.length : (cd.cycle.step ?? 1))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -408,7 +412,19 @@ export default function SnapshotPage() {
           )}
 
           {activeStep === 3 && (
-            <Step3Promotions
+            <Step3FinalReview
+              cycle={cycle}
+              reconciliations={cycleData.final_reconciliations ?? []}
+              ready={cycleData.final_review_ready !== false}
+              personnel={context?.personnel ?? []}
+              canWrite={canWrite && !completed}
+              onStepComplete={() => advanceToStep(4)}
+              onRefresh={refresh}
+            />
+          )}
+
+          {activeStep === 4 && (
+            <Step4Promotions
               cycle={cycle}
               promotions={cycleData.promotions ?? []}
               context={context}
