@@ -13,6 +13,14 @@ function ArrowLeftIcon() {
   )
 }
 
+function ArrowRightIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  )
+}
+
 function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -184,9 +192,14 @@ export default function VideoBrowse() {
           </button>
         ))}
         {selectedVideos.length > 8 && (
-          <p style={{ fontSize: 12, color: '#7A9499', fontStyle: 'italic', margin: '4px 0 0 8px' }}>
-            + {selectedVideos.length - 8} more
-          </p>
+          <Link to={`/videos?q=${encodeURIComponent(selected)}`}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+              fontSize: 12, fontWeight: 500, color: '#EE2666', textDecoration: 'none',
+              margin: '4px 0 0 8px', fontFamily: 'Inter, sans-serif',
+            }}>
+            + {selectedVideos.length - 8} more <ArrowRightIcon />
+          </Link>
         )}
       </div>
     </div>
