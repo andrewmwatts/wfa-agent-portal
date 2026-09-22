@@ -48,8 +48,24 @@ function ResolutionBadge({ resolution, phase }) {
 // throw away the uploaded file, the last run's summary and any agents matched by
 // hand. Keeping them here, per cycle and per pass, lets a review go run → edit → run
 // again without re-uploading the file, and keeps the run summary on screen.
+// Both exports are held at once, each in its own slot, and merged when the comparison
+// runs: the Snapshot workbook covers every carrier, the Placed Policies export explains
+// the core ones policy by policy.
 const importCache = new Map()
-const EMPTY_IMPORT = { file: null, parsed: null, overrides: {}, runResult: null, edited: false }
+const EMPTY_IMPORT = { held: {}, overrides: {}, runResult: null, edited: false }
+
+const SLOTS = {
+  agent_totals: {
+    label: 'Snapshot export',
+    tag:   'every carrier',
+    describe: p => `${p.agents.length} agent-carrier row${p.agents.length === 1 ? '' : 's'}`,
+  },
+  policy_lines: {
+    label: 'Placed Policies export',
+    tag:   'core carriers, by policy',
+    describe: p => `${p.meta.lines} line${p.meta.lines === 1 ? '' : 's'} · ${p.meta.agents} agents${p.meta.reversals ? ` · ${p.meta.reversals} reversals` : ''}`,
+  },
+}
 
 function useImportState(key) {
   const [state, setState] = useState(() => importCache.get(key) ?? EMPTY_IMPORT)
@@ -81,7 +97,10 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
   const isFinal  = phase === 'final'
 
   const [imp, updateImp] = useImportState(`${cycle?.id}:${phase}`)
-  const { file, parsed, overrides, runResult, edited } = imp
+  const { held, overrides, runResult, edited } = imp
+  const workbook   = held.agent_totals ?? null
+  const policyFile = held.policy_lines ?? null
+  const anyHeld    = !!workbook || !!policyFile
   const [parseError,    setParseError]    = useState(null)
   const [running,       setRunning]       = useState(false)
   const [runError,      setRunError]      = useState(null)
@@ -122,29 +141,44 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
   const allResolved = reconciliations.length > 0 && reconciliations.every(r => r.resolution)
   const dupePolicies = runResult?.duplicate_policies ?? []
   const numberFixes  = runResult?.policy_number_fixes ?? []
+  const conflicts    = runResult?.source_conflicts ?? []
 
   // A Placed Policies export says which business month it covers; the workbook doesn't.
   const cycleMonth   = String(cycle?.month ?? '').slice(0, 7)
-  const fileMonths   = parsed?.format === 'policy_lines' ? (parsed.meta?.months ?? []) : []
+  const fileMonths   = policyFile?.parsed?.meta?.months ?? []
   const monthMismatch = fileMonths.length > 0 && !(fileMonths.length === 1 && fileMonths[0] === cycleMonth)
+
+  // Running on the Placed Policies export alone means any business with a carrier it
+  // doesn't cover has no Snapshot figure at all, and reads as missing from Snapshot.
+  const missingWorkbook = !workbook && !!policyFile
 
   async function handleFileChange(e) {
     const f = e.target.files?.[0]
+    e.target.value = ''            // same file can be re-picked after a Remove
     if (!f) return
-    updateImp({ file: f, parsed: null, overrides: {}, edited: false })
     setParseError(null)
     try {
-      // One uploader for both exports — the content decides which one it is.
+      // One picker for both exports — the content decides which slot it lands in.
       const result = await readSnapshotFile(f)
-      if (result.error) setParseError(result.error)
-      else updateImp({ parsed: result })
+      if (result.error) { setParseError(result.error); return }
+      updateImp({
+        held: { ...held, [result.format]: { name: f.name, parsed: result } },
+        edited: false,
+      })
     } catch (err) {
       setParseError(`Could not parse file: ${err.message}`)
     }
   }
 
+  function removeHeld(format) {
+    const next = { ...held }
+    delete next[format]
+    updateImp({ held: next })
+    setParseError(null)
+  }
+
   async function handleRunComparison(withOverrides = overrides) {
-    if (!parsed || !cycle) return
+    if (!anyHeld || !cycle) return
     setRunning(true)
     setRunError(null)
     try {
@@ -155,9 +189,10 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
           cycle_id:        cycle.id,
           phase,
           snapshot_window: monthWindow(cycle.month),
-          ...(parsed.format === 'policy_lines'
-            ? { snapshot_policies: parsed.policies, agent_overrides: withOverrides }
-            : { snapshot_agents: parsed.agents }),
+          agent_overrides: withOverrides,
+          // Whichever exports are held; the server merges them.
+          snapshot_agents:   workbook?.parsed?.agents     ?? [],
+          snapshot_policies: policyFile?.parsed?.policies ?? [],
         }),
       })
       const data = await res.json()
@@ -373,45 +408,78 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
               {isFinal
                 ? 'The final ledger, after your edits and the disputes. Chargebacks logged this month are counted, so anything that shows up here is a place the tracker still differs — fix it with Edit, then run again.'
                 : 'The draft ledger. Chargebacks are treated as not yet logged, so each Reversal is flagged for you to log; other differences are either disputed or fixed with Edit.'}
+              {' '}Upload both exports: the Snapshot export covers every carrier, the Placed Policies export explains the core carriers policy by policy.
             </p>
           </div>
+
+          {/* One picker; each export drops into its own slot, in whichever order they arrive. */}
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} className="hidden" />
+          <div className="space-y-2">
+            {Object.entries(SLOTS).map(([format, slot]) => {
+              const h = held[format]
+              return (
+                <div key={format}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2 transition-colors ${
+                    h ? 'border-green-300 dark:border-green-600/40 bg-green-50 dark:bg-green-500/5'
+                      : 'border-dashed border-gray-300 dark:border-white/15'}`}>
+                  <span className={`text-xs font-semibold ${h ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-white/50'}`}>
+                    {h ? '✓' : '○'} {slot.label}
+                  </span>
+                  <span className="text-xs text-gray-400 dark:text-white/35">{slot.tag}</span>
+                  {h ? (
+                    <>
+                      <span className="text-xs text-gray-600 dark:text-white/60 truncate max-w-[16rem]">{h.name}</span>
+                      <span className="text-xs text-gray-500 dark:text-white/50">{slot.describe(h.parsed)}</span>
+                      {format === 'policy_lines' && fileMonths.length > 0 && (
+                        <span className="text-xs text-gray-500 dark:text-white/50">{fileMonths.map(fmtMonthLabel).join(', ')}</span>
+                      )}
+                      <button onClick={() => removeHeld(format)}
+                        className="ml-auto text-xs text-gray-400 dark:text-white/40 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400 dark:text-white/30">not loaded</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
           <div className="flex items-center gap-4 flex-wrap">
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 dark:text-white/70">
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              >
-                Choose file
-              </button>
-              {file ? <span className="text-xs text-gray-500 dark:text-white/50">{file.name}</span> : <span className="text-xs text-gray-400 dark:text-white/30">No file chosen</span>}
-            </label>
-            {parsed && (
-              <span className="text-xs text-green-600 dark:text-green-400">
-                {parsed.format === 'policy_lines'
-                  ? `Placed Policies export: ${parsed.meta.lines} lines · ${parsed.meta.agents} agents${parsed.meta.reversals ? ` · ${parsed.meta.reversals} reversals` : ''}${fileMonths.length ? ` · ${fileMonths.map(fmtMonthLabel).join(', ')}` : ''}`
-                  : `Snapshot workbook: ${parsed.agents.length} agent-carrier rows`}
-                {cycle.month && (() => { const w = monthWindow(cycle.month); return ` · Window: ${fmtDate(w.from)} – ${fmtDate(w.to)}` })()}
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            >
+              {anyHeld ? 'Add another file' : 'Choose file'}
+            </button>
+            {cycle.month && (
+              <span className="text-xs text-gray-400 dark:text-white/40">
+                {(() => { const w = monthWindow(cycle.month); return `Window: ${fmtDate(w.from)} – ${fmtDate(w.to)}` })()}
               </span>
             )}
             <button
               onClick={() => handleRunComparison()}
-              disabled={!parsed || running}
+              disabled={!anyHeld || running}
               className="text-xs font-semibold bg-accent text-white px-4 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {running && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
-              {running ? 'Running…' : monthMismatch ? 'Run Anyway' : 'Run Comparison'}
+              {running ? 'Running…' : (monthMismatch || missingWorkbook) ? 'Run Anyway' : 'Run Comparison'}
             </button>
           </div>
 
           {parseError && <p className="text-xs text-red-500">{parseError}</p>}
           {runError   && <p className="text-xs text-red-500">{runError}</p>}
+
+          {/* The Placed Policies export only covers the core carriers, so on its own it
+              has nothing to say about business written anywhere else. */}
+          {missingWorkbook && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              No Snapshot export loaded. The Placed Policies export only covers the core carriers,
+              so any business written with another carrier has no Snapshot figure to compare against
+              and will read as missing from Snapshot. Add the Snapshot export, or run anyway.
+            </p>
+          )}
 
           {/* The workbook carries no date, but a Placed Policies export does — a
               file for another month would otherwise silently replace this cycle's results. */}
@@ -423,7 +491,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
 
           {/* Editing a policy doesn't re-run anything, so the cards below still show
               the numbers from before the edit until the comparison is run again. */}
-          {edited && parsed && (
+          {edited && anyHeld && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
               Policies edited since the last run — run the comparison again to refresh these results.
             </p>
@@ -433,10 +501,19 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
               <SummaryChip label="Clean"        value={runResult.summary.clean_agents}      color="green" />
               <SummaryChip label="Discrepant"   value={runResult.summary.discrepant_agents} color="red"   />
-              <SummaryChip label={runResult.source_format === 'policy_lines' ? 'Agents in file' : 'Total Agents'} value={runResult.summary.total_snapshot_agents} />
-              {runResult.source_format === 'policy_lines' && (
-                <SummaryChip label="Policy lines" value={runResult.summary.lines} />
-              )}
+              <SummaryChip label="Agents" value={runResult.summary.total_snapshot_agents} />
+              <SummaryChip label="Explained by policy" value={`${runResult.summary.itemized_buckets ?? 0} / ${(runResult.summary.itemized_buckets ?? 0) + (runResult.summary.lump_buckets ?? 0)}`} />
+
+              {/* Which exports this run actually merged. */}
+              <div className="col-span-2 sm:col-span-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400 dark:text-white/40">
+                <span>Merged: {[
+                  runResult.sources?.agent_totals && `Snapshot export (${runResult.summary.snapshot_rows} rows)`,
+                  runResult.sources?.policy_lines && `Placed Policies export (${runResult.summary.lines} lines)`,
+                ].filter(Boolean).join(' + ') || '—'}</span>
+                {runResult.uncovered_carriers?.length > 0 && (
+                  <span>Carriers only the Snapshot export covers: {runResult.uncovered_carriers.join(', ')}</span>
+                )}
+              </div>
               {/* An agency this cycle covers that the uploaded file says nothing
                   about almost always means the wrong export was uploaded — every
                   unmentioned agent would otherwise read as a full-APV discrepancy. */}
@@ -455,34 +532,48 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
               {runResult.unmatched_agents?.length > 0 && (
                 <div className="col-span-2 sm:col-span-4">
                   <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1">Unmatched agent names from Snapshot:</p>
-                  {runResult.source_format === 'policy_lines' ? (
-                    // Names in this export aren't in a fixed format, so a name that neither
-                    // its policy numbers nor its spelling settles is handed to a person.
-                    <div className="space-y-2">
-                      {runResult.unmatched_agents.map((w, i) => (
-                        <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-amber-500/10 px-3 py-2">
-                          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">{w.agent_name}</span>
-                          <span className="text-xs text-amber-600/80 dark:text-amber-300/70">
-                            {w.lines} line{w.lines !== 1 ? 's' : ''} · {fmtAmt(w.snapshot_apv)}{w.carrier ? ` · ${w.carrier}` : ''}
-                          </span>
-                          <AssignAgent
-                            candidates={w.candidates}
-                            personnel={personnel}
-                            disabled={running}
-                            onAssign={sfgId => assignAgent(w.agent_name, sfgId)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {runResult.unmatched_agents.map((w, i) => (
-                        <span key={i} className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-300 px-2 py-0.5 rounded-full">
-                          {w.agent_name} ({w.carrier})
+                  {/* Both exports go through the same name resolution, so a name that
+                      neither its policy numbers nor its spelling settles is handed to a
+                      person — and the answer then applies to both exports at once. */}
+                  <div className="space-y-2">
+                    {runResult.unmatched_agents.map((w, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-amber-500/10 px-3 py-2">
+                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">{w.agent_name}</span>
+                        <span className="text-xs text-amber-600/80 dark:text-amber-300/70">
+                          {w.lines} line{w.lines !== 1 ? 's' : ''} · {fmtAmt(w.snapshot_apv)}{w.carrier ? ` · ${w.carrier}` : ''}
                         </span>
-                      ))}
-                    </div>
-                  )}
+                        <AssignAgent
+                          candidates={w.candidates}
+                          personnel={personnel}
+                          disabled={running}
+                          onAssign={sfgId => assignAgent(w.agent_name, sfgId)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* The two exports are the same production presented differently, so a
+                  total that differs between them is a problem with a file rather than
+                  with the tracker — shown on its own instead of inside a card. */}
+              {conflicts.length > 0 && (
+                <div className="col-span-2 sm:col-span-4 rounded-lg bg-amber-500/10 border border-amber-400/30 px-3 py-2">
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1.5">
+                    The two exports disagree on {conflicts.length} agent-carrier {conflicts.length === 1 ? 'total' : 'totals'}:
+                  </p>
+                  <div className="space-y-1">
+                    {conflicts.map((c, i) => (
+                      <p key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                        <strong>{c.agent_name}</strong> · {c.carrier} — Snapshot {fmtAmt(c.workbook_apv)} vs
+                        {' '}{c.line_apv == null ? 'nothing in the Placed Policies export' : `${fmtAmt(c.line_apv)} itemized`}
+                        {' '}({c.gap >= 0 ? '+' : ''}{fmtAmt(c.gap)})
+                      </p>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-600/80 dark:text-amber-300/70 mt-1.5">
+                    The Snapshot figure is the one being reconciled; the difference is carried as a &ldquo;Not itemized&rdquo; line on the card.
+                  </p>
                 </div>
               )}
 
@@ -1012,6 +1103,8 @@ const CANDIDATE_STYLES = {
   reversal_unlogged:      { border: 'border-orange-200 dark:border-orange-600/30', bg: 'bg-orange-50 dark:bg-orange-500/5', badge: 'bg-orange-500/15 text-orange-700 dark:text-orange-300' },
   reversal_diff:          { border: 'border-amber-200 dark:border-amber-600/30',   bg: 'bg-amber-50 dark:bg-amber-500/5',   badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300'   },
   chargeback_not_in_file: { border: 'border-amber-200 dark:border-amber-600/30',   bg: 'bg-amber-50 dark:bg-amber-500/5',   badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300'   },
+  // Snapshot production the policy lines never accounted for
+  unitemized:             { border: 'border-gray-200 dark:border-white/15',        bg: 'bg-gray-50 dark:bg-white/5',        badge: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-white/60' },
 }
 
 function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
@@ -1024,9 +1117,13 @@ function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>{c.flag}</span>
           {c.match && c.match !== 'full' && <span className="text-xs text-gray-400 dark:text-white/40">{c.match} of APV</span>}
         </div>
-        <p className="text-sm font-medium text-gray-800 dark:text-white/80">
-          {c.applicant} <span className="text-gray-400 dark:text-white/40 font-normal">#{c.policy_number}</span>
-        </p>
+        {/* A finding that isn't about one policy (unitemized production) has neither. */}
+        {(c.applicant || c.policy_number) && (
+          <p className="text-sm font-medium text-gray-800 dark:text-white/80">
+            {c.applicant}
+            {c.policy_number && <span className="text-gray-400 dark:text-white/40 font-normal"> #{c.policy_number}</span>}
+          </p>
+        )}
         {c.signed ? (
           <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 dark:text-white/50">
             <span>Snapshot: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.snapshot_apv ?? 0)}</strong></span>

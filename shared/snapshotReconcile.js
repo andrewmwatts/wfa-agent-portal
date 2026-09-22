@@ -31,7 +31,7 @@
 
 import { participants, creditedAmount } from './policySplit.js'
 import { normalizeCarrier } from './carriers.js'
-import { normalizeSnapshotCarrier } from './snapshotFile.js'
+import { normalizeSnapshotCarrier, CORE_CARRIERS } from './snapshotFile.js'
 
 const normId = id => String(id ?? '').trim().toUpperCase()
 
@@ -342,11 +342,32 @@ export function chargebackAmount(policy, sfgId) {
 }
 
 /**
- * Compares the file with the tracker per agent + carrier.
+ * Compares Snapshot with the tracker per agent + carrier.
+ *
+ * Snapshot arrives as up to two exports of the same underlying data:
+ *
+ *   agentTotals — the Snapshot workbook: one figure per agent + carrier, covering
+ *                 EVERY carrier. Complete, but with no policy detail.
+ *   lines       — a Placed Policies export: one line per policy transaction, but
+ *                 only for the core carriers (shared/snapshotFile.js).
+ *
+ * They are merged here rather than compared separately. Per agent + carrier:
+ *   • the workbook figure is the bucket's Snapshot total whenever it has one, since
+ *     that export is the complete side;
+ *   • the policy lines itemize that total wherever they reach;
+ *   • anything the lines don't itemize — a carrier they don't cover, lines with no
+ *     policy number, or the two exports simply disagreeing — becomes one
+ *     `unitemized` item, so the items still add up to the bucket's delta;
+ *   • a bucket the lines don't itemize at all stays `mode: 'lump'` and the caller
+ *     explains it the way it explains the workbook on its own.
+ * Where both exports speak and disagree, `source_gap` records by how much: they are
+ * two presentations of one source, so any gap is worth a look.
  *
  * @param {object}   args
- * @param {Array}    args.lines    resolved file lines (every agent, in scope or not):
+ * @param {Array}    args.lines    resolved policy lines (every agent, in scope or not):
  *                                 { sfg_id, agent_name, policy_number, client, apv, carrier, product }
+ * @param {Map|null} args.agentTotals  `${sfg_id}||${carrier}` → workbook APV, or null when
+ *                                 no workbook was uploaded
  * @param {Array}    args.tracker  tracker policies with `splits` attached — everything issued
  *                                 in the window, everything with a chargeback logged for it,
  *                                 and every policy matching a file policy number (any status/date)
@@ -355,11 +376,14 @@ export function chargebackAmount(policy, sfgId) {
  * @param {(id:string)=>string}  args.nameOf
  * @param {boolean} args.netChargebacks  true (final ledger): subtract chargebacks already logged
  *                                       for the window; false (draft): treat them as unlogged
+ * @param {number}  args.gapTolerance  how far the two exports may differ before it is reported
  * @returns {{ buckets: Array, numberFixes: Array }}
  */
 export function adjudicateBuckets({
-  lines, tracker, window, inScope = () => true, nameOf = id => id, netChargebacks = true,
+  lines, agentTotals = null, tracker, window, inScope = () => true, nameOf = id => id,
+  netChargebacks = true, gapTolerance = 1.50,
 }) {
+  const hasPolicyLines = (lines ?? []).length > 0
   const inWin = d => { const s = String(d ?? '').slice(0, 10); return !!s && s >= window.from && s <= window.to }
   const loggedInWindow = p => !!p.snapshot_chargeback_month && inWin(p.snapshot_chargeback_month)
 
@@ -416,6 +440,7 @@ export function adjudicateBuckets({
   const bucketKeys = new Set()
   for (const g of fg.values()) if (inScope(g.sfg)) bucketKeys.add(`${g.sfg}||${g.carrier}`)
   for (const k of lumps.keys()) if (inScope(k.split('||')[0])) bucketKeys.add(k)
+  for (const k of agentTotals?.keys() ?? []) if (inScope(k.split('||')[0])) bucketKeys.add(k)
   for (const e of trk.values()) bucketKeys.add(`${e.sfg}||${e.carrier}`)
 
   const fileByBucket = new Map(), trkByBucket = new Map()
@@ -466,15 +491,35 @@ export function adjudicateBuckets({
     const trkEntries = trkByBucket.get(bk) ?? []
     const lump       = lumps.has(bk) ? lumps.get(bk) : null
 
-    const snapshotApv = fileGroups.reduce((s, g) => s + g.net, 0) + (lump ?? 0)
+    // What each export says for this bucket. The workbook covers every carrier, so
+    // it sets the total wherever it has one; the lines itemize as far as they reach.
+    const itemizedApv   = fileGroups.reduce((s, g) => s + g.net, 0)
+    const lineApv       = itemizedApv + (lump ?? 0)
+    const workbookApv   = agentTotals?.has(bk) ? agentTotals.get(bk) : null
+    const hasLineData   = fileGroups.length > 0 || lump !== null
+    const snapshotApv   = workbookApv ?? lineApv
+
+    // Two presentations of one source, so a difference between them is worth reporting —
+    // but only where the policy export was meant to speak. A carrier it doesn't cover
+    // appearing in the workbook alone is the division of labour working, not a conflict.
+    const comparable = hasPolicyLines && workbookApv !== null && (CORE_CARRIERS.has(carrier) || hasLineData)
+    const rawGap    = comparable ? workbookApv - lineApv : null
+    const sourceGap = rawGap !== null && Math.abs(rawGap) > gapTolerance ? rawGap : null
+
     const trackerIssued = trkEntries.reduce((s, e) => s + e.issued, 0)
     const trackerCb     = trkEntries.reduce((s, e) => s + e.cb, 0)
     const trackerNet    = trackerIssued - trackerCb
 
     const bucket = {
       sfg_id: sfg, carrier,
-      mode: lump !== null ? 'lump' : 'policy',
+      // Itemize when there are numbered lines to itemize with, or when Snapshot says
+      // nothing at all about this bucket and the tracker's own policies are the only
+      // thing to name. A figure with no detail behind it — a carrier the policy export
+      // doesn't cover, or one reporting a single total per agent — is explained as a
+      // whole instead, rather than calling every tracker policy under it missing.
+      mode: fileGroups.length > 0 || (workbookApv === null && lump === null) ? 'policy' : 'lump',
       snapshot_apv: snapshotApv,
+      workbook_apv: workbookApv, line_apv: hasLineData ? lineApv : null, source_gap: sourceGap,
       tracker_issued: trackerIssued, tracker_chargebacks: trackerCb, tracker_net: trackerNet,
       delta: snapshotApv - trackerNet,
       items: [], matched: 0, rounding: 0, file_lines: fileGroups.length + (lump !== null ? 1 : 0),
@@ -482,8 +527,9 @@ export function adjudicateBuckets({
     }
 
     if (bucket.mode === 'lump') {
-      // No policy numbers to work with (TransAmerica sends one figure per agent):
-      // the caller runs the bucket-level explanation used for the old file.
+      // Nothing itemizes this bucket — a carrier the policy export doesn't cover, or
+      // one that reports a single figure per agent (TransAmerica). The caller explains
+      // it the same way it explains the workbook on its own.
       bucket.material = bucket.delta
       buckets.push(bucket)
       continue
@@ -655,6 +701,25 @@ export function adjudicateBuckets({
           conservation_date: row.conservation_date, conservation_status: row.conservation_status,
           note: `The tracker logged a ${money(-e.cb)} chargeback this month that Snapshot doesn't show.` })
       }
+    }
+
+    // Snapshot production this bucket's policy lines never accounted for: a workbook
+    // total above what the lines itemize, and any line that carried no policy number.
+    // Carried as one item so the items still add up to the bucket's delta.
+    const unitemized = snapshotApv - itemizedApv
+    if (Math.abs(unitemized) > 0.02) {
+      const why = []
+      if (sourceGap) {
+        why.push(`the Snapshot export shows ${money(workbookApv)} for this carrier while the Placed Policies export itemizes ${money(lineApv)}`)
+      }
+      if (lump) why.push(`${money(lump)} of it arrives with no policy number`)
+      push({
+        type: 'unitemized', flag: 'Not itemized', delta_contribution: unitemized,
+        snapshot_apv: unitemized, tracker_apv: 0,
+        note: why.length
+          ? `${money(unitemized)} of Snapshot production isn't itemized — ${why.join(', and ')}.`
+          : `${money(unitemized)} of Snapshot production for this carrier isn't itemized by policy.`,
+      })
     }
 
     bucket.material = bucket.items.reduce((s, i) => s + i.delta_contribution, 0)

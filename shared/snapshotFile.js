@@ -51,6 +51,29 @@ export function normalizeSnapshotCarrier(raw) {
   return SNAPSHOT_ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
 }
 
+/**
+ * The carriers a Placed Policies export covers. Canonical names, i.e. what
+ * bucketCarrier() produces — Occidental counts as American Amicable, Corebridge
+ * as American General, LGA as Banner, Foresters DFL as Foresters.
+ *
+ * That export is policy-level but NOT complete: business written with any other
+ * carrier simply isn't in it, and on its own would read as missing from Snapshot.
+ * The Snapshot workbook is the complete side, which is why the two are uploaded
+ * together and merged.
+ */
+export const CORE_CARRIERS = new Set([
+  'American Amicable',
+  'American General',
+  'Americo',
+  'Banner',
+  'Fidelity and Guaranty',
+  'Foresters',
+  'Mutual of Omaha',
+  'SBLI',
+  'TransAmerica',
+  'United Home Life',
+])
+
 // ── Formats ──────────────────────────────────────────────────────────────────
 
 export const FORMAT_AGENT_TOTALS = 'agent_totals'
