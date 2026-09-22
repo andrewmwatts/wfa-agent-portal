@@ -9,6 +9,7 @@ import { getBaseshopIds } from '../../shared/agencyScope'
 import { parseDateLocal, fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import { ACTIVE_STATUSES, FINAL_STATUSES, statusWeight } from '../utils/status'
+import { matchesPolicy } from '../utils/policySearch'
 
 function parseDate(str) {
   return parseDateLocal(str)
@@ -255,9 +256,7 @@ export default function PoliciesPage() {
       if (notInOptOnly && !p.not_in_opt) return false
 
       // ── Search (agent match also covers split partners) ──────────────────
-      if (q && !p.applicant?.toLowerCase().includes(q) &&
-              !creditedNames(p).some(n => n.includes(q)) &&
-              !p.policy_no?.toLowerCase().includes(q)) return false
+      if (q && !matchesPolicy(p, q) && !creditedNames(p).some(n => n.includes(q))) return false
 
       // ── Custom date range ────────────────────────────────────────────────
       if (customStart || customEnd) {
@@ -689,7 +688,7 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return policies.filter(p => p.applicant?.toLowerCase().includes(q))
+    return policies.filter(p => matchesPolicy(p, q))
   }, [policies, query])
 
   return (
@@ -706,7 +705,7 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search by client name…"
+            placeholder="Search by client name or policy number…"
             value={query}
             onChange={e => onQueryChange(e.target.value)}
             className="flex-1 bg-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/25 text-sm focus:outline-none"
@@ -725,7 +724,7 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
           {!query.trim() ? (
             <p className="text-sm text-gray-400 dark:text-white/25 text-center py-10">Start typing to search all policies</p>
           ) : results.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-white/25 text-center py-10">No clients found for "{query}"</p>
+            <p className="text-sm text-gray-400 dark:text-white/25 text-center py-10">No policies found for "{query}"</p>
           ) : (
             <ul>
               {results.map((p, i) => (
@@ -744,6 +743,12 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
                       <span className="text-xs text-gray-400 dark:text-white/40">{p.agent || '—'}</span>
                       <span className="text-gray-300 dark:text-white/20 text-xs">·</span>
                       <span className="text-xs text-gray-400 dark:text-white/40">{normalizeCarrier(p.carrier) || '—'}</span>
+                      {p.policy_no && (
+                        <>
+                          <span className="text-gray-300 dark:text-white/20 text-xs">·</span>
+                          <span className="text-xs font-mono text-gray-400 dark:text-white/40">#{p.policy_no}</span>
+                        </>
+                      )}
                       {p.submit_date && (
                         <>
                           <span className="text-gray-300 dark:text-white/20 text-xs">·</span>

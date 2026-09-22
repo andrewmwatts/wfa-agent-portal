@@ -4,8 +4,9 @@ import {
   nextContractLevel, nextLeadershipLevel, previousContractLevel, contractLevelRank,
 } from '../../../shared/commissionLevel'
 import {
-  buildDownlineTree, computeTeamIssued, computeMaxLegApv,
-  legRulePreventsQual, fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet,
+  buildDownlineTree, computeTeamIssued, computeMaxLegApv, computeMaxLegWriters,
+  legRulePreventsQual, writerLegRulePreventsQual,
+  fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet,
 } from '../../../shared/promotionQualification'
 import { participants } from '../../../shared/policySplit'
 
@@ -359,13 +360,23 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
     return { moveOut, moveBackIn, any: moveOut || moveBackIn }
   }
 
-  // Team qualifying APV (capped for the target level, net chargebacks) + largest leg.
+  // Team qualifying APV (capped for the target level, net chargebacks) + largest leg,
+  // by APV and by writers. One counter serves the team and every leg, so the 50% rule
+  // always compares like with like.
+  function countWriters(idSet) {
+    let n = 0
+    for (const tid of idSet) if (submittedSet.has(tid)) n++
+    return n
+  }
+
   function teamNumbers(lowerId, targetLevel) {
     const descSet = descendantsOf[lowerId] ?? new Set([lowerId])
+    const children = directChildrenOf[lowerId] ?? []
     return {
       teamApv: computeTeamIssued(descSet, issuedPolsBySfgId, chargebacksLower, targetLevel),
-      maxLeg:  computeMaxLegApv(directChildrenOf[lowerId] ?? [], descendantsOf, issuedPolsBySfgId, targetLevel),
-      writers: [...descSet].filter(tid => submittedSet.has(tid)).length,
+      maxLeg:  computeMaxLegApv(children, descendantsOf, issuedPolsBySfgId, targetLevel),
+      writers: countWriters(descSet),
+      maxLegWriters: computeMaxLegWriters(children, descendantsOf, countWriters),
     }
   }
 
@@ -430,11 +441,12 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
       if (nextContract && !skippedSet.has(sfgId + '||' + nextContract) &&
           !promotedTracksThisCycle.has(sfgId + '||contract')) {
         const q = getThresholds(nextContract)
-        const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextContract)
+        const { teamApv, maxLeg, writers, maxLegWriters } = teamNumbers(lowerId, nextContract)
 
-        // Standard qualification: regular APV + writers met, leg rule satisfied
+        // Standard qualification: regular APV + writers met, both leg rules satisfied
         const regularMet = meetsThreshold(q, teamApv, writers) &&
-                           !legRulePreventsQual(teamApv, q?.regular, maxLeg)
+                           !legRulePreventsQual(teamApv, q?.regular, maxLeg) &&
+                           !writerLegRulePreventsQual(writers, q?.writers, maxLegWriters)
 
         // Slingshot: higher APV bar + personal weekly submissions, leg rule satisfied
         const submissionMet = submissionRequirementMet(submittedWeekCount[sfgId] ?? 0, fridayCount)
@@ -475,9 +487,10 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
       if (nextLeadership && !skippedSet.has(sfgId + '||' + nextLeadership) &&
           !promotedTracksThisCycle.has(sfgId + '||leadership')) {
         const q = getThresholds(nextLeadership)
-        const { teamApv, maxLeg, writers } = teamNumbers(lowerId, nextLeadership)
+        const { teamApv, maxLeg, writers, maxLegWriters } = teamNumbers(lowerId, nextLeadership)
         const regularMet = meetsThreshold(q, teamApv, writers) &&
-                           !legRulePreventsQual(teamApv, q?.regular, maxLeg)
+                           !legRulePreventsQual(teamApv, q?.regular, maxLeg) &&
+                           !writerLegRulePreventsQual(writers, q?.writers, maxLegWriters)
         if (regularMet) {
           const existing = agentPromoMap[`${sfgId}||${nextLeadership}`] ?? null
           if (!existing?.is_qualified && !creditedThisCycle(existing)) {

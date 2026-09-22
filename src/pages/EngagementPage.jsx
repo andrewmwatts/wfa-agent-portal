@@ -7,6 +7,7 @@ import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import { getPolicyStatusClass } from '../utils/status'
 import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
+import { matchesPolicy } from '../utils/policySearch'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ function SearchInput({ value, onChange }) {
   return (
     <input
       type="text"
-      placeholder="Search client…"
+      placeholder="Search client or policy #…"
       value={value}
       onChange={e => onChange(e.target.value)}
       className="text-xs bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/30 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/60 w-44"
@@ -200,7 +201,7 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
     if (filterNotExempt && p.chargeback_exempt !== false) return false
     if (carrierFilter && p.carrier !== carrierFilter) return false
     if (agentFilter   && p.agent   !== agentFilter)   return false
-    if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !matchesPolicy(p, search)) return false
     return true
   }), [base, filterNotExempt, carrierFilter, agentFilter, search])
 
@@ -310,7 +311,7 @@ function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionSt
     if (filterNotExempt && p.chargeback_exempt !== false) return false
     if (carrierFilter && p.carrier !== carrierFilter) return false
     if (agentFilter   && p.agent   !== agentFilter)   return false
-    if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !matchesPolicy(p, search)) return false
     return true
   }), [base, filterNotExempt, carrierFilter, agentFilter, search])
 
@@ -440,7 +441,7 @@ function PolicyReviewsTab({ policies, masterPersonnel, subjectSfgId, onSelect, o
 
       if (carrierFilter && p.carrier !== carrierFilter) return false
       if (agentFilter   && p.agent   !== agentFilter)   return false
-      if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
+      if (search && !matchesPolicy(p, search)) return false
       return true
     })
   }, [base, quickFilter, carrierFilter, agentFilter, search])
@@ -587,7 +588,7 @@ export default function EngagementPage() {
   const quickSearchResults = useMemo(() => {
     if (!quickSearchQuery.trim()) return []
     const q = quickSearchQuery.toLowerCase()
-    return allPolicies.filter(p => p.applicant?.toLowerCase().includes(q)).slice(0, 20)
+    return allPolicies.filter(p => matchesPolicy(p, q)).slice(0, 20)
   }, [allPolicies, quickSearchQuery])
 
   if (!activeSubject) return (
@@ -724,7 +725,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
           <input
             autoFocus
             type="text"
-            placeholder="Search by client name…"
+            placeholder="Search by client name or policy number…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full bg-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 text-sm focus:outline-none"
@@ -752,6 +753,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
                 </div>
                 <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">
                   {p.agent} · {p.carrier} · {fmtDate(p.issue_date)}
+                  {p.policy_no && <> · <span className="font-mono">#{p.policy_no}</span></>}
                 </p>
               </button>
             )

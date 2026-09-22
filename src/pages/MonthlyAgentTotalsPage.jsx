@@ -7,7 +7,7 @@ import { fmtCurrency as fmtAmt } from '../utils/format'
 
 import { nextContractLevel, nextLeadershipLevel, levelAsOfMonth } from '../../shared/commissionLevel'
 import {
-  policyApvCap, cappedCreditedSum, computeTeamIssued, computeMaxLegApv, SINGLE_APV_CAP,
+  policyApvCap, cappedCreditedSum, computeTeamIssued, computeMaxLegApv, computeMaxLegWriters, SINGLE_APV_CAP,
   legRulePreventsQual, promoStatuses, leadStatuses, requiredSubmissionWeeks,
 } from '../../shared/promotionQualification'
 import {
@@ -435,13 +435,22 @@ export default function MonthlyAgentTotalsPage() {
 
       // Writers = distinct SFG IDs in team who SUBMITTED an application this
       // month. Applications belong to the primary, so a secondary share doesn't
-      // make someone a writer.
-      const writers = new Set(
-        teamPols.filter(p => isPrimary(p, p.sfg_id)).map(p => p.sfg_id?.toLowerCase()).filter(Boolean)
-      ).size
+      // make someone a writer. The same counter is used for the team and for each
+      // leg, so the 50% rule always compares like with like.
+      const countWriters = (idSet) => {
+        const ids = new Set()
+        for (const tid of idSet) {
+          for (const p of (polsBySfgId[tid] ?? [])) {
+            if (isPrimary(p, p.sfg_id) && p.sfg_id) ids.add(p.sfg_id.toLowerCase())
+          }
+        }
+        return ids.size
+      }
+      const writers = countWriters(descSet)
 
-      // 50 % leg rule — largest single-leg issued APV
-      const maxLegApv = computeMaxLegApv(directChildrenOf[id] ?? [], descendantsOf, issuedPolsBySfgId, capLevel)
+      // 50 % leg rule — largest single leg, by APV and by writers
+      const maxLegApv     = computeMaxLegApv(directChildrenOf[id] ?? [], descendantsOf, issuedPolsBySfgId, capLevel)
+      const maxLegWriters = computeMaxLegWriters(directChildrenOf[id] ?? [], descendantsOf, countWriters)
 
       // Agent personal submitted APV (submit-week-based, for the selected month)
       const agentSubmitted = sumApv(ownPols, 'submitted_apv')
@@ -465,8 +474,8 @@ export default function MonthlyAgentTotalsPage() {
       const submissionMet      = hasSlingshotTarget && submittedCount >= requiredWeeks
 
       // Highlighting statuses (team issued APV; leg rule applied; submission companion for slingshot)
-      const promoStat = promoStatuses(teamIssued, writers, promoQual, maxLegApv, submissionMet)
-      const leadStat  = leadStatuses(teamIssued, writers, leadQual, maxLegApv)
+      const promoStat = promoStatuses(teamIssued, writers, promoQual, maxLegApv, submissionMet, maxLegWriters)
+      const leadStat  = leadStatuses(teamIssued, writers, leadQual, maxLegApv, maxLegWriters)
 
       // Weekly submission cell color (companion to slingshot APV):
       //   suppress = level has no slingshot target

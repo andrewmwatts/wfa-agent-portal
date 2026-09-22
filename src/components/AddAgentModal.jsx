@@ -8,6 +8,7 @@ const EMPTY = {
   hire_date:      '',
   birth_date:     '',
   upline_sfg_id:  '',
+  email:          '',
   phone:          '',
   city:           '',
   state:          '',
@@ -40,6 +41,11 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
       e.opt_name = 'Required'
     if (!form.upline_sfg_id.trim())
       e.upline_sfg_id = 'Required'
+    // Optional, but a typo here is worth catching now — personnel.email is what
+    // contracting alerts are sent to.
+    const email = form.email.trim()
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      e.email = 'Enter a valid email address'
     return e
   }
 
@@ -63,6 +69,7 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
           birth_date:     form.birth_date            || null,
           upline_sfg_id:  uplineId                   || null,
           status:         'Active',
+          email:          form.email.trim()          || null,
           phone:          form.phone.trim()          || null,
           city:           form.city.trim()           || null,
           state:          form.state.trim()          || null,
@@ -159,10 +166,16 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
           {/* Contact */}
           <Section label="Contact">
             <Row>
+              <Field label="Email" error={errors.email}>
+                <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
+                  placeholder="agent@example.com" className={inputCls(errors.email)} />
+              </Field>
               <Field label="Phone">
                 <input type="text" value={form.phone} onChange={e => set('phone', e.target.value)}
                   className={inputCls()} />
               </Field>
+            </Row>
+            <Row>
               <Field label="Street Address">
                 <input type="text" value={form.address} onChange={e => set('address', e.target.value)}
                   className={inputCls()} />

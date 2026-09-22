@@ -7,7 +7,8 @@
  * downline), net of chargebacks whose snapshot_chargeback_month falls in the
  * month in question, subject to two limits:
  *   1. 50% leg rule  — no single leg (a direct downline + all of their subs)
- *      may supply more than half the required APV.
+ *      may supply more than half the required APV, nor more than half the
+ *      required number of writers.
  *   2. $7,500 single-policy cap — when promoting to contract level 125 or 130,
  *      each individual policy's issued APV counts at most $7,500.
  *
@@ -150,6 +151,21 @@ export function computeMaxLegApv(directChildren, descendantsOf, issuedPolsBySfgI
 }
 
 /**
+ * Largest single-leg WRITER count.
+ *
+ * `countWriters` is supplied by the caller and must be the same counter it uses for
+ * the team, so the leg and the team are always counted the same way — Monthly Agent
+ * Totals derives writers from the month's policies, the Promotions workflow from the
+ * set of agents who submitted.
+ */
+export function computeMaxLegWriters(directChildren, descendantsOf, countWriters) {
+  return (directChildren ?? []).reduce((best, childId) => {
+    const legDesc = descendantsOf[childId] ?? new Set([childId])
+    return Math.max(best, countWriters(legDesc))
+  }, 0)
+}
+
+/**
  * 50% leg rule. Returns true when the target APV is met on paper but the
  * largest leg exceeds half the target and, once that leg is capped at 50%,
  * the effective total falls short — i.e. qualification is blocked.
@@ -160,6 +176,20 @@ export function legRulePreventsQual(teamIssued, targetApv, maxLegApv) {
   if (maxLegApv <= legCap) return false                    // largest leg within limit
   const effectiveApv = teamIssued - maxLegApv + legCap     // cap the oversized leg
   return effectiveApv < targetApv                          // true → can't qualify
+}
+
+/**
+ * The same 50% leg rule applied to the WRITER requirement: no more than half of a
+ * level's required writers may come from one leg. Arithmetic deliberately mirrors
+ * legRulePreventsQual — half of an odd target is left fractional rather than rounded,
+ * so the two rules can never disagree about what "half" means.
+ */
+export function writerLegRulePreventsQual(teamWriters, targetWriters, maxLegWriters) {
+  if (!targetWriters || teamWriters < targetWriters) return false   // target not reached anyway
+  const legCap = 0.5 * targetWriters
+  if (maxLegWriters <= legCap) return false                         // largest leg within limit
+  const effectiveWriters = teamWriters - maxLegWriters + legCap     // cap the oversized leg
+  return effectiveWriters < targetWriters                           // true → can't qualify
 }
 
 /**
@@ -204,15 +234,17 @@ export function submissionRequirementMet(submittedWeekCount, fridayCount) {
 //   yellow = companion requirement not yet met
 //   none   = not met
 
-export function promoStatuses(teamIssued, writers, qual, maxLegApv = 0, submissionMet = false) {
+export function promoStatuses(teamIssued, writers, qual, maxLegApv = 0, submissionMet = false, maxLegWriters = 0) {
   if (!qual) return { apv: 'none', slingshot: 'none', writers: 'none' }
 
   const apvHit     = qual.regular   != null && teamIssued >= qual.regular
   const slingHit   = qual.slingshot != null && teamIssued >= qual.slingshot
   const writersHit = qual.writers   != null && writers    >= qual.writers
 
+  // Either leg rule blocking is enough to stop the promotion, so both tint the cell.
   const hitColor = (target) =>
-    legRulePreventsQual(teamIssued, target, maxLegApv) ? 'orange' : 'green'
+    legRulePreventsQual(teamIssued, target, maxLegApv) ||
+    writerLegRulePreventsQual(writers, qual.writers, maxLegWriters) ? 'orange' : 'green'
 
   if (qual.writers != null) {
     // APV + Writers are companions (105–130)
@@ -243,14 +275,15 @@ export function promoStatuses(teamIssued, writers, qual, maxLegApv = 0, submissi
   }
 }
 
-export function leadStatuses(teamIssued, writers, qual, maxLegApv = 0) {
+export function leadStatuses(teamIssued, writers, qual, maxLegApv = 0, maxLegWriters = 0) {
   if (!qual) return { apv: 'none', writers: 'none' }
 
   const apvHit     = qual.regular != null && teamIssued >= qual.regular
   const writersHit = qual.writers != null && writers    >= qual.writers
 
   const hitColor = (target) =>
-    legRulePreventsQual(teamIssued, target, maxLegApv) ? 'orange' : 'green'
+    legRulePreventsQual(teamIssued, target, maxLegApv) ||
+    writerLegRulePreventsQual(writers, qual.writers, maxLegWriters) ? 'orange' : 'green'
 
   if (qual.writers != null) {
     // APV + Writers are companions (TL, KL, AO)

@@ -6,6 +6,7 @@ import { getBaseshopIds } from '../../shared/agencyScope'
 import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
+import { matchesPolicy } from '../utils/policySearch'
 
 function daysToLapse(conservationDate) {
   if (!conservationDate) return null
@@ -134,7 +135,7 @@ export default function LapsePage() {
       if (statusFilter  && p.conservation_status !== statusFilter)  return false
       if (carrierFilter && p.carrier !== carrierFilter)              return false
       if (agentFilter   && p.agent   !== agentFilter)               return false
-      if (search && !p.applicant?.toLowerCase().includes(search.toLowerCase())) return false
+      if (search && !matchesPolicy(p, search)) return false
 
       return true
     })
@@ -163,10 +164,7 @@ export default function LapsePage() {
   const quickSearchResults = useMemo(() => {
     if (!quickSearchQuery.trim()) return []
     const q = quickSearchQuery.toLowerCase()
-    return allPolicies.filter(p =>
-      p.applicant?.toLowerCase().includes(q) ||
-      p.policy_no?.toLowerCase().includes(q)
-    ).slice(0, 20)
+    return allPolicies.filter(p => matchesPolicy(p, q)).slice(0, 20)
   }, [allPolicies, quickSearchQuery])
 
   function openFromTable(policy)  { setSelected(policy); setSelectedSource('table') }
@@ -268,7 +266,7 @@ export default function LapsePage() {
 
         <input
           type="text"
-          placeholder="Search client…"
+          placeholder="Search client or policy #…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="text-xs bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/30 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/60 w-44"
@@ -455,6 +453,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
                 </div>
                 <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">
                   {p.agent} · {p.carrier} · {fmtDate(p.conservation_date)}
+                  {p.policy_no && <> · <span className="font-mono">#{p.policy_no}</span></>}
                 </p>
               </button>
             )
