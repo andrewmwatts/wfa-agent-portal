@@ -428,7 +428,14 @@ export default function SnapshotPage() {
               cycle={cycle}
               promotions={cycleData.promotions ?? []}
               context={context}
-              canWrite={canWrite && !completed}
+              // Manual promotions are a standalone log entry (snapshot_promotion_actions,
+              // action_type 'manual_promotion') unrelated to the qualification pipeline this
+              // cycle ran, so logging one shouldn't require the cycle to still be open — an
+              // admin needs to record one on the last cycle whenever it actually happened.
+              // Raw write permission only; Step4Promotions itself still gates every OTHER
+              // action (closing the cycle, logging a qualifying month, etc.) on
+              // cycle.completed_at via its own readOnly, unaffected by this.
+              canWrite={canWrite}
               onCycleClose={refresh}
               onRefresh={refresh}
             />

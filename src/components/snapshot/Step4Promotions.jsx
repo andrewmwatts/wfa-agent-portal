@@ -6,7 +6,7 @@ import {
 import {
   buildDownlineTree, computeTeamIssued, computeMaxLegApv, computeMaxLegWriters,
   legRulePreventsQual, writerLegRulePreventsQual,
-  fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet,
+  fridayWeekCount, fridayDatesOfMonth, submissionRequirementMet, lastDayOfIsoMonth,
 } from '../../../shared/promotionQualification'
 import { participants } from '../../../shared/policySplit'
 
@@ -218,6 +218,9 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
   const [confirmClose, setConfirmClose] = useState(false)
   const [jotformOpen,  setJotformOpen]  = useState(new Set())
 
+  // Gates every action EXCEPT manual promotion logging (see the button below),
+  // which stays available on a closed cycle — it's a standalone log entry, not part
+  // of the qualification pipeline this gate protects.
   const readOnly   = !!cycle?.completed_at || !canWrite
   const cycleMonth = cycle?.month
 
@@ -609,7 +612,9 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
         // own action (logSlingshot), which records slingshot_month instead.
         is_slingshot:   false,
         is_qualified:   isFinal,
-        qualified_date: isFinal ? new Date().toISOString().slice(0, 10) : null,
+        // The last day of the final qualifying month, not the day this was logged —
+        // Step 3 often runs well after the cycle it's reconciling.
+        qualified_date: isFinal ? lastDayOfIsoMonth(cycleMonth) : null,
       })
 
       await apiRequest('/api/snapshot?type=promotions', 'POST', {
@@ -645,7 +650,8 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
         slingshot_month: cycleMonth,
         is_slingshot:    true,
         is_qualified:    true,
-        qualified_date:  new Date().toISOString().slice(0, 10),
+        // Last day of the slingshot's qualifying month, same reasoning as logMonth above.
+        qualified_date:  lastDayOfIsoMonth(cycleMonth),
       })
 
       await apiRequest('/api/snapshot?type=promotions', 'POST', {
@@ -764,8 +770,9 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
 
   return (
     <div className="space-y-8">
-      {/* Manual promotion button */}
-      {!readOnly && (
+      {/* Manual promotion button — deliberately NOT gated on cycle.completed_at (see
+          readOnly above): recording one shouldn't require reopening a closed cycle. */}
+      {canWrite && (
         <div className="flex justify-end">
           <button onClick={() => setManualModal(true)}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 transition-colors">

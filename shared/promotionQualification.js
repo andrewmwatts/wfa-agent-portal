@@ -193,6 +193,25 @@ export function writerLegRulePreventsQual(teamWriters, targetWriters, maxLegWrit
 }
 
 /**
+ * The last calendar day of a 'YYYY-MM' (or 'YYYY-MM-DD') month, as 'YYYY-MM-DD'.
+ *
+ * A promotion's qualified_date is set to this — the last day of the month the
+ * final qualifying month/slingshot lands in — rather than the day the person
+ * happened to click Log, so the recorded date doesn't depend on when someone
+ * got around to reconciling Snapshot.
+ *
+ * @param {string} isoMonth  'YYYY-MM' or 'YYYY-MM-DD'; only the first 7 chars are read
+ * @returns {string|null}    'YYYY-MM-DD', or null if isoMonth doesn't parse
+ */
+export function lastDayOfIsoMonth(isoMonth) {
+  const m = String(isoMonth ?? '').slice(0, 7).match(/^(\d{4})-(\d{2})$/)
+  if (!m) return null
+  const [, y, mo] = m
+  const lastDay = new Date(Number(y), Number(mo), 0).getDate()   // day 0 of next month
+  return `${y}-${mo}-${String(lastDay).padStart(2, '0')}`
+}
+
+/**
  * The Friday dates of a calendar month, in order — index 0 is business week 1.
  * submit_week is the business-week Friday and submit_week_num is which Friday it
  * is, so this maps a recorded week number back to its actual date.
