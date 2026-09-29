@@ -8,10 +8,20 @@ export default function PublicFooter() {
       <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Inter, sans-serif' }}>
         Watts Family Agency · Resource Library
       </span>
-      <a href="/portal/dashboard"
-        style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, textDecoration: 'none', fontFamily: 'Inter, sans-serif' }}>
-        Agent portal →
-      </a>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <a href="/privacy"
+          style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, textDecoration: 'none', fontFamily: 'Inter, sans-serif' }}>
+          Privacy Policy
+        </a>
+        <a href="/terms"
+          style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, textDecoration: 'none', fontFamily: 'Inter, sans-serif' }}>
+          Terms of Service
+        </a>
+        <a href="/portal/dashboard"
+          style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, textDecoration: 'none', fontFamily: 'Inter, sans-serif' }}>
+          Agent portal →
+        </a>
+      </div>
     </footer>
   )
 }

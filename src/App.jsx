@@ -36,6 +36,8 @@ import VideoBrowse from './pages/public/VideoBrowse'
 import CalendarPage from './pages/public/CalendarPage'
 import UnderwritingPage from './pages/public/UnderwritingPage'
 import NewYorkOptionsPage from './pages/public/NewYorkOptionsPage'
+import PrivacyPolicy from './pages/public/PrivacyPolicy'
+import TermsOfService from './pages/public/TermsOfService'
 import PublicLayout from './components/public/PublicLayout'
 
 function ComingSoon({ title }) {
@@ -114,6 +116,8 @@ export default function App() {
             <Route path="/calendar"   element={<CalendarPage />} />
             <Route path="/guidelines" element={<UnderwritingPage />} />
             <Route path="/guidelines/new-york" element={<NewYorkOptionsPage />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms"   element={<TermsOfService />} />
 
             {/* /portal and unknown /portal/* paths → dashboard (ProtectedRoute handles auth redirect) */}
             <Route path="/portal"   element={<Navigate to="/portal/dashboard" replace />} />

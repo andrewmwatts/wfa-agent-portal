@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     client_id:     clientId,
     redirect_uri:  redirectUri,
     response_type: 'code',
-    scope:         'https://www.googleapis.com/auth/calendar.events',
+    scope:         'https://www.googleapis.com/auth/calendar.app.created',
     access_type:   'offline',
     prompt:        'consent',  // always return a refresh token
     state,
