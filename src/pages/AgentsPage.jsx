@@ -6,6 +6,9 @@ import { OWNER_ROLES } from '../config/navSections'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import AddAgentModal from '../components/AddAgentModal'
 import HireMatchingModal from '../components/HireMatchingModal'
+import StatusFilterBar from '../components/agents/StatusFilterBar'
+import AgentBirthdays from '../components/agents/AgentBirthdays'
+import { STATUSES, NO_STATUS, statusOf } from '../components/agents/agentStatus'
 import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
 
@@ -74,6 +77,7 @@ export default function AgentsPage() {
   const [isDirector, setIsDirector] = useState(false)
   const [search, setSearch]         = useState('')
   const [uplineFilter, setUplineFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState(() => new Set([...STATUSES, NO_STATUS]))
   const [sort, setSort]             = useState({ col: 'name', dir: 1 })
   const [selected, setSelected]     = useState(null)
   const [showImport,   setShowImport]   = useState(false)
@@ -148,7 +152,7 @@ export default function AgentsPage() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     return personnel
-      .filter(p => !q || p.name?.toLowerCase().includes(q) || p.sfg_id?.toLowerCase().includes(q))
+      .filter(p => !q || p.name?.toLowerCase().includes(q) || p.sfg_id?.toLowerCase().includes(q) || p.phone?.toLowerCase().includes(q))
       .filter(p => !uplineFilter || p.upline_name === uplineFilter)
       .map(p => ({
         ...p,
@@ -170,6 +174,27 @@ export default function AgentsPage() {
         return sort.dir * (va - vb)
       })
   }, [personnel, search, uplineFilter, sort])
+
+  // ── Status counts (search/upline-filtered, pre status-filter) for the checkbox bar ──
+  const statusCounts = useMemo(() => {
+    const c = {}
+    for (const p of rows) c[statusOf(p)] = (c[statusOf(p)] ?? 0) + 1
+    return c
+  }, [rows])
+
+  // ── Rows after the status checkboxes — feeds the List, Map, and Birthdays tabs ──
+  const filteredRows = useMemo(
+    () => rows.filter(p => statusFilter.has(statusOf(p))),
+    [rows, statusFilter],
+  )
+
+  function toggleStatus(status) {
+    setStatusFilter(prev => {
+      const next = new Set(prev)
+      next.has(status) ? next.delete(status) : next.add(status)
+      return next
+    })
+  }
 
   function toggleSort(col) {
     setSort(s => s.col === col ? { col, dir: -s.dir } : { col, dir: 1 })
@@ -199,7 +224,7 @@ export default function AgentsPage() {
         )}
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {!loading && (
-            <span className="text-xs text-gray-400 dark:text-white/30">{rows.length} agent{rows.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-gray-400 dark:text-white/30">{filteredRows.length} agent{filteredRows.length !== 1 ? 's' : ''}</span>
           )}
           <select
             value={uplineFilter}
@@ -213,7 +238,7 @@ export default function AgentsPage() {
           </select>
           <input
             type="search"
-            placeholder="Search name or ID…"
+            placeholder="Search name, ID, or phone…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="text-sm bg-gray-100 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/10 dark:border-white/15 dark:text-white dark:placeholder:text-white/30 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60"
@@ -286,7 +311,7 @@ export default function AgentsPage() {
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
       {canViewMap && (
         <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2">
-          {[{ key: 'list', label: 'List' }, { key: 'map', label: 'Map' }].map(t => (
+          {[{ key: 'list', label: 'List' }, { key: 'map', label: 'Map' }, { key: 'birthdays', label: 'Birthdays' }].map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -302,11 +327,21 @@ export default function AgentsPage() {
         </div>
       )}
 
+      {/* ── Status checkboxes — shared by List, Map, and Birthdays ──────────── */}
+      {canViewMap && (
+        <StatusFilterBar counts={statusCounts} enabled={statusFilter} onToggle={toggleStatus} />
+      )}
+
       {/* ── Map ────────────────────────────────────────────────────────────── */}
       {canViewMap && tab === 'map' && (
         <Suspense fallback={<div className="py-20 text-center text-sm text-gray-400 dark:text-white/30">Loading map…</div>}>
-          <AgentMap personnel={rows} loading={loading} onAgentClick={setSelected} />
+          <AgentMap personnel={filteredRows} loading={loading} onAgentClick={setSelected} />
         </Suspense>
+      )}
+
+      {/* ── Birthdays ──────────────────────────────────────────────────────── */}
+      {canViewMap && tab === 'birthdays' && (
+        <AgentBirthdays personnel={filteredRows} onAgentClick={setSelected} />
       )}
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
@@ -344,13 +379,13 @@ export default function AgentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {rows.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400 dark:text-white/30">
                       {search ? 'No agents match your search.' : 'No agents found.'}
                     </td>
                   </tr>
-                ) : rows.map(p => (
+                ) : filteredRows.map(p => (
                   <tr
                     key={p.sfg_id}
                     onClick={() => setSelected(p)}

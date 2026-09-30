@@ -5,18 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import { supabase } from '../../lib/supabaseClient'
 import { useTheme } from '../../context/ThemeContext'
-
-// Status values mirror STATUS_COLORS in AgentsPage
-const STATUSES = ['Active', 'Stalled', 'Lapsed', 'Terminated']
-const NO_STATUS = 'No status'
-
-const STATUS_HEX = {
-  Active:     '#22c55e',
-  Stalled:    '#facc15',
-  Lapsed:     '#f59e0b',
-  Terminated: '#ef4444',
-  [NO_STATUS]: '#9ca3af',
-}
+import { NO_STATUS, STATUS_HEX, statusOf } from './agentStatus'
 
 // USPS ZIP+4 and stray whitespace are common in imported records
 function normalizeZip(raw) {
@@ -29,10 +18,6 @@ function normalizeZip(raw) {
 const SFG_ID_RE = /^SFG\d{7}$/
 function isRealAgent(p) {
   return SFG_ID_RE.test((p.sfg_id ?? '').trim())
-}
-
-function statusOf(p) {
-  return STATUSES.includes(p.status) ? p.status : NO_STATUS
 }
 
 // A ZIP's pin takes the color of its highest-priority status, not the most
@@ -54,31 +39,23 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
 
   const [centroids, setCentroids] = useState(null)   // zip → {lat,lng}
   const [centroidErr, setCentroidErr] = useState(null)
-  const [enabled, setEnabled] = useState(() => new Set([...STATUSES, NO_STATUS]))
   const [selected, setSelected] = useState(null)     // { zip?, agents, cluster? }
 
-  // Real agents only — drops guest/dummy and any non-SFG####### records
+  // Real agents only — drops guest/dummy and any non-SFG####### records.
+  // Status filtering already happened upstream (AgentsPage's shared StatusFilterBar).
   const roster = useMemo(() => personnel.filter(isRealAgent), [personnel])
 
-  // ── Status counts across the full (unfiltered) roster ────────────────────
-  const statusCounts = useMemo(() => {
-    const c = {}
-    for (const p of roster) c[statusOf(p)] = (c[statusOf(p)] ?? 0) + 1
-    return c
-  }, [roster])
-
-  // ── Agents passing the status filter, with a usable ZIP ──────────────────
+  // ── Agents with a usable ZIP ──────────────────────────────────────────────
   const { byZip, unmappable } = useMemo(() => {
     const groups = {}
     let unmappable = 0
     for (const p of roster) {
-      if (!enabled.has(statusOf(p))) continue
       const zip = normalizeZip(p.zip)
       if (!zip) { unmappable++; continue }
       ;(groups[zip] ??= []).push(p)
     }
     return { byZip: groups, unmappable }
-  }, [roster, enabled])
+  }, [roster])
 
   // ── Load centroids for the ZIPs actually in use ──────────────────────────
   useEffect(() => {
@@ -193,14 +170,6 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
     else setSelected(s => ({ ...s, agents: byZip[s.zip] }))
   }, [byZip]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function toggle(status) {
-    setEnabled(prev => {
-      const next = new Set(prev)
-      next.has(status) ? next.delete(status) : next.add(status)
-      return next
-    })
-  }
-
   const mappedZips = Object.keys(byZip).filter(z => centroids?.[z]).length
   const missingCentroid = Object.entries(byZip)
     .filter(([z]) => centroids && !centroids[z])
@@ -225,21 +194,8 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
         ${isDark ? '.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }' : ''}
       `}</style>
 
-      {/* Status filters */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {[...STATUSES, NO_STATUS].map(s => (
-          <label key={s} className="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-white/70 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={enabled.has(s)}
-              onChange={() => toggle(s)}
-              className="rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent/60"
-            />
-            <span className="inline-block w-2 h-2 rounded-full" style={{ background: STATUS_HEX[s] }} />
-            {s}
-            <span className="text-gray-400 dark:text-white/30">({statusCounts[s] ?? 0})</span>
-          </label>
-        ))}
+      {/* Summary */}
+      <div className="flex items-center">
         <span className="ml-auto text-xs text-gray-400 dark:text-white/30">
           {shown} agent{shown !== 1 ? 's' : ''} across {mappedZips} ZIP{mappedZips !== 1 ? 's' : ''}
         </span>
