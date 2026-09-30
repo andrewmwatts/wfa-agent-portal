@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
+import { useTheme } from '../context/ThemeContext'
 
 import AddAgentModal from '../components/AddAgentModal'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
@@ -24,6 +25,7 @@ function isTruthy(val) {
 export default function OnboardingPage() {
   const { userProfile, session }       = useAuth()
   const { activeSubject, permissions } = useViewing()
+  const { theme } = useTheme()
 
   const authHeaders = () => makeAuthHeaders(session)
 
@@ -38,6 +40,7 @@ export default function OnboardingPage() {
 
   const [selectedScope, setSelectedScope] = useState('master') // 'master' | owner sfg_id
   const [showHidden,    setShowHidden]    = useState(false)
+  const [carrierFilter, setCarrierFilter] = useState('') // '' | core carrier name — missing-contract filter
 
   // Director = role-based; drives master/baseshop toggle
   const isDirector = ['director', 'super_admin'].includes(activeSubject?.role)
@@ -149,10 +152,11 @@ export default function OnboardingPage() {
       const id = r.sfg_id?.toLowerCase() ?? ''
       if (!showHidden && hiddenIds.has(id)) return false
       if (!showHidden && r.contracting_complete && (contractCounts[r.sfg_id] ?? 0) >= totalCarriers) return false
+      if (carrierFilter && !(r.contracting_complete && !(carrierSets[r.sfg_id] ?? []).includes(carrierFilter))) return false
       if (q && !r.name?.toLowerCase().includes(q)) return false
       return true
     })
-  }, [personnel, hiddenIds, showHidden, search, contractCounts, totalCarriers])
+  }, [personnel, hiddenIds, showHidden, search, contractCounts, totalCarriers, carrierFilter, carrierSets])
 
   // Visible (non-hidden) count for the counter chip
   const visibleCount = useMemo(
@@ -223,6 +227,20 @@ export default function OnboardingPage() {
 
           {/* Show-hidden + search */}
           <div className="ml-auto flex items-center gap-2">
+
+            {/* Missing carrier — only among agents with contracting complete */}
+            {coreCarriers.length > 0 && (
+              <select
+                value={carrierFilter}
+                onChange={e => setCarrierFilter(e.target.value)}
+                className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+              >
+                <option value="" style={theme === 'dark' ? { background: '#003539', color: '#fff' } : {}}>Missing carrier…</option>
+                {coreCarriers.map(c => (
+                  <option key={c} value={c} style={theme === 'dark' ? { background: '#003539', color: '#fff' } : {}}>{c}</option>
+                ))}
+              </select>
+            )}
 
             {/* Show hidden — secondary escape hatch */}
             <button
