@@ -30,6 +30,18 @@ const ACCIDENTAL = [
   { carrier: 'Foresters',    product: 'Prepared II',                instant: true  },
 ]
 
+const CLIENT_QUESTIONS = [
+  'What state do you live in?',
+  'What is your date of birth?',
+  'What is your height and weight?',
+  'Do you use tobacco? If yes — what kind?',
+  'Are you currently taking any medications?',
+  'Any major medical history? (cancer, diabetes, stroke, heart attack, etc.)',
+  'Any DUIs, felonies, or bankruptcies?',
+  'Who would be your beneficiary?',
+  'What is your mortgage loan amount and monthly payment? (MP clients only)',
+]
+
 function ProductList({ items }) {
   return (
     <ol style={{ margin: 0, padding: '0 0 0 0', listStyle: 'none' }}>
@@ -155,6 +167,34 @@ export default function UnderwritingPage() {
           <p style={{ fontSize: 12, color: '#7A9499', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, marginBottom: 0 }}>
             <span style={{ color: '#005365', fontWeight: 700 }}>†</span> Instant issue product — decision rendered at point of sale with no additional underwriting required.
           </p>
+
+          {/* Questions to Ask Every Client */}
+          <div style={{
+            background: '#F5F9FA', border: '0.5px solid #DDE6E8', borderRadius: 10,
+            padding: '20px 24px', marginTop: 40,
+          }}>
+            <h2 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500, color: '#003539', margin: '0 0 16px' }}>
+              Questions to Ask Every Client
+            </h2>
+            <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+              {CLIENT_QUESTIONS.map((q, i) => (
+                <li key={i} style={{
+                  display: 'flex', gap: 16, padding: '10px 0',
+                  borderBottom: i < CLIENT_QUESTIONS.length - 1 ? '0.5px solid #EEF3F4' : 'none',
+                }}>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700, color: '#005365',
+                    fontFamily: 'Inter, sans-serif', minWidth: 20, lineHeight: 1.6, flexShrink: 0,
+                  }}>
+                    {i + 1}
+                  </span>
+                  <span style={{ fontSize: 14, color: '#1A2B2E', fontFamily: 'Inter, sans-serif', lineHeight: 1.6 }}>
+                    {q}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
 
           {/* Basic Underwriting Steps */}
           <div style={{ marginTop: 56 }}>
