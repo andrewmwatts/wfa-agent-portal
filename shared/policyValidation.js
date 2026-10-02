@@ -28,3 +28,20 @@ export function validateIssuedDateConsistency(status, issueDate) {
   }
   return null
 }
+
+/**
+ * An issued policy must carry its policy number: carrier conservation checks
+ * match on carrier + policy number, so an issued row without one is invisible
+ * to them. See the UHL conservation check, October 2026.
+ *
+ * @param {string | null | undefined} status
+ * @param {string | null | undefined} policyNumber
+ * @returns {string | null} an error message to block save with, or null if OK
+ */
+export function validateIssuedPolicyNumber(status, policyNumber) {
+  const isIssued = (status ?? '').trim().toLowerCase() === 'issued'
+  if (isIssued && !(policyNumber && String(policyNumber).trim())) {
+    return 'Status is "Issued" but no Policy No. is set. Enter the Policy No., or change the Status.'
+  }
+  return null
+}
