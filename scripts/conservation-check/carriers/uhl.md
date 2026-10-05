@@ -1,6 +1,6 @@
 # United Home Life (UHL)
 Portal: https://agentportal.unitedhomelife.com (Angular app; slow first load, ~10 s)
-MFA: TBD (session already live in Kristina's Chrome on 2026-10-01); timeout behavior: TBD
+MFA: none. Timeout: none observed / long enough for a run (Andrew, 2026-10-01). Can run unattended.
 Hierarchy visibility: full, once the view filters below are set.
 Browser: Kristina's Chrome profile (Browser 2).
 
@@ -67,4 +67,4 @@ None seen yet.
 - Lapsed with no prior projection in the window → Flag with a best-guess date.
 
 ## Confidence: high
-First run applied 2026-10-01 (12 changes). Open: MFA/timeout.
+First run applied 2026-10-01 (12 changes).

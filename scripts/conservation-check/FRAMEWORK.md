@@ -45,7 +45,9 @@ Rules:
   dropdown and existing data), and never write a value that isn't on this list.
 - Side effect to remember: Snapshot treats any `Issued` policy with a `conservation_date` as
   a chargeback (api/snapshot/run.js), which is why `chargeback_exempt` must be kept in step.
-- Every final status must end up with a date, whether known, deduced, or confirmed by Andrew.
+- Every final status should end up with a date, whether known, deduced, or confirmed by Andrew.
+  Exception: when there's no reasonable basis for a date, leave it NULL rather than guess
+  (Andrew, 2026-10-03). No date beats a speculative one.
 
 ## 2. Scope
 
@@ -110,6 +112,9 @@ Then:
 
 ### Pending statuses
 - Use the carrier's explicit date if one is shown.
+- **Overdue pending:** if a `Lapse pending` policy is past its projected date but the carrier
+  still shows it pending, set `conservation_date` = today + 7. Each run re-evaluates it, which
+  tells the agent the lapse could happen any day (Andrew, 2026-10-03; common at MOO).
 - If not, use these defaults, which are to be confirmed with Andrew during discovery and
   then fixed in each carrier's card:
   - `Lapse pending`: paid-to date + 60 days.
@@ -270,13 +275,17 @@ Before any live writes, do one full dry run across all 10 carriers for Andrew to
 1. ~~Where is the split flag stored?~~ Resolved: splits are rows in `policy_splits`
    (`policy_id`, `sfg_id`, `credit_pct`); `policies` has no flag column. A carrier's
    multi-agent rows for one number should match one `policies` row with `policy_splits`.
-   12 legacy duplicate-row groups (same carrier + number) still exist — MOO 5, Banner 5,
-   SBLI 1, Foresters 1 — and must be Flagged until the Phase 5 merge clears them.
+   Duplicate-number groups must be Flagged. Banner's 5 were cleaned up 2026-10-04 (double
+   entries). Merge rule (Andrew): delete the `not_in_opt` row; if both came from Opt, keep the
+   row that matches the carrier. Remaining at baseline: MOO 5, SBLI 1, Foresters 1 (recheck).
 2. ~~Snapshot cycle scoping by owner~~ Resolved (Section 3).
-3. Data hygiene: status values cleaned 2026-10-01. Still open: 3 policy numbers with a
-   leading space/tab (Banner 2, Foresters 1) won't exact-match.
+3. Data hygiene: status values cleaned 2026-10-01; Banner tab-prefixed numbers trimmed
+   2026-10-04. Still open: 1 Foresters number with a leading space (a Not taken policy).
 4. Past-dated `Lapse pending` projections are left as-is; review each on that carrier's
    first run (Andrew, 2026-10-01).
+5. Issued policies with no policy number: at the start of each carrier's discovery session,
+   list that carrier's cases for Andrew to fix (the modal now blocks new ones). Done: SBLI,
+   UHL, AmAm (none), F&G (none), Foresters (none). Remaining 2026-10-01: MOO 2, American General 2, Banner 1, 2 annuities (out of scope).
 
 ## Files
 
