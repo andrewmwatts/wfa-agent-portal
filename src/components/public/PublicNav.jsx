@@ -32,7 +32,7 @@ const NAV_LINKS = [
   { label: 'Videos',      path: '/videos'      },
   { label: 'Documents',   path: '/resources'   },
   { label: 'Calendar',    path: '/calendar'    },
-  { label: 'Guidelines',  path: '/guidelines'  },
+  { label: 'Underwriting', path: '/guidelines' },
 ]
 
 export default function PublicNav() {

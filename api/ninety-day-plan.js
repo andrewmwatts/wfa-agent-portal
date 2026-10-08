@@ -25,6 +25,8 @@ const TEXT_FIELDS = [
   'commitment_non_negotiables',
   'commitment_give_up',
   'commitment_keep_going',
+  'commitment_hours',
+  'commitment_lead_spend',
   'support_accountability_partner',
   'support_coaching_style',
 ]

@@ -644,6 +644,8 @@ export default function LeadsPage() {
           {tab === 'scripts' && (
             <ScriptsTab
               scripts={scripts}
+              defaultScripts={DEFAULT_SCRIPTS}
+              addLabel="Add Your Own"
               onAdd={() => setShowAddScript(true)}
               onDelete={handleDeleteScript}
             />
@@ -1354,7 +1356,22 @@ export function LeadDetail({
 
 // ─── Scripts Tab ───────────────────────────────────────────────────────────────
 
-export function ScriptsTab({ scripts, onAdd, onDelete }) {
+const DEFAULT_SCRIPTS = [
+  {
+    id: 'default-best',
+    title: 'BEST System Script (Dialing)',
+    description: 'Multi-use phone script for every lead type: the reason for your call, qualifying questions, and booking the appointment.',
+    href: '/sales-scripts/BEST-System-Script.pdf',
+  },
+  {
+    id: 'default-real',
+    title: 'REAL Sales Script (Appointments)',
+    description: 'Full appointment presentation: Rapport, Emotion, Assumption, and Lock It Down.',
+    href: '/sales-scripts/REAL-Sales-Script.pdf',
+  },
+]
+
+export function ScriptsTab({ scripts, onAdd, onDelete, defaultScripts = [], addLabel = '+ Add Script' }) {
   const [copied,  setCopied]  = useState(null)
   const [confirm, setConfirm] = useState(null) // id to delete
 
@@ -1377,12 +1394,35 @@ export function ScriptsTab({ scripts, onAdd, onDelete }) {
   return (
     <div className="px-4 sm:px-6 py-4">
       <div className="flex items-center justify-between mb-5">
-        <p className="text-xs text-gray-400 dark:text-white/30 font-medium">{scripts.length} script{scripts.length !== 1 ? 's' : ''}</p>
-        <button onClick={onAdd} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors">+ Add Script</button>
+        <p className="text-xs text-gray-400 dark:text-white/30 font-medium">{scripts.length + defaultScripts.length} script{scripts.length + defaultScripts.length !== 1 ? 's' : ''}</p>
+        <button onClick={onAdd} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors">{addLabel}</button>
       </div>
 
+      {defaultScripts.length > 0 && (
+        <div className={scripts.length > 0 ? 'mb-6' : ''}>
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-white/40 mb-2 pb-1 border-b border-gray-100 dark:border-white/10">Default Scripts</p>
+          <div className="space-y-2">
+            {defaultScripts.map(s => (
+              <a
+                key={s.id}
+                href={s.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start justify-between gap-2 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl p-3 hover:border-accent/30 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{s.title}</p>
+                  <p className="text-xs text-gray-500 dark:text-white/40 leading-relaxed">{s.description}</p>
+                </div>
+                <span className="text-xs px-2 py-1 rounded-lg font-semibold shrink-0 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40">Open PDF</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {scripts.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 dark:text-white/30">
+        defaultScripts.length > 0 ? null : <div className="text-center py-16 text-gray-400 dark:text-white/30">
           <p className="text-3xl mb-3">💬</p>
           <p className="text-sm">No scripts yet — add your call and text templates here</p>
         </div>

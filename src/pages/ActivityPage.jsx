@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
+import DialTallySheet from '../components/DialTallySheet'
 
 // ─── Metric definitions ────────────────────────────────────────────────────────
 
@@ -10,7 +11,8 @@ const METRICS = [
   { key: 'hours_dialed', label: 'Hours Dialed',   short: 'Hours',      step: '0.5', decimal: true },
   { key: 'contacts',     label: 'Contacts',       short: 'Contacts',   step: '1'   },
   { key: 'appts_set',    label: 'Appts Set',      short: 'Set',        step: '1'   },
-  { key: 'appts_kept',   label: 'Appts Kept',     short: 'Kept',       step: '1'   },
+  { key: 'appts_kept',   label: 'Presentations',  short: 'Pres',       step: '1'   },
+  { key: 'no_shows',     label: 'No Shows',       short: 'No Shows',   step: '1'   },
   { key: 'resets',       label: 'Resets',         short: 'Resets',     step: '1'   },
   { key: 'apps_written', label: 'Apps Written',   short: 'Apps',       step: '1'   },
   { key: 'apv_submitted',label: 'Submitted APV',  short: 'Sub APV',    step: '100', decimal: true, currency: true },
@@ -18,11 +20,29 @@ const METRICS = [
 
 const METRIC_KEYS = METRICS.map(m => m.key)
 
+// Hides the browser's up/down spinner arrows on number inputs
+const NO_SPIN = '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+
+const QUICK_METRICS = [
+  { key: 'dials',      label: 'Dials' },
+  { key: 'contacts',   label: 'Contacts' },
+  { key: 'appts_set',  label: 'Appts Set' },
+  { key: 'appts_kept', label: 'Presentations' },
+  { key: 'no_shows',   label: 'No Shows' },
+]
+
+// Every column the POST upserts. The endpoint rewrites the whole row, so a quick-log
+// save must send the rest of today's values back unchanged.
+const LOG_COLUMNS = [
+  'dials', 'hours_dialed', 'reachouts', 'posts', 'contacts', 'appts_set', 'appts_kept',
+  'no_shows', 'apps_written', 'resets', 'apv_submitted', 'apv_issued', 'notes',
+]
+
 // Lead Spend is still derived from transactions (not logged to activity_logs)
 const DERIVED_ROW = { key: 'lead_spend', label: 'Lead Spend', currency: true }
 
 const EMPTY_DRAFT = {
-  dials: '', hours_dialed: '', contacts: '', appts_set: '', appts_kept: '',
+  dials: '', hours_dialed: '', contacts: '', appts_set: '', appts_kept: '', no_shows: '',
   resets: '', apps_written: '', apv_submitted: '', notes: '', lead_spend: '',
 }
 
@@ -211,6 +231,80 @@ export default function ActivityPage() {
 
   useEffect(() => { loadLeadTxs() }, [loadLeadTxs])
 
+  // -- Quick log (today) ----------------------------------------------------------
+  const [todayLog,   setTodayLog]   = useState(null)
+  const [todayReady, setTodayReady] = useState(false)
+  const [quickError, setQuickError] = useState('')
+  const [showTally,  setShowTally]  = useState(false)
+  const todayRef = useRef(null)   // latest local row for today - what every save sends
+  const inFlight = useRef(false)
+  const dirty    = useRef(false)  // a click landed while a save was in flight
+  const daysRef  = useRef(days)
+  daysRef.current = days
+
+  const loadToday = useCallback(async () => {
+    if (!activeSubject?.sfg_id) return
+    setTodayReady(false)
+    try {
+      const res = await fetch(
+        `/api/activity?sfg_id=${encodeURIComponent(activeSubject.sfg_id)}&start=${todayStr}&end=${todayStr}`,
+      )
+      if (!res.ok) { setQuickError("Couldn't load today's log"); return }
+      const { logs: rows } = await res.json()
+      todayRef.current = rows?.[0] ?? null
+      setTodayLog(todayRef.current)
+      setTodayReady(true)
+    } catch { setQuickError("Couldn't load today's log") }
+  }, [activeSubject?.sfg_id, todayStr])
+
+  useEffect(() => { loadToday() }, [loadToday])
+
+  // Saves are serialized: while one is in flight, further clicks just mark the row
+  // dirty and the loop sends the latest values once it returns, so they can't land
+  // out of order.
+  async function pumpQuickSave() {
+    if (inFlight.current) { dirty.current = true; return }
+    inFlight.current = true
+    try {
+      do {
+        dirty.current = false
+        const row  = todayRef.current
+        const body = { sfg_id: activeSubject.sfg_id, log_date: todayStr }
+        for (const col of LOG_COLUMNS) body[col] = row?.[col] ?? ''
+        const res  = await fetch('/api/activity', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(body),
+        })
+        const data = await res.json()
+        if (!res.ok) { setQuickError(data.error ?? 'Save failed'); dirty.current = false; loadToday(); return }
+        if (!dirty.current) { todayRef.current = data.log; setTodayLog(data.log) }
+        if (daysRef.current.some(d => toDateStr(d) === todayStr)) {
+          setLogs(prev => ({ ...prev, [todayStr]: data.log }))
+        }
+      } while (dirty.current)
+      refreshStatsAfterSave(todayStr)
+    } catch (err) {
+      setQuickError(err.message)
+      loadToday()
+    } finally {
+      inFlight.current = false
+    }
+  }
+
+  function quickAdjust(key, delta) {
+    if (!todayReady || !activeSubject?.sfg_id) return
+    const base    = todayRef.current ?? {}
+    const current = Number(base[key]) || 0
+    const nextVal = Math.max(0, current + delta)
+    if (nextVal === current) return
+    todayRef.current = { ...base, [key]: nextVal }
+    setTodayLog(todayRef.current)
+    setQuickError('')
+    if (editDate === todayStr) setDraft(d => ({ ...d, [key]: nextVal }))
+    pumpQuickSave()
+  }
+
   function refreshStatsAfterSave(dateStr) {
     const { start, end } = getStatDateRange(statsRange)
     const inRange = (!start || dateStr >= start) && (!end || dateStr <= end)
@@ -269,6 +363,7 @@ export default function ActivityPage() {
         contacts:      existing.contacts      ?? '',
         appts_set:     existing.appts_set     ?? '',
         appts_kept:    existing.appts_kept    ?? '',
+        no_shows:      existing.no_shows      ?? '',
         resets:        existing.resets        ?? '',
         apps_written:  existing.apps_written  ?? '',
         apv_submitted: existing.apv_submitted ?? '',
@@ -305,6 +400,7 @@ export default function ActivityPage() {
           contacts:      draft.contacts,
           appts_set:     draft.appts_set,
           appts_kept:    draft.appts_kept,
+          no_shows:      draft.no_shows,
           resets:        draft.resets,
           apps_written:  draft.apps_written,
           apv_submitted: draft.apv_submitted,
@@ -314,6 +410,7 @@ export default function ActivityPage() {
       const data = await res.json()
       if (!res.ok) { setSaveError(data.error ?? 'Save failed'); return }
       setLogs(prev => ({ ...prev, [editDate]: data.log }))
+      if (editDate === todayStr) { todayRef.current = data.log; setTodayLog(data.log) }
       refreshStatsAfterSave(editDate)
 
       // Sync lead spend transaction
@@ -382,9 +479,9 @@ export default function ActivityPage() {
       { label: 'Dials/Hr',     display: dialRate ? `${dialRate}` : null, sub: dialRate ? `${totals.dials} dials / ${totals.hours_dialed}h` : null, title: 'Dials per hour dialed' },
       { label: 'Contact Rate', pct: pct(totals.contacts,    totals.dials),       num: totals.contacts,    den: totals.dials,       title: 'Contacts per dial' },
       { label: 'Appt Rate',    pct: pct(totals.appts_set,   totals.contacts),    num: totals.appts_set,   den: totals.contacts,    title: 'Appointments set per contact' },
-      { label: 'Show Rate',    pct: pct(totals.appts_kept,  totals.appts_set),   num: totals.appts_kept,  den: totals.appts_set,   title: 'Appointments kept per set' },
-      { label: 'Close Rate',   pct: pct(totals.apps_written, totals.appts_kept), num: totals.apps_written, den: totals.appts_kept, title: 'Apps written per appointment kept' },
-      { label: 'Reset Rate',   pct: pct(totals.resets,      totals.appts_kept),  num: totals.resets,      den: totals.appts_kept,  title: 'Resets per appointment run' },
+      { label: 'Show Rate',    pct: pct(totals.appts_kept,  totals.appts_set),   num: totals.appts_kept,  den: totals.appts_set,   title: 'Presentations per appointment set' },
+      { label: 'Close Rate',   pct: pct(totals.apps_written, totals.appts_kept), num: totals.apps_written, den: totals.appts_kept, title: 'Apps written per presentation' },
+      { label: 'Reset Rate',   pct: pct(totals.resets,      totals.appts_kept),  num: totals.resets,      den: totals.appts_kept,  title: 'Resets per presentation' },
       { label: 'Avg APV',      display: avgAPVVal != null ? fmtCurrency(avgAPVVal) : null, sub: avgAPVVal != null ? `${totals.apps_written} apps` : null, title: 'Average submitted APV per application' },
     ]
   }, [totals])
@@ -409,6 +506,12 @@ export default function ActivityPage() {
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1 min-w-0">
           Activity Tracking
         </h1>
+        <button
+          onClick={() => setShowTally(true)}
+          className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-accent text-accent hover:bg-accent/10 transition-colors"
+        >
+          Printable Dial Tally Sheet
+        </button>
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setWeekStart(w => addDays(w, -7))}
@@ -430,6 +533,45 @@ export default function ActivityPage() {
         </div>
       </div>
 
+      {/* -- Quick log (today) -------------------------------------------------- */}
+      <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+            Quick Log · Today
+          </p>
+          <p className="text-xs text-gray-400 dark:text-white/30">
+            {fmtFullDay(todayStr)} — tap as it happens, saves instantly
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {QUICK_METRICS.map(m => (
+            <div key={m.key} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.03] px-2 py-3 flex flex-col items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50">{m.label}</span>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  aria-label={`Decrease ${m.label}`}
+                  disabled={!todayReady}
+                  onClick={() => quickAdjust(m.key, -1)}
+                  className="w-12 h-12 rounded-full border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/70 text-3xl leading-none hover:bg-gray-100 dark:hover:bg-white/10 active:scale-95 disabled:opacity-40 transition"
+                >−</button>
+                <span className="text-3xl font-bold tabular-nums text-gray-900 dark:text-white min-w-[2.2ch] text-center">
+                  {Number(todayLog?.[m.key]) || 0}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Increase ${m.label}`}
+                  disabled={!todayReady}
+                  onClick={() => quickAdjust(m.key, 1)}
+                  className="w-12 h-12 rounded-full bg-accent text-white text-3xl leading-none hover:bg-accent/90 active:scale-95 disabled:opacity-40 transition"
+                >+</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {quickError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{quickError}</p>}
+      </div>
+
       {loading ? (
         <div className="space-y-4 animate-pulse">
           <div className="h-72 bg-gray-100 dark:bg-white/10 rounded-2xl" />
@@ -437,6 +579,79 @@ export default function ActivityPage() {
         </div>
       ) : (
         <>
+          {/* ── Goals section ────────────────────────────────────────────────── */}
+          <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
+            <div className="flex flex-wrap items-center gap-3 mb-5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+                Goals
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setGoalsMonth(m => addMonths(m, -1)); setGoalsDraft(null) }}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                >‹</button>
+                <span className="text-xs font-medium text-gray-600 dark:text-white/70 min-w-[110px] text-center">
+                  {fmtGoalsMonth(goalsMonth)}
+                </span>
+                <button
+                  onClick={() => { setGoalsMonth(m => addMonths(m, 1)); setGoalsDraft(null) }}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                >›</button>
+              </div>
+              <div className="ml-auto flex gap-2">
+                {goalsDraft ? (
+                  <>
+                    <button onClick={saveGoals} disabled={goalsSaving}
+                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
+                      {goalsSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={() => setGoalsDraft(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setGoalsDraft({
+                      weekly_appts:          goals?.weekly_appts          ?? '',
+                      monthly_apv_submitted: goals?.monthly_apv_submitted ?? '',
+                      monthly_apv_issued:    goals?.monthly_apv_issued    ?? '',
+                      monthly_income:        goals?.monthly_income        ?? '',
+                    })}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    {goals && Object.values(goals).some(v => v !== null && v !== undefined && v !== '') ? 'Edit' : 'Set Goals'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {GOAL_FIELDS.map(f => (
+                <div key={f.key}>
+                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{f.label}</p>
+                  <p className="text-[10px] text-gray-300 dark:text-white/20 mb-2">{f.period}</p>
+                  {goalsDraft ? (
+                    <input
+                      type="number" min="0"
+                      step={f.currency ? '100' : '1'}
+                      inputMode={f.currency ? 'decimal' : 'numeric'}
+                      value={goalsDraft[f.key] ?? ''}
+                      onChange={e => setGoalsDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                      onFocus={e => e.target.select()}
+                      placeholder="—"
+                      className={`${NO_SPIN} w-full text-sm rounded-lg px-2.5 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
+                    />
+                  ) : (
+                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                      {goals === null ? '…' : fmtGoalValue(goals[f.key], f.currency)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* ── Weekly grid ──────────────────────────────────────────────────── */}
           <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -567,7 +782,7 @@ export default function ActivityPage() {
                         onChange={e => setField(metric.key, e.target.value)}
                         onFocus={e => e.target.select()}
                         placeholder="0"
-                        className="w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums"
+                        className={`${NO_SPIN} w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
                       />
                     </div>
                   ))}
@@ -581,7 +796,7 @@ export default function ActivityPage() {
                       onChange={e => setField('lead_spend', e.target.value)}
                       onFocus={e => e.target.select()}
                       placeholder="0"
-                      className="w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums"
+                      className={`${NO_SPIN} w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
                     />
                   </div>
                 </div>
@@ -613,79 +828,6 @@ export default function ActivityPage() {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* ── Goals section ────────────────────────────────────────────────── */}
-          <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
-            <div className="flex flex-wrap items-center gap-3 mb-5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
-                Goals
-              </p>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => { setGoalsMonth(m => addMonths(m, -1)); setGoalsDraft(null) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
-                >‹</button>
-                <span className="text-xs font-medium text-gray-600 dark:text-white/70 min-w-[110px] text-center">
-                  {fmtGoalsMonth(goalsMonth)}
-                </span>
-                <button
-                  onClick={() => { setGoalsMonth(m => addMonths(m, 1)); setGoalsDraft(null) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
-                >›</button>
-              </div>
-              <div className="ml-auto flex gap-2">
-                {goalsDraft ? (
-                  <>
-                    <button onClick={saveGoals} disabled={goalsSaving}
-                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
-                      {goalsSaving ? 'Saving…' : 'Save'}
-                    </button>
-                    <button onClick={() => setGoalsDraft(null)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setGoalsDraft({
-                      weekly_appts:          goals?.weekly_appts          ?? '',
-                      monthly_apv_submitted: goals?.monthly_apv_submitted ?? '',
-                      monthly_apv_issued:    goals?.monthly_apv_issued    ?? '',
-                      monthly_income:        goals?.monthly_income        ?? '',
-                    })}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                  >
-                    {goals && Object.values(goals).some(v => v !== null && v !== undefined && v !== '') ? 'Edit' : 'Set Goals'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {GOAL_FIELDS.map(f => (
-                <div key={f.key}>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{f.label}</p>
-                  <p className="text-[10px] text-gray-300 dark:text-white/20 mb-2">{f.period}</p>
-                  {goalsDraft ? (
-                    <input
-                      type="number" min="0"
-                      step={f.currency ? '100' : '1'}
-                      inputMode={f.currency ? 'decimal' : 'numeric'}
-                      value={goalsDraft[f.key] ?? ''}
-                      onChange={e => setGoalsDraft(d => ({ ...d, [f.key]: e.target.value }))}
-                      onFocus={e => e.target.select()}
-                      placeholder="—"
-                      className="w-full text-sm rounded-lg px-2.5 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums"
-                    />
-                  ) : (
-                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
-                      {goals === null ? '…' : fmtGoalValue(goals[f.key], f.currency)}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
 
           {/* ── Stats section ────────────────────────────────────────────────── */}
@@ -723,7 +865,7 @@ export default function ActivityPage() {
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
                 Totals
               </p>
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-4">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 mb-4">
                 {METRICS.map(m => (
                   <div key={m.key}>
                     <p className={`text-xs font-semibold mb-1 ${NEUTRAL}`}>{m.label}</p>
@@ -748,6 +890,8 @@ export default function ActivityPage() {
 
         </>
       )}
+
+      {showTally && <DialTallySheet onClose={() => setShowTally(false)} />}
     </main>
   )
 }

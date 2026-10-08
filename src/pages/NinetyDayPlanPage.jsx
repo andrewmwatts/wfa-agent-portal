@@ -18,8 +18,8 @@ const SECTIONS = [
     title: 'Professional Path',
     fields: [
       { key: 'path_milestone_90_days', label: 'The one professional milestone you must hit in 90 days' },
-      { key: 'path_org_one_year',      label: 'Where in the organization you\'ll be a year from now' },
-      { key: 'path_skill_change',      label: 'The one skill that would change everything, and how you\'ll build it' },
+      { key: 'path_org_one_year',      label: 'Where in the organization will you be a year from now?' },
+      { key: 'path_skill_change',      label: 'What is the one skill that would change everything, and how will you go about building it?' },
     ],
   },
   {
@@ -29,6 +29,8 @@ const SECTIONS = [
       { key: 'commitment_non_negotiables', label: 'Your daily non-negotiables — the things you\'ll do no matter what' },
       { key: 'commitment_give_up',         label: 'What you\'ll give up or change to protect your activity' },
       { key: 'commitment_keep_going',      label: 'When it gets hard (and it will), what you\'ll tell yourself to keep going' },
+      { key: 'commitment_hours',           label: 'How many hours per day and days per week are you committing to working this business?' },
+      { key: 'commitment_lead_spend',      label: 'What weekly lead spend are you committing to?' },
     ],
   },
   {

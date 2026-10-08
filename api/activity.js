@@ -182,7 +182,7 @@ export default async function handler(req, res) {
     const {
       sfg_id, log_date,
       dials, hours_dialed, reachouts, posts,
-      contacts, appts_set, appts_kept, apps_written, resets,
+      contacts, appts_set, appts_kept, no_shows, apps_written, resets,
       apv_submitted, apv_issued,
       notes,
     } = req.body ?? {}
@@ -192,28 +192,29 @@ export default async function handler(req, res) {
     }
     if (!skipScopeCheck && !(await authorizeScope(req, res, caller, supabase, [sfg_id.trim().toUpperCase()]))) return
 
+    const row = {
+      sfg_id:       sfg_id.trim().toUpperCase(),
+      log_date,
+      dials:        Math.max(0, parseInt(dials)           || 0),
+      hours_dialed: Math.max(0, parseFloat(hours_dialed) || 0),
+      reachouts:    Math.max(0, parseInt(reachouts)      || 0),
+      posts:        Math.max(0, parseInt(posts)          || 0),
+      contacts:     Math.max(0, parseInt(contacts)       || 0),
+      appts_set:    Math.max(0, parseInt(appts_set)      || 0),
+      appts_kept:   Math.max(0, parseInt(appts_kept)     || 0),
+      apps_written:  Math.max(0, parseInt(apps_written)    || 0),
+      resets:        Math.max(0, parseInt(resets)          || 0),
+      apv_submitted: Math.max(0, parseFloat(apv_submitted) || 0),
+      apv_issued:    Math.max(0, parseFloat(apv_issued)    || 0),
+      notes:         notes?.trim() || null,
+      updated_at:   new Date().toISOString(),
+    }
+    // Only written when sent, so callers that predate no_shows (the Sheets sync) can't zero it out
+    if (no_shows !== undefined) row.no_shows = Math.max(0, parseInt(no_shows) || 0)
+
     const { data, error } = await supabase
       .from('activity_logs')
-      .upsert(
-        {
-          sfg_id:       sfg_id.trim().toUpperCase(),
-          log_date,
-          dials:        Math.max(0, parseInt(dials)           || 0),
-          hours_dialed: Math.max(0, parseFloat(hours_dialed) || 0),
-          reachouts:    Math.max(0, parseInt(reachouts)      || 0),
-          posts:        Math.max(0, parseInt(posts)          || 0),
-          contacts:     Math.max(0, parseInt(contacts)       || 0),
-          appts_set:    Math.max(0, parseInt(appts_set)      || 0),
-          appts_kept:   Math.max(0, parseInt(appts_kept)     || 0),
-          apps_written:  Math.max(0, parseInt(apps_written)    || 0),
-          resets:        Math.max(0, parseInt(resets)          || 0),
-          apv_submitted: Math.max(0, parseFloat(apv_submitted) || 0),
-          apv_issued:    Math.max(0, parseFloat(apv_issued)    || 0),
-          notes:         notes?.trim() || null,
-          updated_at:   new Date().toISOString(),
-        },
-        { onConflict: 'sfg_id,log_date' },
-      )
+      .upsert(row, { onConflict: 'sfg_id,log_date' })
       .select()
       .single()
 

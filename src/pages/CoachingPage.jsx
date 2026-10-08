@@ -1269,6 +1269,8 @@ const PLAN_SECTIONS = [
     { key: 'commitment_non_negotiables', label: 'Non-negotiables' },
     { key: 'commitment_give_up',         label: 'What will you give up?' },
     { key: 'commitment_keep_going',      label: 'What keeps you going?' },
+    { key: 'commitment_hours',           label: 'Hours per day / days per week' },
+    { key: 'commitment_lead_spend',      label: 'Weekly lead spend' },
   ]},
   { title: 'Support & Accountability', fields: [
     { key: 'support_accountability_partner', label: 'Accountability partner' },
