@@ -18,7 +18,7 @@ const CRITICAL_ILLNESS = [
 ]
 
 const IUL = [
-  { carrier: 'TransAmerica', product: 'FFIUL (not FFIUL II)' },
+  { carrier: 'NLG', product: 'FlexLife' },
 ]
 
 function ArrowLeftIcon() {
@@ -55,10 +55,10 @@ function ProductList({ items }) {
   )
 }
 
-function Section({ title, children, shade }) {
+function Section({ title, children }) {
   return (
     <div style={{
-      background: shade ? '#F5F9FA' : '#fff',
+      background: '#F5F9FA',
       border: '0.5px solid #DDE6E8', borderRadius: 10,
       padding: '20px 24px',
     }}>
@@ -113,10 +113,10 @@ export default function NewYorkOptionsPage() {
 
           {/* Two-column: Accidental + Critical Illness */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
-            <Section title="Accidental" shade>
+            <Section title="Accidental">
               <ProductList items={ACCIDENTAL} />
             </Section>
-            <Section title="Critical Illness" shade>
+            <Section title="Critical Illness">
               <ProductList items={CRITICAL_ILLNESS} />
             </Section>
           </div>

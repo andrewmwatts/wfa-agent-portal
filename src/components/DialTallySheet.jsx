@@ -12,6 +12,10 @@ const ROWS = 25
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 const DAY_NAMES = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 const DAY_FIELDS = ['DIALS', 'CONTACTS', 'APPOINTMENTS']
+const TALLY_BLOCKS = [
+  ...DAY_NAMES.map(name => ({ name, color: PINK, line: '#F0B8CA' })),
+  { name: 'WEEKLY TOTALS', color: NAVY, line: '#B8BFE8' },
+]
 
 const PRINT_CSS = `
   @page { size: letter portrait; margin: 0.4in; }
@@ -120,17 +124,17 @@ export default function DialTallySheet({ onClose }) {
           <span style={{ fontSize: 10, fontStyle: 'italic' }}>Use these boxes to tally up your daily activity</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '0.08in 0.1in' }}>
-          {DAY_NAMES.map((day, i) => (
+          {TALLY_BLOCKS.map(({ name, color, line }) => (
             <div
-              key={day}
-              style={{ gridColumn: i < 4 ? 'span 3' : 'span 4', border: `1.5px solid ${PINK}`, borderRadius: 6, overflow: 'hidden' }}
+              key={name}
+              style={{ gridColumn: 'span 3', border: `1.5px solid ${color}`, borderRadius: 6, overflow: 'hidden' }}
             >
-              <div style={{ background: PINK, color: '#fff', textAlign: 'center', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.12em', padding: '3px 0' }}>
-                {day}
+              <div style={{ background: color, color: '#fff', textAlign: 'center', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.12em', padding: '3px 0' }}>
+                {name}
               </div>
               {DAY_FIELDS.map((field, j) => (
-                <div key={field} style={{ display: 'flex', height: '0.29in', borderTop: j === 0 ? 'none' : '1px solid #F0B8CA' }}>
-                  <span style={{ width: '0.95in', flexShrink: 0, borderRight: '1px solid #F0B8CA', padding: '3px 0 0 6px', boxSizing: 'border-box', fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', color: '#555' }}>
+                <div key={field} style={{ display: 'flex', height: '0.29in', borderTop: j === 0 ? 'none' : `1px solid ${line}` }}>
+                  <span style={{ width: '0.95in', flexShrink: 0, borderRight: `1px solid ${line}`, padding: '3px 0 0 6px', boxSizing: 'border-box', fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', color: '#555' }}>
                     {field}
                   </span>
                 </div>

@@ -92,10 +92,10 @@ function ProductList({ items }) {
   )
 }
 
-function Section({ title, descriptor, children, shade }) {
+function Section({ title, descriptor, children }) {
   return (
     <div style={{
-      background: shade ? '#F5F9FA' : '#fff',
+      background: '#F5F9FA',
       border: '0.5px solid #DDE6E8', borderRadius: 10,
       padding: '20px 24px',
     }}>
@@ -201,10 +201,10 @@ export default function UnderwritingPage() {
 
           {/* Two-column: GIWL + Accidental */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
-            <Section title="GIWL" descriptor="Extremely unhealthy clients. If insured dies within the first two years due to non-accidental causes, beneficiary receives premiums paid plus 10% rather than the full face value." shade>
+            <Section title="GIWL" descriptor="Extremely unhealthy clients. If insured dies within the first two years due to non-accidental causes, beneficiary receives premiums paid plus 10% rather than the full face value.">
               <ProductList items={GIWL} />
             </Section>
-            <Section title="Accidental" descriptor="Accidents are the third leading cause of death in the U.S. Extremely affordable plans. Accidental policies are great add-ons to every policy type. MOO requires a health license; Foresters does not." shade>
+            <Section title="Accidental" descriptor="Accidents are the third leading cause of death in the U.S. Extremely affordable plans. Accidental policies are great add-ons to every policy type. MOO requires a health license; Foresters does not.">
               <ProductList items={ACCIDENTAL} />
             </Section>
           </div>
