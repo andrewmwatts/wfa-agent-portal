@@ -881,6 +881,7 @@ function AgencySettingsTab({ adminFetch, ah }) {
       primary_color:   a.agency?.primary_color   ?? '#1a3a4a',
       secondary_color: a.agency?.secondary_color ?? '#0f2535',
       accent_color:    a.agency?.accent_color    ?? '#4a9ebb',
+      accent_color_light: a.agency?.accent_color_light ?? '',
       logo_url_light:  a.agency?.logo_url_light  ?? '',
       logo_url_dark:   a.agency?.logo_url_dark   ?? '',
     })
@@ -1007,14 +1008,29 @@ function AgencySettingsTab({ adminFetch, ah }) {
                       className="h-10 w-10 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer p-0.5 bg-transparent" />
                   </div>
                 ))}
+                <div className="flex items-end gap-2">
+                  <div className="flex-1"><label className={LBL}>Accent Color (Light mode, optional)</label>
+                    <input value={draft.accent_color_light} onChange={e => setDraft(d => ({...d, accent_color_light: e.target.value}))} className={INP} placeholder="Blank = use Accent Color" /></div>
+                  <input type="color" value={draft.accent_color_light.trim() || draft.accent_color} onChange={e => setDraft(d => ({...d, accent_color_light: e.target.value}))}
+                    className="h-10 w-10 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer p-0.5 bg-transparent" />
+                </div>
               </div>
               {/* Preview swatch */}
-              <div className="rounded-xl p-4 border border-gray-200 dark:border-white/10" style={{ background: draft.secondary_color }}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-24 h-6 rounded" style={{ background: draft.primary_color }} />
-                  <div className="w-16 h-6 rounded" style={{ background: draft.accent_color }} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-4 border border-gray-200 dark:border-white/10" style={{ background: draft.secondary_color }}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-24 h-6 rounded" style={{ background: draft.primary_color }} />
+                    <div className="w-16 h-6 rounded" style={{ background: draft.accent_color }} />
+                  </div>
+                  <p className="text-xs font-medium" style={{ color: draft.accent_color }}>Dark mode — {draft.name || 'Agency Name'}</p>
                 </div>
-                <p className="text-xs font-medium" style={{ color: draft.accent_color }}>Preview — {draft.name || 'Agency Name'}</p>
+                <div className="rounded-xl p-4 border border-gray-200 bg-white">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-24 h-6 rounded" style={{ background: draft.primary_color }} />
+                    <div className="w-16 h-6 rounded" style={{ background: draft.accent_color_light.trim() || draft.accent_color }} />
+                  </div>
+                  <p className="text-xs font-medium" style={{ color: draft.accent_color_light.trim() || draft.accent_color }}>Light mode — {draft.name || 'Agency Name'}</p>
+                </div>
               </div>
               <Err msg={err} />
               <div className="flex gap-2">
@@ -1051,6 +1067,9 @@ function AgencySettingsTab({ adminFetch, ah }) {
                 <div className="flex gap-1.5">
                   {[a.agency?.primary_color, a.agency?.secondary_color, a.agency?.accent_color].map((c, i) =>
                     c ? <div key={i} className="w-5 h-5 rounded-full border border-white/20" style={{ background: c }} title={c} /> : null
+                  )}
+                  {a.agency?.accent_color_light && (
+                    <div className="w-5 h-5 rounded-full border-2 border-white/60" style={{ background: a.agency.accent_color_light }} title={`${a.agency.accent_color_light} (light mode accent)`} />
                   )}
                 </div>
                 {subjects.some(s => s.profile.sfg_id === a.sfg_id) ? null : (

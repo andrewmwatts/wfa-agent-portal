@@ -342,12 +342,12 @@ export default async function handler(req, res) {
   if (action === 'agency' && req.method === 'PUT') {
     const { owner_sfg_id, name, primary_color, secondary_color, accent_color, logo_url_light, logo_url_dark } = b
     if (!owner_sfg_id) return res.status(400).json({ error: 'owner_sfg_id required' })
-    const { error } = await sb.from('agencies').upsert(
-      { owner_sfg_id, name, primary_color, secondary_color, accent_color, logo_url_light, logo_url_dark },
-      { onConflict: 'owner_sfg_id' }
-    )
+    const row = { owner_sfg_id, name, primary_color, secondary_color, accent_color, logo_url_light, logo_url_dark }
+    // Optional — blank clears it (falls back to accent_color). Left untouched when not sent.
+    if (b.accent_color_light !== undefined) row.accent_color_light = b.accent_color_light?.trim() || null
+    const { error } = await sb.from('agencies').upsert(row, { onConflict: 'owner_sfg_id' })
     if (error) return res.status(500).json({ error: error.message })
-    await audit(adminSfgId, 'upsert_agency', 'agencies', owner_sfg_id, { name, primary_color, secondary_color, accent_color })
+    await audit(adminSfgId, 'upsert_agency', 'agencies', owner_sfg_id, { name, primary_color, secondary_color, accent_color, accent_color_light: row.accent_color_light })
     return res.status(200).json({ ok: true })
   }
 

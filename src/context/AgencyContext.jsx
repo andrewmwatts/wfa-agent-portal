@@ -152,7 +152,9 @@ function applyBranding(colors = {}, theme = 'light') {
   const root = document.documentElement
   const primary   = resolvedColor(colors.primary,   DEFAULTS.primary)
   const secondary = resolvedColor(colors.secondary, DEFAULTS.secondary)
-  const accentRaw = resolvedColor(colors.accent,    DEFAULTS.accent)
+  const accentBase = resolvedColor(colors.accent, DEFAULTS.accent)
+  // Optional light-mode accent: blank/unparseable falls back to the main accent
+  const accentRaw  = theme === 'light' ? resolvedColor(colors.accentLight, accentBase) : accentBase
   const bg      = theme === 'dark' ? secondary : LIGHT_BG
   const accent  = ensureContrast(accentRaw, bg)
 
@@ -190,7 +192,7 @@ export function AgencyProvider({ children }) {
 
     supabase
       .from('agencies')
-      .select('owner_sfg_id, name, logo_url_light, logo_url_dark, primary_color, secondary_color, accent_color')
+      .select('*')
       .eq('owner_sfg_id', agencyOwner)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -208,6 +210,7 @@ export function AgencyProvider({ children }) {
       primary:   agency.primary_color,
       secondary: agency.secondary_color,
       accent:    agency.accent_color,
+      accentLight: agency.accent_color_light,
     } : undefined, theme)
   }, [agency, theme])
 
