@@ -87,7 +87,8 @@ export default function NinetyDayPlanPage() {
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
 
-  const canWrite = permissions?.project100?.write ?? false
+  // project100 is kept so assistants already delegated that section can still edit
+  const canWrite = (permissions?.ninetyDayPlan?.write || permissions?.project100?.write) ?? false
 
   const load = useCallback(async () => {
     if (!sfgId) return

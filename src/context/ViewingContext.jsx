@@ -18,9 +18,9 @@ const SECTION_MAP = {
   income:            'income',
 }
 
-const ALL_SECTIONS = ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'admin', 'leads', 'recruiting', 'project100', 'accountability', 'snapshot', 'activity', 'income']
+const ALL_SECTIONS = ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'admin', 'leads', 'recruiting', 'project100', 'ninetyDayPlan', 'accountability', 'snapshot', 'activity', 'income']
 
-const ALWAYS_WRITE = new Set(['leads', 'recruiting', 'project100', 'activity', 'income'])
+const ALWAYS_WRITE = new Set(['leads', 'recruiting', 'project100', 'ninetyDayPlan', 'activity', 'income'])
 
 function makePerms(readable = [], writable = []) {
   return Object.fromEntries(
@@ -45,9 +45,9 @@ function sectionsByRole(role) {
     case 'owner':
       return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'accountability', 'snapshot', 'activity', 'income']
     case 'leader':
-      return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'activity', 'income']
+      return ['myInfo', 'onboarding', 'team', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'ninetyDayPlan', 'activity', 'income']
     default: // agent
-      return ['myInfo', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'project100', 'activity', 'income']
+      return ['myInfo', 'appsAndPolicies', 'metrics', 'leads', 'recruiting', 'project100', 'ninetyDayPlan', 'activity', 'income']
   }
 }
 
