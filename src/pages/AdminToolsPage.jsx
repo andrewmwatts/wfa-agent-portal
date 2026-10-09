@@ -69,9 +69,16 @@ function SubtypeCombo({ value, onChange, options }) {
   const [open, setOpen] = useState(false)
   const [pos,  setPos]  = useState(null)   // { top, left, width } in viewport coords
   const wrapRef = useRef(null)
+  const listRef = useRef(null)
 
+  // The option list is portaled to <body>, outside wrapRef, so a press on an option
+  // has to be exempted too — otherwise the list closes on mousedown and the option
+  // is gone before its click lands.
   useEffect(() => {
-    function onMouseDown(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    function onMouseDown(e) {
+      if (wrapRef.current?.contains(e.target) || listRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [])
@@ -107,6 +114,7 @@ function SubtypeCombo({ value, onChange, options }) {
       />
       {open && filtered.length > 0 && pos && createPortal(
         <ul
+          ref={listRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
           className="bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto"
         >

@@ -285,6 +285,13 @@ export default async function handler(req, res) {
 
       const PLACEMENT = new Set(['issued', 'declined', 'withdrawn', 'not taken'])
 
+      // Annuity and other non-core carriers left off this page (matched on the full name,
+      // so "Fidelity and Guaranty" itself is unaffected)
+      const EXCLUDED = new Set([
+        'athene annuity', 'columbus life', 'fidelity and guaranty life annuity',
+        'north american annuity', 'security benefit annuity',
+      ])
+
       // carrier|subtype → accumulator
       const groups = {}
 
@@ -292,6 +299,7 @@ export default async function handler(req, res) {
         const rawCarrier = (p.carrier ?? '').trim()
         if (!rawCarrier) continue
         const carrier = normCarrier(rawCarrier)
+        if (EXCLUDED.has(carrier.trim().toLowerCase())) continue
 
         const status = (p.status ?? '').trim().toLowerCase()
         if (!PLACEMENT.has(status)) continue
