@@ -46,9 +46,13 @@ export async function getCaller(req) {
   const { data: { user }, error } = await sb().auth.getUser(token)
   if (error || !user) return null
 
-  const { data } = await sb().from('users').select('sfg_id, role').eq('id', user.id).maybeSingle()
+  const lookup = () => sb().from('users').select('sfg_id, role').eq('id', user.id).maybeSingle()
+  let { data, error: profileErr } = await lookup()
+  if (profileErr) ({ data, error: profileErr } = await lookup())   // one retry for a transient failure
   const caller = { id: user.id, sfg_id: data?.sfg_id ?? null, role: data?.role ?? null }
-  cache.set(token, { caller, exp: Date.now() + TTL })
+  // A caller with no role gets an empty scope, so never cache a failed or missing
+  // profile lookup: it would deny every scoped request for the whole TTL.
+  if (!profileErr && data) cache.set(token, { caller, exp: Date.now() + TTL })
   return caller
 }
 
@@ -88,17 +92,27 @@ export async function getAllowedSfgIds(caller, supabase) {
 
   // Roots the caller may act as: self + agents actively delegated to them.
   const roots = new Set([key])
-  const { data: dele } = await supabase
+  const { data: dele, error: deleErr } = await supabase
     .from('agent_assistants')
     .select('agent_sfg_id')
     .eq('assistant_sfg_id', key)
     .eq('is_active', true)
+  if (deleErr) throw deleErr   // fail the request rather than cache a scope that's missing people
   for (const d of dele ?? []) if (d.agent_sfg_id) roots.add(d.agent_sfg_id.toUpperCase())
 
-  // Build the personnel tree once and collect each root's subtree.
-  const { data: tree } = await supabase.from('personnel').select('sfg_id, upline_sfg_id')
+  // Build the personnel tree once and collect each root's subtree. Paged because
+  // a single select stops at the API's row cap, which would silently drop agents
+  // from every scope once the roster outgrows it.
+  const tree = []
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: treeErr } = await supabase
+      .from('personnel').select('sfg_id, upline_sfg_id').order('sfg_id').range(from, from + 999)
+    if (treeErr) throw treeErr
+    tree.push(...(page ?? []))
+    if ((page ?? []).length < 1000) break
+  }
   const childrenOf = {}
-  for (const p of tree ?? []) {
+  for (const p of tree) {
     const up = p.upline_sfg_id?.trim().toLowerCase()
     if (!up) continue
     ;(childrenOf[up] ??= []).push(p.sfg_id.toLowerCase())

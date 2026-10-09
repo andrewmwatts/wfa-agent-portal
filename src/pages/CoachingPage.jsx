@@ -1563,6 +1563,8 @@ export default function CoachingPage() {
           }))
           .sort((a, b) => a.name.localeCompare(b.name))
         setAgents(list)
+        // Drop a remembered agent who isn't in this list (e.g. after switching accounts)
+        if (list.length) setSelectedSfgId(cur => (cur && !list.some(a => a.sfg_id === cur)) ? '' : cur)
       })
       .catch(err => console.error('[coaching/agents]', err))
       .finally(() => setAgentsLoading(false))
