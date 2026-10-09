@@ -3,7 +3,6 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, authorizeScope } from './_auth.js'
-import { fetchPoliciesForAgents, toCreditedRows, explodeCreditedRows } from './_policySplits.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -86,14 +85,13 @@ export default async function handler(req, res) {
         .eq('sfg_id', sfgId)
         .order('qualified_date', { ascending: true }),
 
-      // All policies this agent holds credit on — primary or split partner. APV is
-      // rewritten below to their share, so the client keeps summing the columns.
-      fetchPoliciesForAgents(
-        supabase, [sfgId],
-        'id, sfg_id, applicant, carrier, policy_name, status, submit_date, issue_date, last_update, submitted_apv, issued_apv, application_notes',
-        q => q.order('submit_date', { ascending: false }),
-      ).then(rows => ({ data: toCreditedRows(rows, sfgId), error: null }))
-       .catch(error => ({ data: null, error })),
+      // Policies this agent wrote. Split policies count in full for the primary
+      // agent only, so a secondary agent's shared policies never appear here.
+      supabase
+        .from('policies')
+        .select('id, sfg_id, applicant, carrier, policy_name, status, conservation_status, submit_date, issue_date, last_update, submitted_apv, issued_apv, application_notes')
+        .eq('sfg_id', sfgId)
+        .order('submit_date', { ascending: false }),
 
       // Policy crosswalk: carrier + policy_name → subtype
       supabase
@@ -212,11 +210,10 @@ export default async function handler(req, res) {
     if (downlineAgents.length) {
       const dlSfgIds = downlineAgents.map(a => a.sfg_id)
       const [dlPolRes, dlPromoRes] = await Promise.all([
-        fetchPoliciesForAgents(
-          supabase, dlSfgIds,
-          'id, sfg_id, issued_apv, submitted_apv, submit_date, issue_date, status',
-        ).then(rows => ({ data: rows, error: null }))
-         .catch(error => ({ data: null, error })),
+        supabase
+          .from('policies')
+          .select('id, sfg_id, issued_apv, submitted_apv, submit_date, issue_date, status, conservation_status')
+          .in('sfg_id', dlSfgIds),
         supabase
           .from('agent_promotions')
           .select('sfg_id, level, promotion_type, month_1')
@@ -224,8 +221,8 @@ export default async function handler(req, res) {
           .eq('promotion_type', 'commission'),
       ])
       if (dlPolRes.error)   throw dlPolRes.error
-      // One row per credited downline agent so per-agent rollups pro-rate splits.
-      downlinePolicies   = explodeCreditedRows(dlPolRes.data ?? [], dlSfgIds)
+      // Primary agent's policies in full; shared policies don't count for the secondary.
+      downlinePolicies   = dlPolRes.data ?? []
       downlinePromotions = dlPromoRes.data ?? []
     }
 

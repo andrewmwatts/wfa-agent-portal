@@ -425,8 +425,30 @@ export default async function handler(req, res) {
         const nameById = {}
         for (const p of results) nameById[p.sfg_id.toLowerCase()] = p.name || ''
 
+        // A policy's primary or split partner can sit outside the result set, so
+        // look up any names we don't already have.
+        const missing = new Set()
+        for (const p of raw) {
+          for (const id of [p.sfg_id, ...(p.splits ?? []).map(s => s.sfg_id)]) {
+            const key = (id ?? '').trim().toLowerCase()
+            if (key && !(key in nameById)) missing.add(key)
+          }
+        }
+        if (missing.size) {
+          const { data: extra } = await supabase
+            .from('personnel')
+            .select('sfg_id, preferred_name, opt_name')
+            .in('sfg_id', [...missing].map(id => id.toUpperCase()))
+          for (const p of extra ?? []) {
+            nameById[p.sfg_id.toLowerCase()] = p.preferred_name?.trim() || p.opt_name?.trim() || ''
+          }
+        }
+
         const policies = raw.map(p => ({
           ...p,
+          ...(p.splits ? {
+            splits: p.splits.map(s => ({ ...s, agent: nameById[(s.sfg_id ?? '').trim().toLowerCase()] ?? '' })),
+          } : {}),
           agent:       nameById[p.sfg_id?.toLowerCase()] ?? '',
           subm_apv:    p.submitted_apv  ?? null,
           policy_type: p.policy_name    ?? '',

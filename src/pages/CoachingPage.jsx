@@ -70,6 +70,14 @@ function ytdRange() {
   return { start: toYMD(new Date(now.getFullYear(), 0, 1)), end: toYMD(now) }
 }
 
+// Issued by the carrier but never kept by the client: the base status is still
+// "Issued", so the conservation status is what marks them as not placed.
+const NOT_PLACED_CONSERVATION = new Set([
+  'not taken, on snapshot', 'withdrawn, on snapshot', 'declined, on snapshot', 'first premium not paid',
+])
+const isPlaced = p => p.status === 'Issued'
+  && !NOT_PLACED_CONSERVATION.has((p.conservation_status ?? '').trim().toLowerCase())
+
 function oneYearAgo() {
   const d = new Date(); d.setFullYear(d.getFullYear() - 1); return toYMD(d)
 }
@@ -479,14 +487,14 @@ function ProductionSummary({ policies, period, isDark }) {
   // All stats driven by the period selector
   const periodPols  = policies.filter(p => inPeriod(p.submit_date, period))
   const submAPV     = periodPols.reduce((s, p) => s + (p.submitted_apv ?? 0), 0)
-  const issdAPV     = periodPols.filter(p => p.status === 'Issued').reduce((s, p) => s + (p.issued_apv ?? 0), 0)
+  const issdAPV     = periodPols.filter(isPlaced).reduce((s, p) => s + (p.issued_apv ?? 0), 0)
   const cntSubm     = periodPols.length
-  const cntIssd     = periodPols.filter(p => p.status === 'Issued').length
+  const cntIssd     = periodPols.filter(isPlaced).length
   const avgAPV      = cntSubm > 0 ? Math.round(submAPV / cntSubm) : null
 
   // Carrier breakdown (issued APV by carrier, period-filtered)
   const carrierTotals = {}
-  for (const p of periodPols.filter(p => p.status === 'Issued' && p.carrier)) {
+  for (const p of periodPols.filter(p => isPlaced(p) && p.carrier)) {
     carrierTotals[p.carrier] = (carrierTotals[p.carrier] ?? 0) + (p.issued_apv ?? 0)
   }
   const carrierData = Object.entries(carrierTotals)
@@ -494,7 +502,7 @@ function ProductionSummary({ policies, period, isDark }) {
     .sort((a, b) => b.apv - a.apv)
 
   // Product mix donut (period-filtered, issued only, by subtype from crosswalk)
-  const periodIssued  = periodPols.filter(p => p.status === 'Issued')
+  const periodIssued  = periodPols.filter(isPlaced)
   const subtypeTotals = {}
   for (const p of periodIssued) {
     if (!p.subtype) continue
@@ -583,13 +591,12 @@ function PolicyMetrics({ policies, period, isDark }) {
   // Period-filtered for placement rate and avg issue time
   const periodPols = policies.filter(p => inPeriod(p.submit_date, period))
 
-  const issued   = periodPols.filter(p => p.status === 'Issued').length
-  const countable = periodPols.filter(p => !['Declined','Withdrawn','Not Taken'].includes(p.status)).length
-  const placementRate = pct(issued, countable)
+  const issued   = periodPols.filter(isPlaced).length
+  const placementRate = pct(issued, periodPols.length)
 
   // Avg issue time (submit → issue, same period)
   const issueTimes = periodPols
-    .filter(p => p.issue_date && p.submit_date)
+    .filter(p => isPlaced(p) && p.issue_date && p.submit_date)
     .map(p => {
       const d = Math.round((new Date(p.issue_date) - new Date(p.submit_date)) / 86400000)
       return d >= 0 ? d : null
@@ -599,21 +606,22 @@ function PolicyMetrics({ policies, period, isDark }) {
     ? Math.round(issueTimes.reduce((s, d) => s + d, 0) / issueTimes.length)
     : null
 
-  // Persistency — always 12-month all-time window (ignores period selector)
-  const yearAgo    = oneYearAgo()
-  const totalIssued = policies.filter(p => p.status === 'Issued').length
-  const lapsedIn1yr = policies.filter(p =>
-    ['Lapsed','Cancelled'].includes(p.status) && p.issue_date && p.issue_date >= yearAgo
+  // Persistency — policies issued in the last 12 months that haven't lapsed or
+  // cancelled (ignores the period selector). A lapse is recorded in
+  // conservation_status; the policy's own status stays "Issued".
+  const yearAgo     = oneYearAgo()
+  const recentIssued = policies.filter(p => isPlaced(p) && p.issue_date && p.issue_date >= yearAgo)
+  const lapsedIn1yr = recentIssued.filter(p =>
+    ['lapsed', 'cancelled'].includes((p.conservation_status ?? '').trim().toLowerCase())
   ).length
-  const persistency = totalIssued > 0 ? Math.round((1 - lapsedIn1yr / totalIssued) * 100) : null
+  const persistency = recentIssued.length > 0 ? Math.round((1 - lapsedIn1yr / recentIssued.length) * 100) : null
 
   // Placement rate trend — 12 months rolling (fixed, not period-filtered)
   const monthBuckets = build12MonthBuckets()
   const trendData = monthBuckets.map(b => {
     const bucket    = policies.filter(p => p.submit_date >= b.start && p.submit_date <= b.end)
-    const bIssued   = bucket.filter(p => p.status === 'Issued').length
-    const bCounted  = bucket.filter(p => !['Declined','Withdrawn','Not Taken'].includes(p.status)).length
-    return { month: b.label, 'Placement %': bCounted ? Math.round((bIssued / bCounted) * 100) : null }
+    const bIssued   = bucket.filter(isPlaced).length
+    return { month: b.label, 'Placement %': bucket.length ? Math.round((bIssued / bucket.length) * 100) : null }
   })
 
   return (
@@ -622,14 +630,14 @@ function PolicyMetrics({ policies, period, isDark }) {
         <MetricCard
           label="Placement Rate"
           primary={fmtPct(placementRate)}
-          sub1={`${issued} issued / ${countable} submitted`}
+          sub1={`${issued} issued / ${periodPols.length} submitted`}
           sub2="(selected period)"
         />
         <MetricCard
           label="Persistency Rate"
           primary={fmtPct(persistency)}
-          sub1={`${lapsedIn1yr} lapsed within 12 mo of issue`}
-          sub2="(always all-time 12-month)"
+          sub1={`${lapsedIn1yr} of ${recentIssued.length} issued in last 12 mo lapsed or cancelled`}
+          sub2="(always trailing 12 months)"
         />
         <MetricCard
           label="Avg Issue Time"
@@ -1127,7 +1135,7 @@ function PendingPolicies({ policies }) {
 
   const mo    = monthRange()
   const subMo = policies.filter(p => p.submit_date >= mo.start && p.submit_date <= mo.end).length
-  const issMo = policies.filter(p => p.status === 'Issued' && p.issue_date >= mo.start && p.issue_date <= mo.end).length
+  const issMo = policies.filter(p => isPlaced(p) && p.issue_date >= mo.start && p.issue_date <= mo.end).length
 
   if (!pending.length) {
     return (
@@ -1414,12 +1422,12 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
     if (inPeriod(pol.submit_date, period)) {
       agentProd[pol.sfg_id].submAPV  += pol.submitted_apv ?? 0
       if (counts) agentProd[pol.sfg_id].cntSubm += 1
-      if (pol.status === 'Issued') {
+      if (isPlaced(pol)) {
         agentProd[pol.sfg_id].issdAPV += pol.issued_apv ?? 0
         if (counts) agentProd[pol.sfg_id].cntIssd += 1
       }
     }
-    if (pol.status === 'Issued' && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true
+    if (isPlaced(pol) && pol.issue_date >= cutoff90) agentProd[pol.sfg_id].active = true
   }
 
   // Agent's own production in period (included in team totals)
@@ -1428,7 +1436,7 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
     if (inPeriod(pol.submit_date, period)) {
       selfProd.submAPV += pol.submitted_apv ?? 0
       selfProd.cntSubm += 1
-      if (pol.status === 'Issued') {
+      if (isPlaced(pol)) {
         selfProd.issdAPV += pol.issued_apv ?? 0
         selfProd.cntIssd += 1
       }
