@@ -32,6 +32,43 @@ Browser: Kristina's Chrome profile (deviceId ac4e38f3…).
    Agent/#, Writing Agent Name/#, Policy Number, Insured Name, Transaction Type (AR-TL,
    AR-QA, SV-TL, SV-QA; meaning unknown), Process Date, Annualized Life, Annualized Annuity.
    First-year chargebacks only; one policy can have several rows.
+4. **New Business** (unpaid issues). Go straight to the details page in its wider "Recent
+   Activity" view:
+   https://saleslink.fglife.com/NewBusiness/NewBusinessDetails?associatedAgentNumber=000522814&lineOfBusiness=Both&IsRecentActivity=True
+   (`IsRecentActivity=False` = "Current Inventory", a smaller subset; the Overview page
+   `/NewBusiness/NewBusinessSummary` only has counts and View links.)
+   - Kendo grid `#GridPolicyStatus`, all rows client-side (94 on 2026-10-08):
+     `$('#GridPolicyStatus').data('kendoGrid').dataSource.data().toJSON()`. Fields:
+     PolicyNumber, InsNm, NoOfOpenReq, **Status**, WrtAgtNm, WritingAgentNumber, FaceAmt,
+     AnnualPremium, PrdNm. **No status date** (LastUpdDt is always empty).
+   - Statuses: Pending (pre-issue), Open Requirement, Waiting For Buy Date, **Pending Delivery
+     Requirement** (issued, something outstanding before delivery; often the first premium), Issued/Paid, Closed/Cancelled.
+   - **Don't click the "+" in the first column**: it adds the policy to the Policy Watch List
+     (a change on F&G's side).
+   - **Policy detail** (Policy Information + Requirements + Notes): clicking the policy number
+     swaps the list for a detail panel without changing the URL. Return with "Back to Policy
+     List" (the browser Back button leaves the page). Scripted, read-only:
+     `ShowPolicyDetails(null, 'QT002752', false, '000522814')` (the page's own function; it
+     POSTs `/NewBusiness/PolicyInfo` and renders into `.policyDetail`), wait ~3 s, then read
+     the kendo grids inside `.policyDetail`: `#gridRequirementInfo` (RequirementDescription,
+     DateOrdered, DateReceived (null = open), Category) and `#gridNoteInfo` (DateCreation,
+     Notes). Status, Issue Date, Last Updated and Days in Current Status are in the panel text.
+     `HidePolicyDetail()` returns to the list. ~5 s per policy; run a few per call (45 s limit).
+   - **"Pending Delivery Requirement : Conditionally Issued" is not always an unpaid first
+     premium** (Andrew): it can be any requirement for delivery. Read the open requirements
+     and notes. Signs of an unpaid first premium: open "Additional Premium Required", notes
+     "A RETURN ITEM WAS RECEIVED FOR INSUFFICIENT FUNDS…", "Initial premium is being hand
+     drafted". A long "Days in Current Status" (e.g. 59) also means the first payment never
+     landed, even if the only bounce note is for a later draft (Andrew, LX567866). Either way
+     it gets `First Premium Not Paid`.
+   - **Issue date:** keep the DB's date when it's the planned first-draft date. A policy can
+     issue earlier (Issue Date in F&G) but only goes into force on the draft date; that's the
+     date we store (Andrew, 2026-10-08). Don't "correct" it to F&G's Issue Date.
+   A policy stays here, not in Book of Business, until its first premium is paid. The F&G rep
+   said that takes at most ~90 days.
+   **Run step (Andrew, 2026-10-08):** any DB `Issued` policy missing from Book of Business →
+   look it up here and compare its status with the DB. A policy can silently fall back to a
+   problem state after we've recorded it as issued.
 
 Tool limits: Chrome JS results are capped at ~1,000 chars, and results containing URL tokens
 are blocked.
@@ -45,6 +82,10 @@ are blocked.
 | Book of Business `Cancelled`, `Surrendered` | `Cancelled` | window since the last check (no status date) |
 | Book of Business `Death Claim` | `Death` | window since the last check |
 | Active | in force; pending recovers → NULL | — |
+| New Business Issued/Paid | in force (matches DB Issued) | — |
+| New Business Closed/Cancelled, DB Issued | Snapshot rule (Not Taken); date from Andrew/F&G | |
+| New Business Pending Delivery Requirement, detail shows the first premium unpaid (issued in our DB) | `First Premium Not Paid` (on Snapshot; else base-status correction for approval) | **issue date + 90** (provisional, from the F&G rep; refine as data comes in). Already passed → today + 7 |
+| In New Business, Not Taken | `Not Taken, On Snapshot` | the not-taken date (from F&G) |
 
 Backlog finals with no way to date them (first run): set the status and
 `chargeback_exempt = true`, **leave `conservation_date` NULL** (Andrew: no date beats a
@@ -72,8 +113,11 @@ means Snapshot assumes the full issued APV. Multiple rows for one policy → Fla
 - Final statuses recorded before this card may differ from Book of Business wording (e.g.
   one policy is Cancelled at F&G but recorded as Lapsed). Andrew kept Lapsed; don't "correct"
   it.
-- 5 checkable policies didn't appear in Book of Business under any status (2026-10-03); 4
-  show non-Issued statuses in New Business. Andrew is asking F&G. Flag these until resolved.
+- Resolved 2026-10-08 (Andrew called F&G): the 5 policies missing from Book of Business were
+  stuck in New Business because their first payment never went through. 2 Not Taken, 3
+  First Premium Not Paid (dated issue + 90; one already past → today + 7).
 
 ## Confidence: medium-high
-First run applied 2026-10-03 (5 changes). Open: MFA/timeout; the 5 missing policies.
+First run applied 2026-10-03 (5 changes), plus the 5 New Business policies 2026-10-08.
+New Business mapped 2026-10-08. Open: MFA/timeout; dating Pending Delivery Requirement
+policies (no date anywhere yet).
