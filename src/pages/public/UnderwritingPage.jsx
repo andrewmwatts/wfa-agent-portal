@@ -124,9 +124,17 @@ export default function UnderwritingPage() {
 
           {/* Basic Underwriting Steps */}
           <div>
-            <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: '0 0 28px' }}>
+            <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: '0 0 12px' }}>
               Basic Underwriting Steps
             </h1>
+
+            <p style={{ fontSize: 14, color: '#4A6568', fontFamily: 'Inter, sans-serif', lineHeight: 1.6, margin: '0 0 16px' }}>
+              All underwriting resources besides Navigator can be found on{' '}
+              <a href="https://sfgquotes.com" target="_blank" rel="noopener noreferrer"
+                style={{ color: '#EE2666', textDecoration: 'none', fontWeight: 500 }}>
+                SFGquotes
+              </a>
+            </p>
 
             <ol style={{ margin: '0 0 20px', padding: '0 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0 }}>
               {STEPS.map(({ text, links }, i) => (
