@@ -8,7 +8,7 @@ import AddAgentModal from '../components/AddAgentModal'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../../shared/agencyScope'
-import { toInputDate, fmtDate } from '../utils/format'
+import { toInputDate, fmtDate, parseDateLocal } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -388,14 +388,14 @@ export default function OnboardingPage() {
 
 // ─── Contracting Cell ─────────────────────────────────────────────────────────
 
-// Carriers that are exempt from the 14-day red rule when no_eando is TRUE.
+// Carriers that are exempt from the 7-day red rule when no_eando is TRUE.
 // "Banner Life (BeyondTerm)" may be stored under either name in the DB.
 const CONTRACTING_TRANSAMERICA = 'Transamerica'
 const CONTRACTING_EXEMPT = new Set(['Banner Life (BeyondTerm)', 'SBLI', 'American General'])
 
-function contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando) {
+function contractingIsRed(agentCarriers, coreCarriers, completeDate, noEando) {
   if (!coreCarriers.length) return false
-  const days = daysSince(toProducerDate)
+  const days = daysSince(completeDate)
   if (days === null) return false
 
   const have = new Set(agentCarriers)
@@ -408,8 +408,8 @@ function contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando) 
   // Rule 1: Transamerica missing + >30 days
   if (missingTa && days > 30) return true
 
-  // Rule 2: any non-Transamerica carrier missing + >14 days
-  if (missingOthers.length > 0 && days > 14) {
+  // Rule 2: any non-Transamerica carrier missing + >7 days
+  if (missingOthers.length > 0 && days > 7) {
     // Exception: ALL remaining missing are exempt carriers AND agent has no E&O
     const onlyExempt = missingOthers.every(c => CONTRACTING_EXEMPT.has(c))
     if (onlyExempt && noEando) return false
@@ -429,7 +429,7 @@ function ContractingCell({
 
   // Contracting marked complete, numbers partially or not yet populated
   if (complete) {
-    const red = contractingIsRed(agentCarriers, coreCarriers, toProducerDate, noEando)
+    const red = contractingIsRed(agentCarriers, coreCarriers, complete, noEando)
     const cls = red ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
     if (contractCount > 0)
       return <span className={`text-xs font-semibold ${cls}`}>{contractCount} of {totalCarriers}</span>
@@ -716,7 +716,7 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
 
 function daysSince(dateStr) {
   if (!dateStr) return null
-  const d = new Date(dateStr); d.setHours(0,0,0,0)
+  const d = parseDateLocal(dateStr); if (!d) return null; d.setHours(0,0,0,0)
   const now = new Date(); now.setHours(0,0,0,0)
   return Math.floor((now - d) / 86400000)
 }
