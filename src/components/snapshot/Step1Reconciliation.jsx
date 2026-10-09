@@ -52,7 +52,7 @@ function ResolutionBadge({ resolution, phase }) {
 // runs: the Snapshot workbook covers every carrier, the Placed Policies export explains
 // the core ones policy by policy.
 const importCache = new Map()
-const EMPTY_IMPORT = { held: {}, overrides: {}, runResult: null, edited: false }
+const EMPTY_IMPORT = { held: {}, overrides: {}, runResult: null, edited: false, loggedCb: {} }
 
 const SLOTS = {
   agent_totals: {
@@ -98,6 +98,8 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
 
   const [imp, updateImp] = useImportState(`${cycle?.id}:${phase}`)
   const { held, overrides, runResult, edited } = imp
+  // Chargebacks logged from a card; held here because refreshing remounts this component
+  const cbLogged = imp.loggedCb ?? {}
   const workbook   = held.agent_totals ?? null
   const policyFile = held.policy_lines ?? null
   const anyHeld    = !!workbook || !!policyFile
@@ -117,6 +119,9 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
   const [policySearches,    setPolicySearches]    = useState({})   // recId → query string
   const [policyResults,     setPolicyResults]     = useState({})   // recId → [policy]
   const [searchingId,       setSearchingId]       = useState(null)
+
+  const [cbSavingId, setCbSavingId] = useState(null)   // policy id mid-save
+  const [cbError,    setCbError]    = useState(null)   // { policyId, message }
 
   const [editPolicy,    setEditPolicy]    = useState(null)
   const [dupeOpen,      setDupeOpen]      = useState(false)
@@ -197,7 +202,7 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Run failed')
-      updateImp({ runResult: data, edited: false })
+      updateImp({ runResult: data, edited: false, loggedCb: {} })
       await onRefresh()
     } catch (err) {
       setRunError(err.message)
@@ -265,6 +270,36 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
       } catch { /* fall through — open with what we have */ }
     }
     setEditPolicy(base)
+  }
+
+  // One click: write this cycle's month and the Snapshot reversal onto the policy,
+  // the same two fields the Edit modal's Chargeback Month / APV set.
+  async function handleLogChargeback(candidate) {
+    setCbSavingId(candidate.policy_id)
+    setCbError(null)
+    try {
+      const res = await fetch('/api/policies', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: candidate.policy_id,
+          updates: {
+            snapshot_chargeback_month: `${cycleMonth}-01`,
+            snapshot_chargeback_apv:   Math.round(Math.abs(candidate.delta_contribution ?? 0) * 100) / 100,
+          },
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Server error ${res.status}`)
+      }
+      updateImp({ edited: true, loggedCb: { ...cbLogged, [candidate.policy_id]: true } })
+      await onRefresh()
+    } catch (err) {
+      setCbError({ policyId: candidate.policy_id, message: err.message || 'Could not log the chargeback' })
+    } finally {
+      setCbSavingId(null)
+    }
   }
 
   async function handleCandidateDispute(rec, candidate) {
@@ -874,6 +909,10 @@ export default function Step1Reconciliation({ cycle, reconciliations, disputes =
                         key={i}
                         candidate={c}
                         onEdit={() => openEditPolicy({ ...c, carrier: rec.carrier, sfg_id: rec.sfg_id })}
+                        onLogChargeback={() => handleLogChargeback(c)}
+                        cbSaving={cbSavingId === c.policy_id}
+                        cbLogged={!!cbLogged[c.policy_id]}
+                        cbError={cbError?.policyId === c.policy_id ? cbError.message : null}
                         onDispute={isFinal ? undefined : () => {
                           setDisputingCandidate({ recId: rec.id, candidate: c })
                           setCandidateDisputeNote('')
@@ -1107,8 +1146,12 @@ const CANDIDATE_STYLES = {
   unitemized:             { border: 'border-gray-200 dark:border-white/15',        bg: 'bg-gray-50 dark:bg-white/5',        badge: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-white/60' },
 }
 
-function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
+function CandidateRow({ candidate: c, onEdit, onDispute, onLogChargeback, cbSaving, cbLogged, cbError, canWrite }) {
   const s = CANDIDATE_STYLES[c.type] ?? CANDIDATE_STYLES.missing
+  // A Snapshot reversal on a policy that already carries a conservation status is a
+  // chargeback to log, not something to dispute.
+  const logsChargeback = !!onLogChargeback && c.type === 'reversal_unlogged' && !!c.policy_id
+    && !!String(c.conservation_status ?? '').trim()
 
   return (
     <div className={`flex items-start justify-between gap-4 rounded-xl border ${s.border} ${s.bg} px-4 py-3`}>
@@ -1126,8 +1169,8 @@ function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
         )}
         {c.signed ? (
           <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 dark:text-white/50">
-            <span>Snapshot: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.snapshot_apv ?? 0)}</strong></span>
             <span>Tracker: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.tracker_apv ?? 0)}</strong></span>
+            <span>Snapshot: <strong className="text-gray-700 dark:text-white/70">{fmtAmt(c.snapshot_apv ?? 0)}</strong></span>
             <span>Δ <strong className={c.delta_contribution > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}>{c.delta_contribution > 0 ? '+' : ''}{fmtAmt(c.delta_contribution)}</strong></span>
             {c.issue_date && <span>Issue date: <strong className="text-gray-700 dark:text-white/70">{fmtDate(c.issue_date)}</strong></span>}
             {c.status && <span>Status: {c.status}</span>}
@@ -1152,9 +1195,22 @@ function CandidateRow({ candidate: c, onEdit, onDispute, canWrite }) {
         )}
       </div>
       {canWrite && (
-        <div className="flex gap-2 flex-shrink-0">
-          {c.policy_id && <button onClick={onEdit} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors font-medium whitespace-nowrap">Edit</button>}
-          {onDispute && <button onClick={onDispute} className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap">Generate Dispute</button>}
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <div className="flex gap-2">
+            {c.policy_id && <button onClick={onEdit} className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors font-medium whitespace-nowrap">Edit</button>}
+            {logsChargeback ? (
+              <button
+                onClick={onLogChargeback}
+                disabled={cbSaving || cbLogged}
+                className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap disabled:opacity-60"
+              >
+                {cbLogged ? 'Chargeback logged ✓' : cbSaving ? 'Logging…' : 'Log Chargeback'}
+              </button>
+            ) : onDispute && (
+              <button onClick={onDispute} className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors font-medium whitespace-nowrap">Generate Dispute</button>
+            )}
+          </div>
+          {cbError && <p className="text-xs text-red-500 dark:text-red-400 max-w-[14rem] text-right">{cbError}</p>}
         </div>
       )}
     </div>
