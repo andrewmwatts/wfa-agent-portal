@@ -109,12 +109,35 @@ function buildJotformLines(person, apv, writers, monthNum, promoType, cycleMonth
 }
 
 // ── Manual Promotion Modal ─────────────────────────────────────────────────────
-function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
+const CONTRACT_LEVEL_CHOICES = ['85', '90', '95', '100', '105', '110', '115', '120', '125', '130']
+const LEADERSHIP_CHOICES = [
+  { value: 'TL', label: 'Team Leader (TL)' },
+  { value: 'KL', label: 'Key Leader (KL)' },
+  { value: 'AO', label: 'Agency Owner (AO)' },
+]
+
+// monthsForLevel(level) → how many qualifying months that level takes.
+// recordedMonths(sfgId, level) → how many of those months the agent already has on record.
+// onLog({ sfgId, actionType, track, level, slingshot, monthNum, notes }) → records the
+//   promotion exactly as the workflow would (agent record + cycle action).
+// jotformFor({ sfgId, level, promoType, monthNum }) → the copy-block lines to submit.
+function ManualPromoModal({ personnel, cycleId, monthsForLevel, recordedMonths, onLog, jotformFor, onClose, onSaved }) {
   const [sfgId,  setSfgId]  = useState('')
   const [type,   setType]   = useState('manual_promotion')
+  const [track,  setTrack]  = useState('contract')   // 'contract' | 'leadership'
+  const [level,  setLevel]  = useState('')
+  const [style,  setStyle]  = useState('standard')   // contract only: 'standard' | 'slingshot'
+  const [month,  setMonth]  = useState('')           // '' = the level's final month
   const [notes,  setNotes]  = useState('')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  const [saved,  setSaved]  = useState(null)         // { lines, label } once logged
+
+  const isReset  = type === 'streak_reset'
+  const slingshot = track === 'contract' && style === 'slingshot'
+  const totalMonths = level ? (monthsForLevel(level) || 2) : 0
+  const monthNum    = slingshot ? null : Number(month || totalMonths) || null
+  const recorded    = sfgId && level ? recordedMonths(sfgId, level) : 0
 
   const filtered = personnel
     // Match either name — an agent searched for by their friendly name should be
@@ -129,15 +152,26 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
     .slice(0, 8)
   const selected = personnel.find(p => p.sfg_id === sfgId)
 
+  function switchTrack(next) { setTrack(next); setLevel(''); setMonth('') }
+
   async function save() {
     if (!sfgId) return
     setSaving(true)
     try {
-      await apiRequest('/api/snapshot?type=promotions', 'POST', {
-        cycle_id: cycleId, sfg_id: sfgId, action_type: type, is_manual: true, notes: notes || null,
-      })
-      onSaved()
-      onClose()
+      if (!isReset && level) {
+        await onLog({ sfgId, actionType: type, track, level, slingshot, monthNum, notes: notes || null })
+        const promoType = track === 'leadership' ? level : (slingshot ? 'Slingshot' : 'Standard')
+        setSaved({
+          lines: jotformFor({ sfgId, level, promoType, monthNum }),
+          final: slingshot || monthNum >= totalMonths,
+        })
+      } else {
+        await apiRequest('/api/snapshot?type=promotions', 'POST', {
+          cycle_id: cycleId, sfg_id: sfgId, action_type: type, is_manual: true, notes: notes || null,
+        })
+        onSaved()
+        onClose()
+      }
     } catch (err) {
       alert(err.message || 'Failed to save promotion.')
     } finally {
@@ -145,13 +179,39 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
     }
   }
 
+  const label = 'block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1'
+  const seg = on => `flex-1 text-xs px-3 py-1.5 transition-colors ${on ? 'bg-accent/15 text-accent font-semibold' : 'text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'}`
+
+  // Logged — show what to submit before the page refreshes underneath this.
+  if (saved) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-3">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">
+            {saved.final ? 'Promotion logged ✓' : 'Qualifying month logged ✓'}
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-white/50">
+            {saved.final
+              ? `${agentName(selected, sfgId)}'s level has been updated. Copy this into the promotion Jotform.`
+              : `Recorded on ${agentName(selected, sfgId)}'s profile. Jotform reference:`}
+          </p>
+          <CopyBlock lines={saved.lines} />
+          <div className="flex justify-end pt-1">
+            <button onClick={() => { onSaved(); onClose() }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90">Done</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Log Manual Promotion</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">Agent</label>
+          <label className={label}>Agent</label>
           {selected ? (
             <div className="flex items-center justify-between rounded-lg border border-gray-300 dark:border-white/20 px-3 py-2">
               <span className="text-sm text-gray-900 dark:text-white">{agentName(selected, selected.sfg_id)} <span className="text-gray-400 text-xs">{selected.sfg_id}</span></span>
@@ -176,7 +236,7 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">Action Type</label>
+          <label className={label}>Action Type</label>
           <select value={type} onChange={e => setType(e.target.value)} className={INPUT_CLS}>
             <option value="manual_promotion">Manual Promotion</option>
             <option value="promotion">Promotion</option>
@@ -184,14 +244,64 @@ function ManualPromoModal({ personnel, cycleId, onClose, onSaved }) {
           </select>
         </div>
 
+        {!isReset && (
+          <>
+            <div>
+              <label className={label}>Promoted to</label>
+              <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-white/20 mb-2">
+                <button type="button" onClick={() => switchTrack('contract')} className={seg(track === 'contract')}>Contract level</button>
+                <button type="button" onClick={() => switchTrack('leadership')} className={seg(track === 'leadership') + ' border-l border-gray-300 dark:border-white/20'}>Leadership title</button>
+              </div>
+              <select value={level} onChange={e => { setLevel(e.target.value); setMonth('') }} className={INPUT_CLS}>
+                <option value="">{track === 'contract' ? 'Select a level…' : 'Select a title…'}</option>
+                {track === 'contract'
+                  ? CONTRACT_LEVEL_CHOICES.map(l => <option key={l} value={l}>{l}%</option>)
+                  : LEADERSHIP_CHOICES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+            </div>
+
+            {track === 'contract' && (
+              <div>
+                <label className={label}>Type</label>
+                <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-white/20">
+                  <button type="button" onClick={() => setStyle('standard')} className={seg(style === 'standard')}>Standard</button>
+                  <button type="button" onClick={() => setStyle('slingshot')} className={seg(style === 'slingshot') + ' border-l border-gray-300 dark:border-white/20'}>Slingshot</button>
+                </div>
+              </div>
+            )}
+
+            {level && selected && track === 'contract'
+              && contractLevelRank(level) != null
+              && contractLevelRank(level) <= (contractLevelRank(selected.commission_contract?.level) ?? 0) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                {agentName(selected, selected.sfg_id)} is already at {selected.commission_contract?.level}% — this will record {level}% anyway.
+              </p>
+            )}
+
+            {level && !slingshot && totalMonths > 1 && (
+              <div>
+                <label className={label}>Qualification month</label>
+                <select value={month || String(totalMonths)} onChange={e => setMonth(e.target.value)} className={INPUT_CLS}>
+                  {Array.from({ length: totalMonths }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n} disabled={n <= recorded && n < totalMonths}>
+                      {n === totalMonths ? `Month ${n} of ${totalMonths} (final)` : `Month ${n} of ${totalMonths}`}
+                      {n <= recorded && n < totalMonths ? ' — already recorded' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+
         <div>
-          <label className="block text-xs font-semibold text-gray-500 dark:text-white/50 mb-1">Notes</label>
+          <label className={label}>Notes</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} className={INPUT_CLS} rows={3} placeholder="Optional notes…" />
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10">Cancel</button>
-          <button onClick={save} disabled={!sfgId || saving}
+          <button onClick={save} disabled={!sfgId || saving || (!isReset && !level)}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent/90 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -585,7 +695,10 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
     const person = personnelMap[sfgId]
     if (!sfgId || !level || !person) return null
     const existing  = agentPromoMap[`${sfgId}||${level}`] ?? null
-    const promoType = existing?.is_slingshot ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
+    // A manually logged slingshot has no agent_promotions record to say so, but (like the
+    // automated one) it carries no month number.
+    const manualSling = !!a.is_manual && !a.month_number && !LEADERSHIP_LEVELS.has(level)
+    const promoType = (existing?.is_slingshot || manualSling) ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
     const { teamApv, writers } = teamNumbers(sfgId.toLowerCase(), level)
     const monthNum = a.month_number ?? (existing?.month_3 ? 3 : existing?.month_2 ? 2 : 1)
     return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth, existing,
@@ -632,6 +745,43 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
     } finally {
       setSaving(null)
     }
+  }
+
+  // A promotion entered by hand, recorded the same way the workflow records one: the
+  // agent's promotion record (which sets their level) and the cycle's action row.
+  async function logManualPromotion({ sfgId, actionType, track, level, slingshot, monthNum, notes }) {
+    const id          = sfgId.toUpperCase()
+    const totalMonths = Number(getThresholds(level)?.months) || 2
+    const existing    = agentPromoMap[`${id}||${level}`] ?? null
+    const isFinal     = slingshot || monthNum >= totalMonths
+    const promotion_type = track === 'contract' ? 'commission' : 'leadership'
+
+    if (slingshot) {
+      await apiRequest('/api/snapshot?type=agent_promotion', 'POST', {
+        sfg_id: id, promotion_type, level,
+        month_1: null, month_2: null, month_3: null,
+        slingshot_month: cycleMonth, is_slingshot: true, is_qualified: true,
+        qualified_date: lastDayOfIsoMonth(cycleMonth),
+      })
+    } else {
+      await apiRequest('/api/snapshot?type=agent_promotion', 'POST', {
+        sfg_id: id, promotion_type, level,
+        month_1: monthNum === 1 ? cycleMonth : (existing?.month_1 ?? null),
+        month_2: monthNum === 2 ? cycleMonth : (existing?.month_2 ?? null),
+        month_3: (isFinal && totalMonths === 3) ? cycleMonth : (existing?.month_3 ?? null),
+        is_slingshot: false, is_qualified: isFinal,
+        qualified_date: isFinal ? lastDayOfIsoMonth(cycleMonth) : null,
+      })
+    }
+
+    await apiRequest('/api/snapshot?type=promotions', 'POST', {
+      cycle_id: cycle.id, sfg_id: id,
+      // Same as the workflow: only a finished promotion is a 'promotion'; an earlier
+      // month is logged as a qualifying month.
+      action_type:  isFinal ? actionType : 'qualifying_month',
+      month_number: slingshot ? null : monthNum,
+      level, is_manual: true, notes,
+    })
   }
 
   // Slingshot: a single-month qualification (higher APV bar + weekly submissions).
@@ -1014,7 +1164,7 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
                     : restructureFlags(a.sfg_id)
                   const jfKey     = a.sfg_id?.toUpperCase() + '||' + a.level
                   const jfOpen    = jotformOpen.has(jfKey)
-                  const canShowJf = !!a.level && a.action_type !== 'manual_promotion'
+                  const canShowJf = !!a.level
                   return (
                     <Fragment key={a.id}>
                       <tr>
@@ -1135,6 +1285,19 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
         <ManualPromoModal
           personnel={personnel}
           cycleId={cycle.id}
+          monthsForLevel={level => Number(getThresholds(level)?.months) || 2}
+          recordedMonths={(sfgId, level) => {
+            const rec = agentPromoMap[`${sfgId.toUpperCase()}||${level}`]
+            return [rec?.month_1, rec?.month_2, rec?.month_3].filter(Boolean).length
+          }}
+          onLog={logManualPromotion}
+          jotformFor={({ sfgId, level, promoType, monthNum }) => {
+            const id     = sfgId.toUpperCase()
+            const person = personnelMap[id]
+            const { teamApv, writers } = teamNumbers(id.toLowerCase(), level)
+            return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth,
+                                     agentPromoMap[`${id}||${level}`] ?? null, submittedWeekLabels[id] ?? [])
+          }}
           onClose={() => setManualModal(false)}
           onSaved={onRefresh}
         />
