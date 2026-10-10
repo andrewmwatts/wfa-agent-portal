@@ -685,6 +685,15 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
     a => !LEADERSHIP_LEVELS.has(a.level) && restructureFlags(a.sfg_id).any && !a.hierarchy_flag_noted
   )
 
+  // A slingshot is flagged on the agent's promotion record. A manually logged one is
+  // recognised by the shape the automated slingshot is stored in: a contract level
+  // with no month number.
+  function isSlingshotAction(a) {
+    if (!a.level || LEADERSHIP_LEVELS.has(a.level)) return false
+    const existing = agentPromoMap[`${a.sfg_id?.toUpperCase()}||${a.level}`]
+    return !!existing?.is_slingshot || (!!a.is_manual && !a.month_number)
+  }
+
   // Reconstructs the Jotform copy text for an already-finalized promotion —
   // standard final-month and slingshot both land here (both post action_type
   // 'promotion'), so this covers both instead of only the pre-finalize preview
@@ -695,10 +704,7 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
     const person = personnelMap[sfgId]
     if (!sfgId || !level || !person) return null
     const existing  = agentPromoMap[`${sfgId}||${level}`] ?? null
-    // A manually logged slingshot has no agent_promotions record to say so, but (like the
-    // automated one) it carries no month number.
-    const manualSling = !!a.is_manual && !a.month_number && !LEADERSHIP_LEVELS.has(level)
-    const promoType = (existing?.is_slingshot || manualSling) ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
+    const promoType = isSlingshotAction(a) ? 'Slingshot' : (LEADERSHIP_LEVELS.has(level) ? level : 'Standard')
     const { teamApv, writers } = teamNumbers(sfgId.toLowerCase(), level)
     const monthNum = a.month_number ?? (existing?.month_3 ? 3 : existing?.month_2 ? 2 : 1)
     return buildJotformLines(person, teamApv, writers, monthNum, promoType, cycleMonth, existing,
@@ -1170,7 +1176,7 @@ export default function Step4Promotions({ cycle, promotions, context, canWrite, 
                       <tr>
                         <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{agentName(person, a.sfg_id)}</td>
                         <td className="px-4 py-3 text-gray-500 dark:text-white/50 capitalize">{(a.action_type ?? '').replace('_', ' ')}</td>
-                        <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-500 dark:text-white/50">{a.level ? `${a.level}${isSlingshotAction(a) ? ' (SS)' : ''}` : '—'}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             {a.jotform_submitted_at
