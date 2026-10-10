@@ -780,7 +780,7 @@ function EmailInviteTab({ agentSfgId, sectionPerms, selectedSections, onToggleSe
         placeholder="name@example.com"
         className={inputCls}
       />
-      <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} />
+      <SectionPicker sectionPerms={sectionPerms} onToggle={onToggleSection} canWriteSections={canWriteSections} />
       {error && <p className="text-xs text-accent">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className={btnSecondary}>Cancel</button>
