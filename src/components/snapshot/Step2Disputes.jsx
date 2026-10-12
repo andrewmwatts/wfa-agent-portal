@@ -333,6 +333,14 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
     }
   }
 
+  // A denied dispute means the portal's policy data is what's wrong (or at least
+  // needs a look), so record the outcome and open the policy for correction in one
+  // step. Disputes with no linked policy just record the outcome.
+  function denyDispute(d) {
+    updateDispute(d.id, { outcome: 'denied', outcome_date: new Date().toISOString().slice(0, 10) })
+    openPolicy(d)
+  }
+
   // Merge optimistic local patches so status updates don't trigger a parent re-render
   const patchedDisputes = disputes.map(d => localPatches[d.id] ? { ...d, ...localPatches[d.id] } : d)
 
@@ -461,7 +469,7 @@ export default function Step2Disputes({ cycle, disputes, personnel, policies, ag
                     <>
                       <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">Submitted {fmtDate(d.submitted_at)}</span>
                       <button onClick={() => updateDispute(d.id, { outcome: 'approved', outcome_date: new Date().toISOString().slice(0, 10) })} className="text-xs px-3 py-1 rounded-lg bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-500/25 font-medium transition-colors">Approved</button>
-                      <button onClick={() => updateDispute(d.id, { outcome: 'denied',   outcome_date: new Date().toISOString().slice(0, 10) })} className="text-xs px-3 py-1 rounded-lg bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/25 font-medium transition-colors">Denied</button>
+                      <button onClick={() => denyDispute(d)} className="text-xs px-3 py-1 rounded-lg bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/25 font-medium transition-colors">Denied</button>
                     </>
                   ) : (
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${d.outcome === 'approved' ? 'bg-green-500/20 text-green-700 dark:text-green-300' : 'bg-red-500/15 text-red-600 dark:text-red-400'}`}>
