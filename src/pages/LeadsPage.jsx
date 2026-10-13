@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
@@ -7,6 +7,10 @@ import CalendarEventModal from '../components/CalendarEventModal'
 import { fmtDate, fmtDateTime } from '../utils/format'
 // Re-exported for RecruitingPage, which imports it from this module
 export { fmtDateTime }
+
+// The pane carries the full script text, so it loads on first open rather than
+// riding in the main bundle (which sits close to the PWA precache size limit).
+const ScriptPane = lazy(() => import('../components/ScriptPane'))
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 
@@ -163,6 +167,10 @@ export default function LeadsPage() {
   const [showAddScript, setShowAddScript] = useState(false)
   const [showImport,    setShowImport]    = useState(false)
 
+  // Script pane — opens beside the lead card so a call can be worked from both
+  const [scriptsOpen, setScriptsOpen] = useState(false)
+  const [scriptId,    setScriptId]    = useState('default-best')
+
   // ── Load ─────────────────────────────────────────────────────────────────────
 
   const sfgId = activeSubject?.sfg_id
@@ -212,7 +220,7 @@ export default function LeadsPage() {
     } finally { setActLoading(false) }
   }
 
-  function closeDetail() { setSelected(null); setActivity([]) }
+  function closeDetail() { setSelected(null); setActivity([]); setScriptsOpen(false) }
 
   // ── Lead mutations ────────────────────────────────────────────────────────────
 
@@ -404,6 +412,12 @@ export default function LeadsPage() {
     return list
   }, [leads, search, categoryFilter, typeFilter, statusFilter, sortDesc])
 
+  // The agent's own scripts, in the shape the pane lists after the built-ins
+  const personalPaneScripts = useMemo(
+    () => scripts.map(x => ({ id: String(x.id), tab: x.title, heading: x.title, subtitle: x.category, body: x.body })),
+    [scripts],
+  )
+
   const callbackLeads = useMemo(() => {
     return leads
       .filter(l => l.callback_at)
@@ -477,7 +491,9 @@ export default function LeadsPage() {
       <div className="flex-1 overflow-hidden flex">
 
         {/* List / content area */}
-        <div className={`flex-1 overflow-y-auto transition-all duration-300 ${selected ? 'lg:mr-[520px]' : ''}`}>
+        <div className={`flex-1 overflow-y-auto transition-all duration-300 ${
+          selected && scriptsOpen ? 'lg:mr-[920px] xl:mr-[1040px] 2xl:mr-[1120px]' : selected ? 'lg:mr-[520px]' : ''
+        }`}>
 
           {/* ── Leads tab ───────────────────────────────────────────────── */}
           {tab === 'leads' && (
@@ -644,7 +660,7 @@ export default function LeadsPage() {
           {tab === 'scripts' && (
             <ScriptsTab
               scripts={scripts}
-              defaultScripts={DEFAULT_SCRIPTS}
+              defaultScripts={DEFAULT_SCRIPT_LINKS}
               addLabel="Add Your Own"
               onAdd={() => setShowAddScript(true)}
               onDelete={handleDeleteScript}
@@ -690,9 +706,25 @@ export default function LeadsPage() {
               onStatusChange={updateStatus}
               onCallbackChange={saveCallback}
               onPatch={patchLeadField}
+              scriptsOpen={scriptsOpen}
+              onToggleScripts={() => setScriptsOpen(o => !o)}
             />
           )}
         </div>
+
+        {/* Script pane — to the left of the card, so both can be used at once */}
+        {selected && scriptsOpen && (
+          <Suspense fallback={null}>
+            <ScriptPane
+              personalScripts={personalPaneScripts}
+              activeId={scriptId}
+              onSelect={setScriptId}
+              onClose={() => setScriptsOpen(false)}
+              onManage={() => { closeDetail(); setTab('scripts') }}
+              context={selected.lead_type}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
@@ -707,7 +739,7 @@ export default function LeadsPage() {
         <AddLeadModal onClose={() => setShowAddLead(false)} onSave={handleAddLead} />
       )}
       {showAddScript && (
-        <AddScriptModal onClose={() => setShowAddScript(false)} onSave={handleAddScript} />
+        <AddScriptModal onClose={() => setShowAddScript(false)} onSave={handleAddScript} showFormatHint />
       )}
       {showSetup && (
         <LeadsSetupModal
@@ -874,6 +906,7 @@ export function LeadDetail({
   noteText, setNoteText, showNoteBox, setShowNoteBox,
   statusSaving, onClose, onCall, onText, onNote, onStatusChange, onCallbackChange, onPatch,
   statuses = STATUSES, isRecruiting = false,
+  scriptsOpen = false, onToggleScripts,
 }) {
   const { userProfile } = useAuth()
   const calConnected = userProfile?.google_calendar_connected ?? false
@@ -984,6 +1017,13 @@ export function LeadDetail({
           { label: 'Call', icon: '📞', cls: 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400',  onClick: onCall },
           { label: 'Text', icon: '💬', cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',      onClick: () => onText('') },
           { label: 'Note', icon: '📝', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',  onClick: () => setShowNoteBox(n => !n) },
+          ...(onToggleScripts ? [{
+            label: 'Scripts', icon: '📜',
+            cls: scriptsOpen
+              ? 'bg-accent/15 text-accent ring-1 ring-accent/40'
+              : 'bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-white/70',
+            onClick: onToggleScripts,
+          }] : []),
         ].map(btn => (
           <button key={btn.label} onClick={btn.onClick}
             className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-xs font-semibold ${btn.cls} transition-colors hover:opacity-80`}>
@@ -1356,7 +1396,9 @@ export function LeadDetail({
 
 // ─── Scripts Tab ───────────────────────────────────────────────────────────────
 
-const DEFAULT_SCRIPTS = [
+// Downloadable built-ins listed on the Scripts tab. The formatted text of the same
+// scripts (shown in the lead pane) lives in config/salesScripts.js.
+const DEFAULT_SCRIPT_LINKS = [
   {
     id: 'default-best',
     title: 'BEST System Script (Dialing)',
@@ -1406,15 +1448,14 @@ export function ScriptsTab({ scripts, onAdd, onDelete, defaultScripts = [], addL
               <a
                 key={s.id}
                 href={s.href}
-                target="_blank"
-                rel="noopener noreferrer"
+                download
                 className="flex items-start justify-between gap-2 bg-white dark:bg-primary/30 border border-primary/15 dark:border-white/10 rounded-xl p-3 hover:border-accent/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{s.title}</p>
                   <p className="text-xs text-gray-500 dark:text-white/40 leading-relaxed">{s.description}</p>
                 </div>
-                <span className="text-xs px-2 py-1 rounded-lg font-semibold shrink-0 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40">Open PDF</span>
+                <span className="text-xs px-2 py-1 rounded-lg font-semibold shrink-0 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/40">Download PDF</span>
               </a>
             ))}
           </div>
@@ -1943,7 +1984,7 @@ export function AddLeadModal({ onClose, onSave }) {
 
 // ─── Add Script Modal ──────────────────────────────────────────────────────────
 
-export function AddScriptModal({ onClose, onSave }) {
+export function AddScriptModal({ onClose, onSave, showFormatHint = false }) {
   const [form,   setForm]   = useState({ category: 'General', title: '', body: '', tag: '' })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -1973,6 +2014,11 @@ export function AddScriptModal({ onClose, onSave }) {
           </div>
           <LF label="Body *">
             <textarea value={form.body} onChange={e => set('body', e.target.value)} rows={7} placeholder="Script / template text…" className={INPUT_CLS + ' resize-y'} />
+            {showFormatHint && (
+              <p className="mt-1 text-[11px] text-gray-400 dark:text-white/30">
+                Formatting for the script pane: <code># Heading</code>, <code>## Subheading</code>, <code>1. numbered</code>, <code>- bullet</code>, <code>&gt; tip</code>, and <code>[stage direction]</code> in italics.
+              </p>
+            )}
           </LF>
           {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         </div>
