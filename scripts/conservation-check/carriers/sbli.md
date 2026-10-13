@@ -27,6 +27,11 @@ Lapsed Notices (the letters themselves; same data as Terminations), Upcoming Ann
 Tool limit: Chrome JS results are capped at ~1,000 chars. Store parsed rows on `window` and
 read them back in chunks.
 
+Parsing note (2026-10-13): table rows start with an empty cell, so Policy Number is cell 1
+(Terminations: [_, number, agent, insured, status, face, mode, premium, plan, status date];
+Reminder Notices: [_, number, agent, insured, owner, payor, due, premium, days to lapse, agency,
+issue, party, face]).
+
 ## Status mapping
 | Carrier wording | Our value | Notes |
 |---|---|---|

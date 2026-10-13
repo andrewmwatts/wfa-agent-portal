@@ -31,6 +31,16 @@ seemed stable across a reload, but the root page is the safe entry point.
      letter date; no cancellation letter (with or without grace / returned-draft warnings) →
      `Lapsed`.
 
+Fast path (2026-10-13 run, all in-page, no navigation):
+- Client List: the root page rows are form rows (hidden `a` + submit buttons). Build
+  `URLSearchParams` from that row's hidden inputs + `Button=View All` and `fetch(form.action,
+  {method:'POST'})`; parse the returned HTML.
+- Online Policy Correspondence: its "Correspondence" button is an image inside an `<a>`
+  (the anchors have no text). Get it with `document.elementFromPoint` on the button (or the
+  anchor in the row whose text mentions "Online Policy Correspondence") and `fetch(a.href)`.
+  Rows: [Agent, Policy (number + insured), Date, Description]. The other "Correspondence"
+  button is Agent Correspondence (debt/chargeback letters), not this.
+
 Tool limits: Chrome JS results are capped at ~1,000 chars, and outputs that contain URL tokens
 are blocked; never return hrefs. Accumulate on `window`, read back in chunks.
 

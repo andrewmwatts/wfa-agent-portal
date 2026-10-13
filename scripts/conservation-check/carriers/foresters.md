@@ -37,6 +37,13 @@ Browser: Kristina's Chrome profile (deviceId ac4e38f3…).
    - Plan name mapping: "Strong Foundation -30 Year Term" → `Strong Foundation (30)`;
      "Advantage Plus II Whole Life …" → `Advantage Plus II Non DFL`. Issued APV = monthly × 12; leave submitted APV blank; set `not_in_opt = true` (Andrew).
 
+## Fast path (2026-10-13 run)
+Skip paging: replay the grid's own call. `POST certdetmobileapi…/api/Certificate/GetCertList/` with the
+Bearer token and the captured body (`ParentProducerNumber: "749650"`, `StartIndex: 1`,
+`PageSize: 1000`) → `{CertificatesList, TotalRowCount}` in one call (765 rows). Fields: PolicyNumber,
+PolicyStatus, CurrentPaidToDate, ServicingProducerNumber. Letter "by" dates: the amount contains a
+period, so match `/by ([A-Z][a-z]+ d{1,2}, d{4})/` after "not lapse", not `receive[^.]*by`.
+
 ## Status mapping
 | Carrier status | Our value | Date |
 |---|---|---|

@@ -31,11 +31,22 @@ foreground**: background tabs get throttled and the detail data never loads.
      <date> your policy will lapse".
    - **Transactions** tab: payment history (useful when Payment is blank on terminated policies).
 
+## Fast path (2026-10-13 run)
+- List: the page PUTs `/fbu/uapi/modules/618c3e20dd1d781c2cdc1d34/execute` with `data.limit:"50"`.
+  Replay with `limit:"500"` → all rows (178; `totalNoOfPolicies`). Fields: policyNumber, status,
+  premiumDueDate (stale), issueDate.
+- Payment detail: open one policy via VIEW (window.open hook), click Payment, capture
+  `/modules/618ec51e62ff9b1930fb7970/execute`; replay with the policy number swapped →
+  billingDetails {paidToDate, premiumDueDate, gracePeriodExpiryDate, lastPaymentRcvdDate}.
+  Works for FEX/FEXB numbers; `6602…` numbers error (other admin system).
+- The list's `fullUrl` (`#/display/605d…?SelectedPolicyNumber=`) does not load a policy.
+
 ## Status mapping
 | TransAmerica | Our value | Date |
 |---|---|---|
 | Active - Premium Due | `Lapse pending` | Grace/Lapse letter's lapse-by date; else Grace Period Ends; if passed → today + 7 |
 | Active, but an alert (Grace/Lapse letter, reversed payment, lapse notice) or the detail page shows > 14 days past due | `Lapse pending` ("hidden" pending; Andrew) | same as above |
+| Active with only a reversed-payment alert, no grace letter yet | no change; wait for the letter (Andrew, 2026-10-13) | — |
 | Active, paid current (detail Premium Due ≥ today) | in force; pending recovers → NULL | — |
 | Lapsed | `Lapsed` | Paid-to + 60 (Andrew); if that's in the future, use the lapse-notice alert date |
 | Terminated, Surrendered | `Cancelled` (Andrew treats them the same) | paid-to |

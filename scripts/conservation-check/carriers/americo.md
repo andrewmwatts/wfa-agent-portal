@@ -35,7 +35,7 @@ last check. Then switch filter to Lapse Pending and read Status Date.
 | Lapse Pending (42) | `Lapse pending` | date = Status Date + 45 |
 | Lapsed (4) | `Lapsed` | Terminated Date |
 | Surrendered (6) | `Cancelled` | Terminated Date (Andrew) |
-| Death Claim Paid (11) | `Death` | **Status Date** (Andrew) |
+| Death Claim Paid (11), Death Claim Pending (10) | `Death` | **Status Date** (Andrew; code 10 approved 2026-10-13) |
 | Carrier declined to issue (27), DNQ (109) | Snapshot rule → `Declined, On Snapshot` / status `Declined` | Terminated Date |
 | HO Withdrew (59) | Snapshot rule → `Withdrawn, On Snapshot` / status `Withdrawn` | Terminated Date |
 | No Premium - Incomplete (1007) | Only if DB base status is `Issued` (otherwise leave as is). On Snapshot: Status Date + 45 still in the future → `First Premium Not Paid` (date = Status Date + 45); already passed → `Not Taken, On Snapshot` (date = Terminated Date). Not on Snapshot → propose status `Incomplete` (approval). | Andrew |

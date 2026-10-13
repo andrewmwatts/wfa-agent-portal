@@ -26,6 +26,12 @@ DB carriers: `Banner` and `LGA`. The portal shows both under company "BNR"; matc
 
 Tool limit: Chrome JS results are capped at ~1,000 chars.
 
+## Fast path (2026-10-13 run)
+The detail page is server-rendered: `fetch("/business/policy/{n}/detail")` and parse the text for
+Status, Policy Paid To and Last Bill Generated Date. ~6 s each; 4 in parallel did all 652
+checkable policies in ~15 min (run it as a background promise on `window`). This replaces the
+My Business List paging. 10 policies return no data (not visible to this login).
+
 ## Status mapping
 | Carrier | Our value | Date |
 |---|---|---|
@@ -33,7 +39,7 @@ Tool limit: Chrome JS results are capped at ~1,000 chars.
 | Active - Normal / Active - Restored, not in grace | in force; pending recovers → NULL | — |
 | Terminated - Lapsed | **covers both lapses and cancellations.** Open the detail: if Paid To + 2 months has passed → `Lapsed`; else → `Cancelled` (terminated while paid up) | Lapsed: the prior projection if the policy was `Lapse pending`, else Paid To + 2 months. Cancelled: the later of Paid To and Last Bill Generated |
 | Terminated - Other | `Cancelled` (includes carrier fraud terminations) | the later of Paid To and Last Bill Generated |
-| Terminated - Not Taken / Declined / Incomplete / Withdrawn Owner / Postponed | Snapshot rule if the DB has the policy as Issued | TBD |
+| Terminated - Not Taken / Declined / Incomplete / Withdrawn Owner / Postponed | Snapshot rule if the DB has the policy as Issued | not shown on the list; ask Andrew (2026-10-13: he supplied the not-taken dates) |
 | Issued, Not Paid (detail page; not on My Business List yet) | Snapshot rule. Not on Snapshot (approved 2026-10-04): status → `Incomplete`, `issue_date` → NULL, `application_notes` = "Issued, not paid" | — |
 
 **Banner rewrites dates on termination.** After a lapse or cancel, many date fields get reset to
@@ -49,6 +55,15 @@ Generated (Andrew, 2026-10-04).
 
 ## Policy number display
 `5001234567` (10 digits). Same as stored.
+
+## Applications vs policies
+Some DB `Issued` numbers are still **Applications** at Banner (My Business List Type = Application).
+The policy-detail URL returns "Page Not Found" for them. Find them with the My Business List
+search box (real typing + Enter, **Type = All**; the URL `searchCriteria` param is not applied
+reliably on reload). 2026-10-13: two were "Terminated - Not Taken" applications.
+
+"You do not have permission to view this page" on a detail page (7 policies, incl. one on the
+grace list) is a Banner system glitch (Andrew emailed Banner 2026-10-13); flag, don't act.
 
 ## Data hygiene (open)
 - Fixed 2026-10-04: two tab-prefixed numbers trimmed; the missing number filled

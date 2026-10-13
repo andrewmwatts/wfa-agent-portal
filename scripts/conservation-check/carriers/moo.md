@@ -31,6 +31,12 @@ Browser: Kristina's Chrome profile (deviceId ac4e38f3…).
 Run: look up every DB-pending policy plus every checkable policy with an event in the last
 30 days.
 
+## Fast path (2026-10-13 run)
+Policy lookups without the form: capture one Search (`/my-business/graphql`, operation
+`GetPolicies`, variables.input.search {field: "policyNumber", value}) and replay it with fetch
+for each number (4 in parallel, ~66 lookups in seconds). Content: status, paidToDate,
+lastChangeDate, producers.
+
 ## Status mapping
 | MOO | Our value | Date |
 |---|---|---|
@@ -38,11 +44,13 @@ Run: look up every DB-pending policy plus every checkable policy with an event i
 | Inforce, paid-to behind, **with a lapse notice or already pending** | `Lapse pending` | paid-to + 60; already passed → today + 7 (MOO often doesn't lapse on time) |
 | Inforce, paid-to slightly behind, no lapse notice | no change (monthly payers run a few days late) | — |
 | Paid-to blank | read the latest notice's "As of …, the Paid to Date was …"; nothing → assume issue + 1 month | |
+| "Potential Cancellation - New Business" on a status-Issued policy | initial premium bounced: not on Snapshot → base-status correction (approval); Andrew may get it removed from an in-process Snapshot | — |
 | Lapsed - Non payment + "Policy Lapsed" event | `Lapsed` | event date |
 | Lapsed - Non payment + "Terminated by Customer Request" | `Cancelled` | event date |
 | Policy Cancelled / Cancelled-Surrendered | `Cancelled` | event date |
 | Issued / Placed (never paid), not on Snapshot | approved 2026-10-07: status → `Incomplete`, `issue_date` → NULL, notes "Issued, not paid" | — |
 | Issued, first premium paid then a later premium bounced | `Lapse pending` (not FPNP) | paid-to + 60 |
+| Status "Issued" with a Potential Lapse event (Andrew, 2026-10-13: first premium paid, a later one bounced) | `Lapse pending` | paid-to blank → issue + 1 month, + 60 |
 | Contradictions (e.g. Lapsed right after a Reinstatement, paid-to in future, detail page says Inforce) | leave as is; recheck next run | — |
 
 Ignore: saved policies keep their lapse alerts after payment (the paid-to date decides);

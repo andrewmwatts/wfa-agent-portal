@@ -30,6 +30,13 @@ take one then.
 Tool limit: Chrome JS results are capped at ~1,000 chars. Accumulate rows on `window`,
 match in the page, and read back only the differences.
 
+## Fast path (2026-10-13 run)
+After setting the grid filters once (View = My Expanded Hierarchy, start 1/1/2022), the app calls
+`GET …/experience-agent-portal-v1/policy-search?…&downline=true&statuses=ALL…` (Authorization
+header). One response holds every row (`policySummaries`, 197): policyNumber, policyStatus
+(ACTIVE, LAPSED, TERMINATED, SURRENDERED, DEATH_CLAIM, NOT_TAKEN, ISSUED_NOT_PAID…),
+billingDetails.paidToDate. Hook XHR before changing the filter to capture it; no paging needed.
+
 ## Status mapping
 | Carrier | Our value | Date |
 |---|---|---|
