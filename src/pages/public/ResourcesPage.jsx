@@ -48,7 +48,7 @@ export default function ResourcesPage() {
                 <p style={{ fontSize: 13, color: '#4A6568', margin: '0 0 14px', lineHeight: 1.5, fontFamily: 'Inter, sans-serif' }}>
                   {g.body}
                 </p>
-                <a href={g.href} target="_blank" rel="noopener noreferrer"
+                <a href={g.href}
                   style={{ fontSize: 13, color: '#EE2666', textDecoration: 'none', fontFamily: 'Inter, sans-serif' }}>
                   {g.label}
                 </a>
