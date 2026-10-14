@@ -26,5 +26,7 @@ npm-debug.log*
 # Reference / scratch HTML exports
 *.html
 *_files/
+# ...except the hosted onboarding guide page
+!public/guides/*.html
 
 .vercel
