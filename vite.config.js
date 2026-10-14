@@ -74,6 +74,9 @@ export default defineConfig({
       injectManifest: {
         // Precache all build output
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // The hosted onboarding guide is a ~540 KB standalone page; it is fetched on
+        // demand rather than shipped to every installed client.
+        globIgnores: ['guides/**'],
       },
     }),
   ],

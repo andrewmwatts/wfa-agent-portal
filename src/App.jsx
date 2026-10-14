@@ -38,18 +38,7 @@ import UnderwritingPage from './pages/public/UnderwritingPage'
 import NewYorkOptionsPage from './pages/public/NewYorkOptionsPage'
 import PrivacyPolicy from './pages/public/PrivacyPolicy'
 import TermsOfService from './pages/public/TermsOfService'
-import PublicLayout from './components/public/PublicLayout'
-
-function ComingSoon({ title }) {
-  return (
-    <PublicLayout>
-      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '64px 28px', textAlign: 'center' }}>
-        <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif', margin: '0 0 8px' }}>Coming soon</p>
-        <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#003539', margin: 0 }}>{title}</h1>
-      </div>
-    </PublicLayout>
-  )
-}
+import ResourcesPage from './pages/public/ResourcesPage'
 
 export default function App() {
   return (
@@ -112,7 +101,7 @@ export default function App() {
             <Route path="/"           element={<Landing />} />
             <Route path="/videos"     element={<VideoLibrary />} />
             <Route path="/videos/browse" element={<VideoBrowse />} />
-            <Route path="/resources"  element={<ComingSoon title="Documents & guides" />} />
+            <Route path="/resources"  element={<ResourcesPage />} />
             <Route path="/calendar"   element={<CalendarPage />} />
             <Route path="/guidelines" element={<UnderwritingPage />} />
             <Route path="/guidelines/new-york" element={<NewYorkOptionsPage />} />

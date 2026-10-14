@@ -58,7 +58,7 @@ const quickLinks = (videoCount) => [
     icon: <FileIcon />,
     title: 'Documents & guides',
     body: 'Admin guides, scripts, carrier resources, and reference materials.',
-    link: { label: 'Coming soon', active: false },
+    link: { label: 'View documents →', to: '/resources', active: true },
   },
   {
     icon: <CalendarIcon />,
