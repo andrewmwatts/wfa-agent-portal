@@ -1,3 +1,4 @@
+import { lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PWAUpdatePrompt from './components/PWAUpdatePrompt'
@@ -10,26 +11,6 @@ import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import AcceptInvite from './pages/AcceptInvite'
 import NotFound from './pages/NotFound'
-import Dashboard from './pages/Dashboard'
-import PoliciesPage from './pages/PoliciesPage'
-import OnboardingPage from './pages/OnboardingPage'
-import EngagementPage from './pages/EngagementPage'
-import MonthlyMetricsPage from './pages/MonthlyMetricsPage'
-import WeeklyMetricsPage from './pages/WeeklyMetricsPage'
-import MonthlyAgentTotalsPage from './pages/MonthlyAgentTotalsPage'
-import AgentsPage from './pages/AgentsPage'
-import AccountabilityPage from './pages/AccountabilityPage'
-import CoachingPage from './pages/CoachingPage'
-import ActivityPage from './pages/ActivityPage'
-import LeadsPage from './pages/LeadsPage'
-import RecruitingPage from './pages/RecruitingPage'
-import Project100Page from './pages/Project100Page'
-import NinetyDayPlanPage from './pages/NinetyDayPlanPage'
-import CarrierMetricsPage from './pages/CarrierMetricsPage'
-import Admin from './pages/Admin'
-import AdminToolsPage from './pages/AdminToolsPage'
-import SnapshotPage from './pages/SnapshotPage'
-import IncomePage from './pages/IncomePage'
 import Landing from './pages/public/Landing'
 import VideoLibrary from './pages/public/VideoLibrary'
 import VideoBrowse from './pages/public/VideoBrowse'
@@ -39,6 +20,30 @@ import NewYorkOptionsPage from './pages/public/NewYorkOptionsPage'
 import PrivacyPolicy from './pages/public/PrivacyPolicy'
 import TermsOfService from './pages/public/TermsOfService'
 import ResourcesPage from './pages/public/ResourcesPage'
+
+// Portal pages load on demand: they are only reached after sign-in, and keeping them out
+// of the entry bundle leaves it small enough for the service worker to precache.
+// AppLayout wraps <Outlet /> in <Suspense> for the loading state.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const PoliciesPage = lazy(() => import('./pages/PoliciesPage'))
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
+const EngagementPage = lazy(() => import('./pages/EngagementPage'))
+const MonthlyMetricsPage = lazy(() => import('./pages/MonthlyMetricsPage'))
+const WeeklyMetricsPage = lazy(() => import('./pages/WeeklyMetricsPage'))
+const MonthlyAgentTotalsPage = lazy(() => import('./pages/MonthlyAgentTotalsPage'))
+const AgentsPage = lazy(() => import('./pages/AgentsPage'))
+const AccountabilityPage = lazy(() => import('./pages/AccountabilityPage'))
+const CoachingPage = lazy(() => import('./pages/CoachingPage'))
+const ActivityPage = lazy(() => import('./pages/ActivityPage'))
+const LeadsPage = lazy(() => import('./pages/LeadsPage'))
+const RecruitingPage = lazy(() => import('./pages/RecruitingPage'))
+const Project100Page = lazy(() => import('./pages/Project100Page'))
+const NinetyDayPlanPage = lazy(() => import('./pages/NinetyDayPlanPage'))
+const CarrierMetricsPage = lazy(() => import('./pages/CarrierMetricsPage'))
+const Admin = lazy(() => import('./pages/Admin'))
+const AdminToolsPage = lazy(() => import('./pages/AdminToolsPage'))
+const SnapshotPage = lazy(() => import('./pages/SnapshotPage'))
+const IncomePage = lazy(() => import('./pages/IncomePage'))
 
 export default function App() {
   return (

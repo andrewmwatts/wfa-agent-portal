@@ -19,12 +19,25 @@
   --color-accent-dark:     196 29 84;   /* #c41d54 */
 }
 
+/*
+  Header height, including the iPhone status-bar / notch inset. The viewport
+  extends under the status bar (viewport-fit=cover), so the fixed header grows by
+  that inset and everything pinned below it uses this variable instead of a
+  literal 3.5rem. The inset is 0 on desktops and in ordinary browser windows.
+*/
+:root {
+  --header-h: calc(3.5rem + env(safe-area-inset-top, 0px));
+}
+
 /* Light mode default — dark mode overridden by AppLayout wrapper classes */
 body {
   background-color: #f5f8f9;
   color: #111827;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Landscape iPhone: keep content clear of the notch / rounded corners. */
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Dark mode body background (before React hydrates, prevents flash) */
@@ -53,4 +66,25 @@ html.dark option {
   --pub-text-tertiary:  #7A9499;
   --pub-border:         #DDE6E8;
   --pub-border-mid:     #C8D6D8;
+}
+
+/* ── Phones ───────────────────────────────────────────────────────────────── */
+@media (max-width: 639px) {
+  /*
+    iOS Safari zooms the whole page when a focused field is under 16px and does
+    not zoom back out. The portal's compact text-xs / text-sm fields are fine on
+    larger screens, so on phones only the field text is raised to 16px.
+    Specificity (element + three :not) beats the single-class text-* utilities.
+  */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Header gutter that also clears a landscape notch. */
+  .pad-safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
 }

@@ -20,7 +20,7 @@ export default function ScopeDropdown({ masterPersonnel, selfId, value, onChange
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+      className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer min-w-0 max-sm:h-11 max-sm:max-w-[10.5rem] max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px]"
     >
       <option value="master" style={optionStyle}>Master Agency</option>
       {owners.map(o => (

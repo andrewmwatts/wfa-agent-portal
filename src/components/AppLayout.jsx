@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -9,9 +9,20 @@ import AgencyPreviewBanner from './AgencyPreviewBanner'
 import UserMenu from './UserMenu'
 import { registerPushSubscription } from '../utils/pushNotifications'
 
-// Header height as a shared constant so sidebar top offset stays in sync
-export const HEADER_H = 'h-14'
-export const HEADER_TOP = 'top-14'
+// Header height as a shared constant so sidebar top offset stays in sync.
+// --header-h (index.css) is 3.5rem plus the iPhone status-bar inset, so the header
+// grows to cover the status bar and everything pinned beneath it follows.
+export const HEADER_H = 'h-[var(--header-h)] pt-[env(safe-area-inset-top)]'
+export const HEADER_TOP = 'top-[var(--header-h)]'
+
+// Shown while a lazily-loaded page's code downloads.
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh]" role="status" aria-label="Loading">
+      <div className="w-8 h-8 rounded-full border-4 border-accent border-t-transparent animate-spin" />
+    </div>
+  )
+}
 
 export default function AppLayout() {
   const { userProfile, signOut, session } = useAuth()
@@ -79,8 +90,9 @@ export default function AppLayout() {
       {/* Sidebar sits below the header */}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Main content: pushed down by header, pushed right by sidebar on desktop */}
-      <div className="pt-14 lg:pl-56 flex flex-col min-h-screen">
+      {/* Main content: pushed down by header, pushed right by the icon rail (1024px+)
+          or the full sidebar (1280px+) */}
+      <div className="pt-[var(--header-h)] lg:pl-16 xl:pl-56 flex flex-col min-h-screen">
         <ViewingBanner />
         <AgencyPreviewBanner />
 
@@ -102,8 +114,10 @@ export default function AppLayout() {
           )
         })}
 
-        <main className="flex-1">
-          <Outlet />
+        <main className="flex-1 pb-[env(safe-area-inset-bottom)]">
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 
@@ -141,14 +155,14 @@ function Header({ userProfile, onSignOut, onMenuClick }) {
   const logoUrl                = useAgencyLogo()
 
   return (
-    <header className={`fixed top-0 inset-x-0 z-30 ${HEADER_H} bg-primary/[0.09] border-b border-primary/20 dark:bg-primary dark:border-white/10 px-4 sm:px-6 flex items-center justify-between`}>
+    <header className={`fixed top-0 inset-x-0 z-30 ${HEADER_H} bg-primary/[0.09] border-b border-primary/20 dark:bg-primary dark:border-white/10 px-4 pad-safe-x sm:px-6 flex items-center justify-between`}>
 
       {/* Left: hamburger (mobile/tablet only) + agency logo */}
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
           aria-label="Open menu"
-          className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-white/50 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+          className="lg:hidden w-11 h-11 -ml-2 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-white/50 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -172,7 +186,7 @@ function Header({ userProfile, onSignOut, onMenuClick }) {
           href="/"
           title="Agent Resources"
           aria-label="Agent Resources"
-          className="inline-flex items-center gap-1.5 h-8 px-2 text-xs font-medium text-gray-500 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/80 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 mr-1"
+          className="inline-flex items-center justify-center gap-1.5 h-11 min-w-[44px] lg:h-8 lg:min-w-0 px-2 text-xs font-medium text-gray-500 dark:text-white/40 hover:text-gray-800 dark:hover:text-white/80 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 mr-1"
         >
           <UnlockIcon />
           <span className="hidden sm:inline">Agent Resources</span>
@@ -180,7 +194,7 @@ function Header({ userProfile, onSignOut, onMenuClick }) {
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-primary/10 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+          className="w-11 h-11 lg:w-8 lg:h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-primary/10 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
         >
           {theme === 'dark' ? (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

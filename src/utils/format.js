@@ -34,6 +34,18 @@ export function fmtDate(value, { empty = '—' } = {}) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+// Compact date for phone cards / tablet tables: "Oct 3" for the current year,
+// "Oct 3, 2025" for any other year (so old records are never ambiguous).
+export function fmtDateShort(value, { empty = '—' } = {}) {
+  if (!value) return empty
+  const d = parseDateLocal(value)
+  if (!d || isNaN(d)) return String(value)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString('en-US', sameYear
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 // Format a timestamp as "Mon D, h:mm AM/PM".
 export function fmtDateTime(value, { empty = '—' } = {}) {
   if (!value) return empty

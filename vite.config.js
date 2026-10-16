@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from 'tailwindcss'
+import plugin from 'tailwindcss/plugin'
 import autoprefixer from 'autoprefixer'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -31,7 +32,13 @@ const tailwindConfig = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `touch:` targets coarse pointers (a finger), so tablets get 44px tap targets
+    // without making the same controls taller for mouse users on a laptop.
+    // Added as a plugin variant rather than a raw `screens` entry: a raw screen
+    // silently switches off every `max-*` / `min-*` variant in Tailwind 3.
+    plugin(({ addVariant }) => addVariant('touch', '@media (pointer: coarse)')),
+  ],
 }
 
 export default defineConfig({

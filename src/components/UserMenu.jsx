@@ -120,7 +120,7 @@ export default function UserMenu({ userProfile, onSignOut }) {
         {/* Trigger */}
         <button
           onClick={() => setOpen(o => !o)}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 hover:bg-primary/10 dark:hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 max-sm:min-h-[44px] hover:bg-primary/10 dark:hover:bg-white/10 transition-colors"
         >
           <span className="hidden sm:block text-sm text-gray-600 dark:text-white/70 truncate max-w-[160px]">
             {userProfile?.full_name ?? userProfile?.email}
@@ -145,7 +145,7 @@ export default function UserMenu({ userProfile, onSignOut }) {
               <DropItem onClick={disconnectCalendar}>
                 <CalendarIcon />
                 <span className="flex-1">Google Calendar</span>
-                <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">Connected</span>
+                <span className="text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">Connected</span>
               </DropItem>
             ) : (
               <DropItem onClick={connectCalendar} disabled={calConnecting}>
@@ -180,7 +180,7 @@ function DropItem({ onClick, danger, disabled, children }) {
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`w-full text-left flex items-center gap-2.5 px-3.5 py-2 text-sm transition-colors disabled:opacity-50
+      className={`w-full text-left flex items-center gap-2.5 px-3.5 py-2 max-sm:py-3 text-sm transition-colors disabled:opacity-50
         ${danger
           ? 'text-accent hover:bg-accent/10'
           : 'text-gray-700 dark:text-white/70 hover:bg-primary/[0.06] dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
@@ -208,7 +208,7 @@ function Modal({ title, onClose, wide, children }) {
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+            className="w-7 h-7 max-sm:w-11 max-sm:h-11 max-sm:-mr-2 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -366,7 +366,7 @@ function NotificationMenuItem({ userProfile }) {
       <DropItem disabled>
         <BellIcon />
         <span className="flex-1">Push Notifications</span>
-        <span className="text-[10px] text-gray-400 dark:text-white/30 whitespace-nowrap">Add to Home Screen</span>
+        <span className="text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">Add to Home Screen</span>
       </DropItem>
     )
   }
@@ -384,7 +384,7 @@ function NotificationMenuItem({ userProfile }) {
       <DropItem onClick={handleDisable} disabled={busy}>
         <BellIcon />
         <span className="flex-1">Push Notifications</span>
-        <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">
+        <span className="text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-200 dark:border-green-500/20">
           {busy ? '…' : 'On'}
         </span>
       </DropItem>

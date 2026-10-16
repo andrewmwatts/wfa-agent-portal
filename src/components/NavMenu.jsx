@@ -52,7 +52,7 @@ export default function NavMenu() {
             return (
               <div key={si} className={si > 0 ? 'mt-1' : ''}>
                 {section.label && (
-                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30">
+                  <p className="px-4 pt-2 pb-1 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">
                     {section.label}
                   </p>
                 )}
