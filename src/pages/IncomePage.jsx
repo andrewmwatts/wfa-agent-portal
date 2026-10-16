@@ -8,6 +8,8 @@ import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import { parseDateLocal } from '../utils/format'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { SHEET_OVERLAY, SHEET_PANEL, SHEET_HEAD_PAD, SHEET_FOOT_PAD } from '../components/ui/sheetClasses'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -140,8 +142,9 @@ function parseCSVAmount(str) {
 
 const inputCls = [
   'w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900',
-  'placeholder:text-gray-400',
-  'dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/30',
+  'max-sm:py-3 max-sm:rounded-xl touch:sm:min-h-[44px]',
+  'placeholder:text-gray-500',
+  'dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/40',
   'focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60 transition-colors',
 ].join(' ')
 
@@ -149,7 +152,7 @@ const selectCls = inputCls
 
 function Label({ children }) {
   return (
-    <label className="block text-xs font-medium text-gray-500 dark:text-white/50 uppercase tracking-wide mb-1">
+    <label className="block text-xs font-medium text-gray-600 dark:text-white/55 uppercase tracking-wide mb-1">
       {children}
     </label>
   )
@@ -165,7 +168,7 @@ function CardShell({ children, className = '' }) {
 
 function EmptyChart({ message = 'No data yet' }) {
   return (
-    <div className="flex flex-col items-center justify-center h-48 text-gray-400 dark:text-white/30 gap-2">
+    <div className="flex flex-col items-center justify-center h-48 text-gray-500 dark:text-white/45 gap-2">
       <svg className="w-8 h-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
           d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -179,16 +182,18 @@ function EmptyChart({ message = 'No data yet' }) {
 
 function PeriodSelector({ period, onChange }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
+      {/* Phone: one scrolling row of chips (bleeds to the screen edge); wraps from sm up */}
+      <div className="flex gap-1.5 sm:flex-wrap sm:gap-1 max-sm:w-[calc(100%+2rem)] max-sm:-mx-4 max-sm:px-4 max-sm:overflow-x-auto max-sm:pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {PERIOD_PRESETS.map(p => (
           <button
             key={p.key}
             onClick={() => onChange(computePeriod(p.key, period.start, period.end))}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            aria-pressed={period.preset === p.key}
+            className={`shrink-0 whitespace-nowrap px-3 py-1.5 max-sm:h-11 max-sm:px-4 max-sm:text-sm touch:sm:min-h-[44px] rounded-lg max-sm:rounded-xl text-xs font-medium border transition-colors ${
               period.preset === p.key
-                ? 'bg-accent text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15'
+                ? 'border-accent bg-primary text-white dark:bg-white dark:text-primary'
+                : 'border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15'
             }`}
           >
             {p.label}
@@ -196,15 +201,15 @@ function PeriodSelector({ period, onChange }) {
         ))}
       </div>
       {period.preset === 'custom' && (
-        <div className="flex items-center gap-2">
-          <input type="date" value={period.start}
+        <div className="flex items-center gap-2 max-sm:w-full">
+          <input type="date" value={period.start} aria-label="Start date"
             onChange={e => onChange({ ...period, start: e.target.value })}
-            className="text-xs border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/60"
+            className="text-xs border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 max-sm:flex-1 max-sm:min-w-0 max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px] bg-white dark:bg-white/5 dark:text-white dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-accent/60"
           />
-          <span className="text-gray-400 dark:text-white/30 text-xs">to</span>
-          <input type="date" value={period.end}
+          <span className="text-gray-500 dark:text-white/50 text-xs">to</span>
+          <input type="date" value={period.end} aria-label="End date"
             onChange={e => onChange({ ...period, end: e.target.value })}
-            className="text-xs border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/60"
+            className="text-xs border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 max-sm:flex-1 max-sm:min-w-0 max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px] bg-white dark:bg-white/5 dark:text-white dark:[color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-accent/60"
           />
         </div>
       )}
@@ -217,24 +222,24 @@ function PeriodSelector({ period, onChange }) {
 function SummaryCards({ summary, periodLabel: label }) {
   const cards = [
     { title: 'Total Income',    value: summary.income,       color: 'text-green-600 dark:text-green-400' },
-    { title: 'Total Expenses',  value: summary.expense,      color: 'text-red-500 dark:text-red-400'     },
-    { title: 'Net',             value: summary.net,          color: summary.net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400', signed: true },
+    { title: 'Total Expenses',  value: summary.expense,      color: 'text-red-600 dark:text-red-400'     },
+    { title: 'Net',             value: summary.net,          color: summary.net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400', signed: true },
     { title: 'Tax Deductible',  value: summary.taxDeductible, color: 'text-blue-600 dark:text-blue-400', sub: 'expenses this period' },
   ]
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       {cards.map(c => (
-        <CardShell key={c.title} className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">
+        <CardShell key={c.title} className="p-4 sm:p-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-1">
             {c.title}
           </p>
-          <p className={`text-2xl font-bold ${c.color}`}>
+          <p className={`text-xl sm:text-2xl font-bold ${c.color}`}>
             {c.signed
               ? (c.value >= 0 ? '' : '-') + fmtMoney(c.value)
               : fmtMoney(c.value)
             }
           </p>
-          <p className="text-xs text-gray-400 dark:text-white/30 mt-1">
+          <p className="text-xs text-gray-500 dark:text-white/45 mt-1">
             {c.sub ?? label}
           </p>
         </CardShell>
@@ -248,10 +253,10 @@ function SummaryCards({ summary, periodLabel: label }) {
 function IncomeExpenseBarChart({ rolling12, theme }) {
   const hasData = rolling12.some(m => m.income > 0 || m.expense > 0)
   const gridColor = theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'
-  const axisColor = theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)'
+  const axisColor = theme === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)'
 
   return (
-    <CardShell className="p-5">
+    <CardShell className="p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">
         Income vs Expenses — 12 Month Rolling
       </h3>
@@ -259,8 +264,8 @@ function IncomeExpenseBarChart({ rolling12, theme }) {
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={rolling12} margin={{ top: 4, right: 8, left: 8, bottom: 0 }} barCategoryGap="25%">
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false}
+            <XAxis dataKey="label" tick={{ fill: axisColor, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: axisColor, fontSize: 12 }} axisLine={false} tickLine={false}
               tickFormatter={fmtMoneyShort} width={52} />
             <Tooltip
               contentStyle={{
@@ -285,8 +290,6 @@ function IncomeExpenseBarChart({ rolling12, theme }) {
 // ─── Chart 2: Category Breakdown (two donuts) ──────────────────────────────────
 
 function CategoryDonutCharts({ periodTx, theme }) {
-  const axisColor = theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)'
-
   const incomeEntries = useMemo(() => {
     const map = {}
     for (const tx of periodTx) {
@@ -345,11 +348,11 @@ function CategoryDonutCharts({ periodTx, theme }) {
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                <span className="truncate text-gray-600 dark:text-white/60">{e.name}</span>
+                <span className="truncate text-gray-600 dark:text-white/65">{e.name}</span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                 <span className="text-gray-700 dark:text-white/80 font-medium">{fmtMoney(e.value)}</span>
-                <span className={`${axisColor} text-gray-400 dark:text-white/30`}>
+                <span className="text-gray-500 dark:text-white/50">
                   {total ? `${Math.round(e.value / total * 100)}%` : ''}
                 </span>
               </div>
@@ -361,11 +364,11 @@ function CategoryDonutCharts({ periodTx, theme }) {
   }
 
   return (
-    <CardShell className="p-5">
+    <CardShell className="p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">Category Breakdown</h3>
-      <div className="flex gap-6">
+      <div className="flex flex-col sm:flex-row gap-6">
         <DonutHalf label="Income by Category" entries={incomeEntries} total={incomeEntries.total} />
-        <div className="w-px bg-gray-200 dark:bg-white/10 self-stretch" />
+        <div className="h-px sm:h-auto sm:w-px bg-gray-200 dark:bg-white/10 sm:self-stretch" />
         <DonutHalf label="Expenses by Category" entries={expenseEntries} total={expenseEntries.total} />
       </div>
     </CardShell>
@@ -376,7 +379,7 @@ function CategoryDonutCharts({ periodTx, theme }) {
 
 function RunningBalanceChart({ periodTx, theme }) {
   const gridColor = theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'
-  const axisColor = theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)'
+  const axisColor = theme === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)'
 
   const chartData = useMemo(() => {
     const sorted = [...periodTx].sort((a, b) => a.date.localeCompare(b.date))
@@ -395,7 +398,7 @@ function RunningBalanceChart({ periodTx, theme }) {
 
   if (chartData.length < 2) {
     return (
-      <CardShell className="p-5">
+      <CardShell className="p-4 sm:p-5">
         <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">Running Balance</h3>
         <EmptyChart message="Add at least 2 transactions to see running balance" />
       </CardShell>
@@ -407,7 +410,7 @@ function RunningBalanceChart({ periodTx, theme }) {
   ).map(d => d.date)
 
   return (
-    <CardShell className="p-5">
+    <CardShell className="p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">Running Balance</h3>
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
@@ -423,8 +426,8 @@ function RunningBalanceChart({ periodTx, theme }) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="date" ticks={ticks} tickFormatter={d => parseDateLocal(d)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? d}
-            tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false}
+            tick={{ fill: axisColor, fontSize: 12 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: axisColor, fontSize: 12 }} axisLine={false} tickLine={false}
             tickFormatter={fmtMoneyShort} width={52} />
           <ReferenceLine y={0} stroke={theme === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'} strokeDasharray="4 2" />
           <Tooltip
@@ -482,16 +485,47 @@ function YTDTable({ periodTx }) {
   const rows = Math.max(incomeRows.length, expenseRows.length)
 
   return (
-    <CardShell className="p-5">
+    <CardShell className="p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80 mb-4">Period Summary</h3>
-      <div className="overflow-x-auto">
+
+      {/* Phone: income, then expenses, then net — one column */}
+      <div className="sm:hidden space-y-5">
+        {[
+          { title: 'Income',   rows: incomeRows,  total: totalIncome,  totalLabel: 'Total Income',   cls: 'text-green-700 dark:text-green-400' },
+          { title: 'Expenses', rows: expenseRows, total: totalExpense, totalLabel: 'Total Expenses', cls: 'text-red-700 dark:text-red-400' },
+        ].map(g => g.rows.length > 0 && (
+          <div key={g.title}>
+            <p className="text-xs font-semibold text-gray-600 dark:text-white/55 uppercase tracking-wide pb-2 border-b border-gray-200 dark:border-white/10">{g.title}</p>
+            <ul className="divide-y divide-gray-100 dark:divide-white/5">
+              {g.rows.map(r => (
+                <li key={r.category} className="flex justify-between gap-3 py-2.5 text-sm">
+                  <span className="text-gray-700 dark:text-white/70">{r.category}</span>
+                  <span className={`font-medium tabular-nums ${g.cls}`}>{fmtMoney(r.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-between gap-3 pt-2.5 border-t-2 border-gray-300 dark:border-white/20 text-sm font-semibold">
+              <span className="text-gray-800 dark:text-white/85">{g.totalLabel}</span>
+              <span className={`tabular-nums ${g.cls}`}>{fmtMoney(g.total)}</span>
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between items-center bg-gray-50 dark:bg-white/5 rounded-xl px-4 py-3">
+          <span className="font-semibold text-gray-800 dark:text-white/85">Net Profit</span>
+          <span className={`font-bold text-lg tabular-nums ${net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+            {net < 0 ? '-' : ''}{fmtMoney(net)}
+          </span>
+        </div>
+      </div>
+
+      <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 dark:border-white/10">
-              <th className="text-left pb-2 text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide w-1/2 pr-4">
+              <th className="text-left pb-2 text-xs font-semibold text-gray-600 dark:text-white/55 uppercase tracking-wide w-1/2 pr-4">
                 Income
               </th>
-              <th className="text-left pb-2 text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide w-1/2 pl-4 border-l border-gray-200 dark:border-white/10">
+              <th className="text-left pb-2 text-xs font-semibold text-gray-600 dark:text-white/55 uppercase tracking-wide w-1/2 pl-4 border-l border-gray-200 dark:border-white/10">
                 Expenses
               </th>
             </tr>
@@ -550,7 +584,8 @@ function YTDTable({ periodTx }) {
 
 // ─── Transaction Modal (Add / Edit) ───────────────────────────────────────────
 
-function TransactionModal({ editing, onClose, onSave }) {
+function TransactionModal({ editing, onClose, onSave, onDelete }) {
+  useBodyScrollLock(true)
   const today = toYMD(new Date())
   const [form, setForm] = useState(() => editing
     ? {
@@ -623,37 +658,47 @@ function TransactionModal({ editing, onClose, onSave }) {
     }
   }
 
+  async function handleDeleteClick() {
+    if (!editing || !onDelete) return
+    if (!window.confirm('Delete this transaction? This can’t be undone.')) return
+    setSaving(true)
+    try { await onDelete(editing.id) } finally { setSaving(false) }
+  }
+
+  const ctaCls = 'border border-accent bg-primary text-white dark:bg-white dark:text-primary hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-50 transition-colors'
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white dark:bg-secondary rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10">
+    <div className={SHEET_OVERLAY} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className={`${SHEET_PANEL} bg-white dark:bg-secondary sm:max-w-md sm:max-h-[92vh]`}>
+        <div className={`flex items-center justify-between max-sm:pl-4 max-sm:pr-2 max-sm:py-2 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-white/10 shrink-0 ${SHEET_HEAD_PAD}`}>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">
             {editing ? 'Edit Transaction' : 'Add Transaction'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white/80 transition-colors">
+          <button onClick={onClose} aria-label="Close"
+            className="w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-gray-800 dark:text-white/60 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
         </div>
 
-        <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="px-4 sm:px-6 py-4 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-contain">
           {/* Date */}
           <div>
             <Label>Date</Label>
-            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls} />
+            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls + ' dark:[color-scheme:dark]'} />
           </div>
 
           {/* Type toggle */}
           <div>
             <Label>Type</Label>
-            <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/10">
+            <div className="flex rounded-lg max-sm:rounded-xl overflow-hidden border border-gray-200 dark:border-white/10">
               {['income','expense'].map(t => (
                 <button key={t} onClick={() => set('type', t)}
-                  className={`flex-1 py-2 text-sm font-medium capitalize transition-colors ${
+                  className={`flex-1 py-2 max-sm:h-11 max-sm:py-0 touch:sm:min-h-[44px] text-sm font-medium capitalize transition-colors ${
                     form.type === t
                       ? t === 'income'
-                        ? 'bg-green-500 text-white'
-                        : 'bg-red-500 text-white'
-                      : 'bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-red-600 text-white'
+                      : 'bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10'
                   }`}
                 >
                   {t}
@@ -666,8 +711,8 @@ function TransactionModal({ editing, onClose, onSave }) {
           <div>
             <Label>Amount</Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/40 text-sm">$</span>
-              <input type="number" min="0" step="0.01" value={form.amount}
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/50 text-sm">$</span>
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={form.amount}
                 onChange={e => set('amount', e.target.value)}
                 placeholder="0.00"
                 className={inputCls + ' pl-7'} />
@@ -702,14 +747,14 @@ function TransactionModal({ editing, onClose, onSave }) {
 
           {/* Tax deductible — expense only */}
           {form.type === 'expense' && (
-            <div className="flex items-center gap-3">
+            <label htmlFor="tax_ded" className="flex items-center gap-3 cursor-pointer max-sm:min-h-[44px] touch:min-h-[44px]">
               <input type="checkbox" id="tax_ded" checked={form.tax_deductible}
                 onChange={e => set('tax_deductible', e.target.checked)}
-                className="w-4 h-4 accent-accent rounded" />
-              <label htmlFor="tax_ded" className="text-sm text-gray-700 dark:text-white/80 cursor-pointer">
+                className="w-5 h-5 sm:w-4 sm:h-4 accent-accent rounded" />
+              <span className="text-base sm:text-sm text-gray-700 dark:text-white/80">
                 Tax deductible
-              </label>
-            </div>
+              </span>
+            </label>
           )}
 
           {/* Notes */}
@@ -726,16 +771,16 @@ function TransactionModal({ editing, onClose, onSave }) {
               <p className="text-yellow-800 dark:text-yellow-300 font-medium mb-2">
                 This looks like a duplicate of an existing entry
               </p>
-              <p className="text-yellow-700 dark:text-yellow-400 text-xs mb-3">
+              <p className="text-yellow-800 dark:text-yellow-400 text-xs mb-3">
                 {parseDateLocal(conflict.existing.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} — {conflict.existing.description} — {fmtMoney(Math.abs(conflict.existing.amount))}
               </p>
               <div className="flex gap-2">
                 <button onClick={() => handleSubmit(true)}
-                  className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">
+                  className="text-sm sm:text-xs bg-yellow-700 hover:bg-yellow-800 text-white font-medium px-3 max-sm:h-11 sm:py-1.5 rounded-lg transition-colors">
                   Save anyway
                 </button>
                 <button onClick={() => setConflict(null)}
-                  className="text-xs text-yellow-700 dark:text-yellow-400 hover:underline">
+                  className="text-sm sm:text-xs text-yellow-800 dark:text-yellow-400 hover:underline max-sm:px-3 max-sm:h-11">
                   Cancel
                 </button>
               </div>
@@ -743,19 +788,25 @@ function TransactionModal({ editing, onClose, onSave }) {
           )}
 
           {error && (
-            <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-white/10 flex gap-3 justify-end">
-          <button onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white transition-colors">
-            Cancel
-          </button>
+        <div className={`px-4 sm:px-6 pt-3 sm:py-4 border-t border-gray-200 dark:border-white/10 flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end shrink-0 ${SHEET_FOOT_PAD}`}>
           <button onClick={() => handleSubmit(false)} disabled={saving}
-            className="px-5 py-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
+            className={`max-sm:order-first max-sm:basis-full max-sm:h-12 max-sm:text-base px-5 py-2 touch:sm:min-h-[44px] text-sm font-medium rounded-xl sm:rounded-lg ${ctaCls}`}>
             {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Transaction'}
           </button>
+          <button onClick={onClose}
+            className="max-sm:flex-1 max-sm:h-11 px-4 py-2 touch:sm:min-h-[44px] text-sm text-gray-700 dark:text-white/60 hover:text-gray-900 dark:hover:text-white rounded-xl border border-gray-300 dark:border-white/20 sm:border-0 transition-colors">
+            Cancel
+          </button>
+          {editing && onDelete && (
+            <button onClick={handleDeleteClick} disabled={saving}
+              className="max-sm:flex-1 max-sm:h-11 sm:order-first sm:mr-auto px-4 py-2 touch:sm:min-h-[44px] text-sm font-medium text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 rounded-xl border border-red-300 dark:border-red-500/40 sm:border-0 disabled:opacity-50 transition-colors">
+              Delete
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1280,20 +1331,35 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
     finally { setDeletingId(null) }
   }
 
+  const dateFmt = d => parseDateLocal(d)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? d
+  const dateShort = d => parseDateLocal(d)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? d
+
   return (
     <div className="space-y-3">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Search — first and full width on a phone */}
+        <div className="relative flex-1 min-w-40 max-sm:basis-full max-sm:order-first">
+          <svg className="absolute left-3 sm:left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-3.5 sm:h-3.5 text-gray-500 dark:text-white/45" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input type="search" value={filterSearch} onChange={e => setFilterSearch(e.target.value)}
+            aria-label="Search description or payee"
+            placeholder="Search description or payee…"
+            className="w-full text-xs bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg max-sm:rounded-xl pl-7 max-sm:pl-10 pr-3 py-1.5 max-sm:h-12 max-sm:py-0 touch:sm:min-h-[44px] text-gray-700 dark:text-white/80 placeholder:text-gray-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-accent/60" />
+        </div>
+
         {/* Type */}
-        <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 text-xs">
+        <div className="flex rounded-lg max-sm:rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 text-xs max-sm:text-sm max-sm:basis-full">
           {['all','income','expense'].map(t => (
             <button key={t} onClick={() => setFilterType(t)}
-              className={`px-3 py-1.5 capitalize transition-colors ${
+              aria-pressed={filterType === t}
+              className={`px-3 py-1.5 max-sm:flex-1 max-sm:h-11 max-sm:py-0 touch:sm:min-h-[44px] capitalize transition-colors ${
                 filterType === t
-                  ? t === 'income'  ? 'bg-green-500 text-white'
-                  : t === 'expense' ? 'bg-red-500 text-white'
-                  : 'bg-accent text-white'
-                  : 'text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
+                  ? t === 'income'  ? 'bg-green-600 text-white'
+                  : t === 'expense' ? 'bg-red-600 text-white'
+                  : 'bg-primary text-white dark:bg-white dark:text-primary'
+                  : 'text-gray-700 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
               }`}>{t}</button>
           ))}
         </div>
@@ -1301,23 +1367,24 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
         {/* Category multi-select */}
         <div className="relative" ref={catMenuRef}>
           <button onClick={() => setCatMenuOpen(o => !o)}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+            aria-expanded={catMenuOpen}
+            className={`flex items-center gap-1.5 text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 max-sm:py-0 touch:sm:min-h-[44px] rounded-lg max-sm:rounded-xl border transition-colors ${
               filterCats.length > 0
-                ? 'border-accent text-accent bg-accent/5'
-                : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
+                ? 'border-accent text-gray-900 dark:text-white bg-accent/10'
+                : 'border-gray-200 dark:border-white/10 text-gray-700 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
             }`}
           >
-            Category {filterCats.length > 0 && <span className="bg-accent text-white rounded-full px-1.5 py-0.5 text-[10px]">{filterCats.length}</span>}
-            <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+            Category {filterCats.length > 0 && <span className="bg-primary text-white dark:bg-white dark:text-primary rounded-full px-1.5 py-0.5 text-xs">{filterCats.length}</span>}
+            <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
           </button>
           {catMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-xl shadow-xl z-20 py-1 max-h-60 overflow-y-auto">
-              <button onClick={() => setFilterCats([])} className="w-full text-left px-4 py-2 text-xs text-gray-500 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/5">
+            <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-xl shadow-xl z-20 py-1 max-h-72 overflow-y-auto">
+              <button onClick={() => setFilterCats([])} className="w-full text-left px-4 py-2 max-sm:py-3 touch:min-h-[44px] text-xs max-sm:text-sm text-gray-600 dark:text-white/55 hover:bg-gray-50 dark:hover:bg-white/5">
                 Clear filter
               </button>
               {ALL_CATEGORIES.map(c => (
                 <button key={c} onClick={() => setFilterCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                  className="w-full text-left px-4 py-2 text-xs flex items-center gap-2 text-gray-700 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                  className="w-full text-left px-4 py-2 max-sm:py-3 touch:min-h-[44px] text-xs max-sm:text-sm flex items-center gap-2 text-gray-700 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                   <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${filterCats.includes(c) ? 'bg-accent border-accent' : 'border-gray-300 dark:border-white/20'}`}>
                     {filterCats.includes(c) && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>}
                   </span>
@@ -1328,23 +1395,57 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
           )}
         </div>
 
-        {/* Search */}
-        <div className="relative flex-1 min-w-40">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-          <input type="text" value={filterSearch} onChange={e => setFilterSearch(e.target.value)}
-            placeholder="Search description or payee…"
-            className="w-full text-xs bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg pl-7 pr-3 py-1.5 text-gray-700 dark:text-white/70 placeholder:text-gray-400 dark:placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-accent/60" />
-        </div>
-
-        <p className="text-xs text-gray-400 dark:text-white/30 ml-auto">
+        <p className="text-xs max-sm:text-sm text-gray-600 dark:text-white/50 ml-auto">
           {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
+      {/* Phone: two-line list items. Tap one to edit (Delete lives in the edit sheet). */}
+      <div className="md:hidden rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+        {pageRows.length === 0 ? (
+          <p className="text-center py-10 px-4 text-gray-500 dark:text-white/50 text-sm">
+            {transactions.length === 0 ? 'No transactions yet — add one above or import a CSV.' : 'No transactions match your filters.'}
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100 dark:divide-white/5">
+            {pageRows.map(tx => {
+              const body = (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-medium text-gray-900 dark:text-white truncate">{tx.description}</p>
+                    <p className="mt-0.5 text-sm text-gray-600 dark:text-white/60 truncate">
+                      {dateShort(tx.date)}{tx.category ? ` · ${tx.category}` : ''}{tx.source ? ` · ${tx.source}` : ''}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={`text-base font-semibold tabular-nums ${tx.type === 'income' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                      {tx.type === 'income' ? '+' : '−'}{fmtMoney(Math.abs(tx.amount))}
+                    </p>
+                    {tx.type === 'expense' && tx.tax_deductible && (
+                      <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">Tax deductible</p>
+                    )}
+                  </div>
+                </>
+              )
+              return (
+                <li key={tx.id}>
+                  {onEdit ? (
+                    <button type="button" onClick={() => onEdit(tx)}
+                      className="w-full flex items-center gap-3 px-4 py-3 min-h-[64px] text-left active:bg-gray-50 dark:active:bg-white/10">
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-3 px-4 py-3 min-h-[64px]">{body}</div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Table (tablet and up) */}
+      <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 dark:bg-white/5">
             <tr>
@@ -1352,13 +1453,13 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
                 { label: 'Date', field: 'date', sortable: true },
                 { label: 'Description', field: 'description', sortable: false },
                 { label: 'Category', field: 'category', sortable: false },
-                { label: 'Source / Payee', field: 'source', sortable: false },
+                { label: 'Source / Payee', field: 'source', sortable: false, xl: true },
                 { label: 'Amount', field: 'amount', sortable: true, right: true },
                 { label: 'Tax Ded.', field: null, sortable: false, right: true },
                 ...(showActions ? [{ label: '', field: null, sortable: false }] : []),
               ].map(col => (
                 <th key={col.label}
-                  className={`px-4 py-3 text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wide whitespace-nowrap ${col.right ? 'text-right' : 'text-left'} ${col.sortable ? 'cursor-pointer hover:text-gray-700 dark:hover:text-white/70 select-none' : ''}`}
+                  className={`px-4 py-3 text-xs font-semibold text-gray-600 dark:text-white/50 uppercase tracking-wide whitespace-nowrap ${col.right ? 'text-right' : 'text-left'} ${col.xl ? 'hidden xl:table-cell' : ''} ${col.sortable ? 'cursor-pointer hover:text-gray-800 dark:hover:text-white/70 select-none' : ''}`}
                   onClick={() => col.sortable && toggleSort(col.field)}
                 >
                   {col.label} {col.sortable && <SortIcon field={col.field} />}
@@ -1369,44 +1470,46 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
           <tbody>
             {pageRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-gray-400 dark:text-white/30 text-sm">
+                <td colSpan={7} className="text-center py-12 text-gray-500 dark:text-white/45 text-sm">
                   {transactions.length === 0 ? 'No transactions yet — add one above or import a CSV.' : 'No transactions match your filters.'}
                 </td>
               </tr>
             ) : pageRows.map(tx => (
               <tr key={tx.id} className="border-t border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
                 <td className="px-4 py-3 text-gray-700 dark:text-white/70 whitespace-nowrap">
-                  {parseDateLocal(tx.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? tx.date}
+                  {dateFmt(tx.date)}
                 </td>
                 <td className="px-4 py-3 text-gray-900 dark:text-white max-w-xs">
                   <div className="truncate">{tx.description}</div>
-                  {tx.notes && <div className="text-xs text-gray-400 dark:text-white/30 truncate">{tx.notes}</div>}
+                  {tx.notes && <div className="text-xs text-gray-500 dark:text-white/45 truncate">{tx.notes}</div>}
+                  <div className="xl:hidden text-xs text-gray-500 dark:text-white/50 truncate">{tx.source || ''}</div>
                 </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs">{tx.category || '—'}</td>
-                <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs">{tx.source || '—'}</td>
-                <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${tx.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs hidden xl:table-cell">{tx.source || '—'}</td>
+                <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${tx.type === 'income' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                   {fmtMoney(Math.abs(tx.amount))}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {tx.type === 'expense' && tx.tax_deductible && (
-                    <svg className="w-4 h-4 text-blue-500 dark:text-blue-400 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Tax deductible">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/>
                     </svg>
                   )}
                 </td>
                 {showActions && (
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Hover-reveal on a mouse; always visible on touch devices (no hover there) */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 touch:opacity-100 transition-opacity">
                       {onEdit && (
-                        <button onClick={() => onEdit(tx)} className="text-gray-400 hover:text-accent dark:hover:text-accent transition-colors p-1">
+                        <button onClick={() => onEdit(tx)} aria-label="Edit transaction" className="text-gray-500 hover:text-gray-900 dark:text-white/50 dark:hover:text-white transition-colors p-1 touch:p-3">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                           </svg>
                         </button>
                       )}
                       {onDelete && (
-                        <button onClick={() => handleDelete(tx.id)} disabled={deletingId === tx.id}
-                          className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 disabled:opacity-40">
+                        <button onClick={() => handleDelete(tx.id)} disabled={deletingId === tx.id} aria-label="Delete transaction"
+                          className="text-gray-500 hover:text-red-600 dark:text-white/50 dark:hover:text-red-400 transition-colors p-1 touch:p-3 disabled:opacity-40">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                           </svg>
@@ -1423,14 +1526,14 @@ function TransactionTable({ transactions, onEdit, onDelete, period, canWrite }) 
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-white/40">
+        <div className="flex items-center justify-between text-xs max-sm:text-sm text-gray-600 dark:text-white/50">
           <p>Showing {(page-1)*PAGE_SIZE + 1}–{Math.min(page*PAGE_SIZE, filtered.length)} of {filtered.length}</p>
-          <div className="flex gap-1">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1}
-              className="px-2 py-1 rounded disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">←</button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} aria-label="Previous page"
+              className="px-2 py-1 max-sm:w-11 max-sm:h-11 touch:sm:min-w-[44px] touch:sm:min-h-[44px] rounded-lg disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">←</button>
             <span className="px-2 py-1">{page} / {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages}
-              className="px-2 py-1 rounded disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">→</button>
+            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} aria-label="Next page"
+              className="px-2 py-1 max-sm:w-11 max-sm:h-11 touch:sm:min-w-[44px] touch:sm:min-h-[44px] rounded-lg disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">→</button>
           </div>
         </div>
       )}
@@ -1479,15 +1582,6 @@ export default function IncomePage() {
   }, [viewAsSfgId])
 
   useEffect(() => { load() }, [load])
-
-  // Permission guard — after all hooks (rules-of-hooks)
-  if (!permissions.income?.read) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400 dark:text-white/30 text-sm">
-        You don&apos;t have access to this section.
-      </div>
-    )
-  }
 
   const canWrite = !!permissions.income?.write
 
@@ -1562,20 +1656,30 @@ export default function IncomePage() {
     if (!res.ok) {
       const data = await res.json()
       setDeleteErr(data.error ?? 'Delete failed')
-      return
+      return false
     }
     await load()
+    return true
   }
 
   const showYTD = isFullMonths(period)
 
+  // Permission guard — after every hook above so the hook order never changes between renders
+  if (!permissions.income?.read) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-gray-500 dark:text-white/50 text-sm">
+        You don&apos;t have access to this section.
+      </div>
+    )
+  }
+
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Income &amp; Expenses</h1>
-          <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">Track your business income and deductible expenses</p>
+          <h1 className="text-[22px] sm:text-xl font-bold text-gray-900 dark:text-white">Income &amp; Expenses</h1>
+          <p className="text-sm text-gray-600 dark:text-white/55 mt-0.5 max-sm:hidden">Track your business income and deductible expenses</p>
         </div>
         <PeriodSelector period={period} onChange={setPeriod} />
       </div>
@@ -1587,7 +1691,7 @@ export default function IncomePage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-24 text-gray-400 dark:text-white/30 gap-3">
+        <div className="flex items-center justify-center py-24 text-gray-500 dark:text-white/50 gap-3">
           <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4}/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -1611,14 +1715,14 @@ export default function IncomePage() {
           {canWrite && <CardShell>
             <button
               onClick={() => setImportOpen(o => !o)}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
+              className="w-full flex items-center justify-between px-4 sm:px-5 py-4 max-sm:min-h-[56px] text-left"
             >
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-gray-500 dark:text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                 </svg>
                 <span className="text-sm font-medium text-gray-700 dark:text-white/80">Bulk CSV Import</span>
-                {!importOpen && <span className="text-xs text-gray-400 dark:text-white/30">— import transactions from your bank</span>}
+                {!importOpen && <span className="text-xs text-gray-500 dark:text-white/45 max-sm:hidden">— import transactions from your bank</span>}
               </div>
               <svg className={`w-4 h-4 text-gray-400 dark:text-white/30 transition-transform ${importOpen ? 'rotate-180' : ''}`}
                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1633,12 +1737,12 @@ export default function IncomePage() {
           </CardShell>}
 
           {/* Transaction table */}
-          <CardShell className="p-5">
-            <div className="flex items-center justify-between mb-4">
+          <CardShell className="p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-white/80">Transactions</h2>
               {canWrite && (
                 <button onClick={() => { setEditTx(null); setShowAdd(true) }}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors">
+                  className="flex items-center gap-1.5 px-4 py-2 max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px] border border-accent bg-primary text-white dark:bg-white dark:text-primary hover:bg-primary/85 dark:hover:bg-white/90 text-sm font-medium rounded-lg transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
                   </svg>
@@ -1648,7 +1752,7 @@ export default function IncomePage() {
             </div>
 
             {deleteErr && (
-              <p className="text-sm text-red-500 dark:text-red-400 mb-3">{deleteErr}</p>
+              <p className="text-sm text-red-600 dark:text-red-400 mb-3">{deleteErr}</p>
             )}
 
             <TransactionTable
@@ -1667,6 +1771,7 @@ export default function IncomePage() {
           editing={editTx}
           onClose={() => { setShowAdd(false); setEditTx(null) }}
           onSave={handleSave}
+          onDelete={canWrite && editTx ? async id => { if (await handleDelete(id)) { setShowAdd(false); setEditTx(null) } } : undefined}
         />
       )}
     </div>

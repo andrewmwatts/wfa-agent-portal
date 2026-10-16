@@ -5,8 +5,10 @@ import { useTheme } from '../context/ThemeContext'
 import PolicyModal, { PolicyModalErrorBoundary, StatusBadge } from '../components/PolicyEditModal'
 import BulkImportModal from '../components/BulkImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
+import FilterSheet, { SheetField, SHEET_INPUT } from '../components/ui/FilterSheet'
+import MoreMenu from '../components/ui/MoreMenu'
 import { getBaseshopIds } from '../../shared/agencyScope'
-import { parseDateLocal, fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
+import { parseDateLocal, fmtDate, fmtDateShort, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import { ACTIVE_STATUSES, FINAL_STATUSES, statusWeight } from '../utils/status'
 import { matchesPolicy } from '../utils/policySearch'
@@ -37,6 +39,14 @@ const QUICK_FILTERS = [
   { id: 'all',        label: 'Show All' },
 ]
 
+const SORT_OPTIONS = [
+  ['submit_date', '↓ Submit Date'],
+  ['issue_date',  '↓ Issue Date'],
+  ['last_update', '↓ Last Update'],
+  ['agent',       'Agent Name A–Z'],
+  ['carrier',     'Carrier A–Z'],
+]
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PoliciesPage() {
@@ -52,6 +62,7 @@ export default function PoliciesPage() {
   const [selectedScope,    setSelectedScope]    = useState('master')
   const [showAddPolicy,   setShowAddPolicy]   = useState(false)
   const [showBulkImport, setShowBulkImport] = useState(false)
+  const [filtersOpen,     setFiltersOpen]     = useState(false) // phone Filters sheet
 
   const isSuperAdmin = userProfile?.role === 'super_admin'
 
@@ -301,6 +312,11 @@ export default function PoliciesPage() {
   const hasCustomDate      = dateStart || dateEnd
   const hasSecondaryFilter = search || statusFilter !== 'all' || carrierFilter !== 'all' || agentFilter !== 'all' || hasCustomDate || notInOptOnly
 
+  // Phone "Filters (n)" badge — the controls that live inside the sheet.
+  const activeFilterCount =
+    (statusFilter !== 'all' ? 1 : 0) + (carrierFilter !== 'all' ? 1 : 0) +
+    (agentFilter !== 'all' ? 1 : 0) + (hasCustomDate ? 1 : 0)
+
   function clearAll() {
     setSearch(''); setStatusFilter('all'); setCarrierFilter('all')
     setAgentFilter('all'); setDateStart(''); setDateEnd(''); setNotInOptOnly(false)
@@ -308,7 +324,7 @@ export default function PoliciesPage() {
 
   // ── Loading skeleton ───────────────────────────────────────────────────────
   if (loading) return (
-    <main className="max-w-6xl mx-auto px-6 py-8">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6 space-y-4 animate-pulse">
         <div className="flex gap-2">{[1,2,3,4,5].map(i => <div key={i} className="h-8 bg-gray-100 dark:bg-white/10 rounded-full w-24" />)}</div>
         <div className="flex gap-3">{[1,2,3,4,5].map(i => <div key={i} className="h-9 bg-gray-100 dark:bg-white/10 rounded-lg flex-1" />)}</div>
@@ -319,88 +335,200 @@ export default function PoliciesPage() {
   )
 
   if (error) return (
-    <main className="max-w-6xl mx-auto px-6 py-8">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
         <p className="text-sm text-accent/80">{error}</p>
       </div>
     </main>
   )
 
+  const sortLabel = SORT_OPTIONS.find(([v]) => v === sortBy)?.[1] ?? 'Submit date'
+  const pageStart = (page - 1) * PAGE_SIZE + 1
+  const pageEnd   = Math.min(page * PAGE_SIZE, sorted.length)
+
+  // Chips under the phone search row — one per active sheet filter.
+  const activeChips = [
+    statusFilter !== 'all' && {
+      key: 'status',
+      label: `Status: ${statusFilter ? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1) : 'None'}`,
+      clear: () => setStatusFilter('all'),
+    },
+    carrierFilter !== 'all' && { key: 'carrier', label: `Carrier: ${carrierFilter}`, clear: () => setCarrierFilter('all') },
+    agentFilter !== 'all' && {
+      key: 'agent',
+      label: `Agent: ${agentOptions.find(a => a.toLowerCase() === agentFilter) ?? agentFilter}`,
+      clear: () => setAgentFilter('all'),
+    },
+    hasCustomDate && {
+      key: 'date',
+      label: `${dateField === 'issue_date' ? 'Issued' : 'Submitted'}: ${dateStart ? fmtDateShort(dateStart) : '…'} – ${dateEnd ? fmtDateShort(dateEnd) : '…'}`,
+      clear: () => { setDateStart(''); setDateEnd('') },
+    },
+  ].filter(Boolean)
+
+  function resetSheetFilters() {
+    setStatusFilter('all'); setCarrierFilter('all'); setAgentFilter('all')
+    setDateStart(''); setDateEnd('')
+  }
+
+  const chipBase = 'shrink-0 text-sm md:text-xs font-semibold px-4 h-11 md:h-auto md:py-1.5 touch:md:min-h-[44px] inline-flex items-center rounded-full border transition-colors whitespace-nowrap'
+  const chipOff  = 'bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-white/70 border-gray-200 dark:border-white/15 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
+  const ctlBase  = 'bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 touch:min-h-[44px] focus:outline-none focus:border-accent/60 cursor-pointer'
+
   return (
-    <main className="max-w-6xl mx-auto px-6 py-8 space-y-5">
-      <section className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-5">
+      <section className="md:bg-white md:dark:bg-primary/30 md:border md:border-gray-200 md:dark:border-white/10 md:rounded-2xl md:p-6">
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Policies</h3>
-          <div className="flex items-center gap-3">
-            {isDirector && (
-              <ScopeDropdown
-                masterPersonnel={masterPersonnel}
-                selfId={activeSubject?.sfg_id}
-                value={selectedScope}
-                onChange={handleScopeChange}
-              />
-            )}
-            <button
-              onClick={() => setQuickSearchOpen(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-white/15 hover:border-gray-300 dark:hover:border-white/30 rounded-lg px-2.5 py-1 transition-colors"
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-              </svg>
-              Quick Search
-            </button>
-            {isSuperAdmin && (
-              <>
-                <button
-                  onClick={() => setShowBulkImport(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 font-semibold hover:bg-gray-100 dark:hover:bg-white/10 transition-colors whitespace-nowrap"
-                >
-                  ↑ Import CSV
-                </button>
-                <button
-                  onClick={() => setShowAddPolicy(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-accent text-accent font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
-                >
-                  + Add Policy
-                </button>
-              </>
-            )}
-            <span className="text-xs text-gray-400 dark:text-white/30">{filtered.length.toLocaleString()} of {policies.length.toLocaleString()} records</span>
-          </div>
+        <div className="flex items-center gap-1.5 md:gap-3 mb-3 md:mb-5">
+          <h3 className="flex-1 min-w-0 truncate text-[22px] font-bold text-gray-900 dark:text-white md:flex-none md:text-sm md:font-semibold md:uppercase md:tracking-widest md:text-gray-500 md:dark:text-white/50">Policies</h3>
+          <div className="md:flex-1" />
+          {isDirector && (
+            <ScopeDropdown
+              masterPersonnel={masterPersonnel}
+              selfId={activeSubject?.sfg_id}
+              value={selectedScope}
+              onChange={handleScopeChange}
+            />
+          )}
+          {/* Phone: icon-only search + overflow menu */}
+          <button
+            type="button"
+            onClick={() => setQuickSearchOpen(true)}
+            aria-label="Quick search"
+            className="md:hidden w-11 h-11 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 dark:border-white/20 bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+          </button>
+          <MoreMenu
+            className="md:hidden shrink-0"
+            items={[
+              { label: '↑ Import CSV', onClick: () => setShowBulkImport(true), hidden: !isSuperAdmin },
+              { label: '+ Add Policy', onClick: () => setShowAddPolicy(true),   hidden: !isSuperAdmin },
+            ]}
+          />
+          {/* Tablet / desktop: the original labelled buttons */}
+          <button
+            onClick={() => setQuickSearchOpen(true)}
+            className="hidden md:flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-white/15 hover:border-gray-300 dark:hover:border-white/30 rounded-lg px-2.5 py-1 touch:min-h-[44px] touch:px-3.5 transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            Quick Search
+          </button>
+          {isSuperAdmin && (
+            <>
+              <button
+                onClick={() => setShowBulkImport(true)}
+                className="hidden md:block text-xs px-3 py-1.5 touch:min-h-[44px] rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 font-semibold hover:bg-gray-100 dark:hover:bg-white/10 transition-colors whitespace-nowrap"
+              >
+                ↑ Import CSV
+              </button>
+              <button
+                onClick={() => setShowAddPolicy(true)}
+                className="hidden md:block text-xs px-3 py-1.5 touch:min-h-[44px] rounded-lg border border-accent text-gray-900 dark:text-white font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
+              >
+                + Add Policy
+              </button>
+            </>
+          )}
+          <span className="hidden md:inline text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">{filtered.length.toLocaleString()} of {policies.length.toLocaleString()} records</span>
         </div>
 
-        {/* ── Quick filters ───────────────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-2 mb-5">
+        {/* ── Quick filters (scroll sideways on phones) ───────────────────── */}
+        <div className="flex gap-2 mb-3 md:mb-5 overflow-x-auto md:overflow-visible md:flex-wrap -mx-4 px-4 sm:-mx-6 sm:px-6 md:mx-0 md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {QUICK_FILTERS.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setQuickFilter(id)}
-              className={`text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors whitespace-nowrap
-                ${quickFilter === id
-                  ? 'bg-accent/20 text-accent border-accent/40'
-                  : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/15 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
-                }`}
+              aria-pressed={quickFilter === id}
+              className={`${chipBase} ${quickFilter === id
+                ? 'bg-accent/20 text-gray-900 dark:text-white border-accent'
+                : chipOff}`}
             >
               {label}
             </button>
           ))}
-          <div className="w-px bg-gray-200 dark:bg-white/10 self-stretch mx-1" />
+          <div className="w-px bg-gray-200 dark:bg-white/15 self-stretch my-1.5 mx-0.5 shrink-0" />
           <button
             onClick={() => setNotInOptOnly(v => !v)}
-            className={`text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors whitespace-nowrap
-              ${notInOptOnly
-                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-400/40'
-                : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-white/50 border-gray-200 dark:border-white/15 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
-              }`}
+            aria-pressed={notInOptOnly}
+            className={`${chipBase} ${notInOptOnly
+              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/60'
+              : chipOff}`}
           >
             Not in Opt
           </button>
         </div>
 
-        {/* ── Secondary filters ───────────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-3 mb-3">
+        {/* ── Phone: search + Filters button, active chips ────────────────── */}
+        <div className="md:hidden">
+          <div className="flex gap-2">
+            <div className="relative flex-1 min-w-0">
+              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 dark:text-white/50 pointer-events-none"
+                   fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="search"
+                enterKeyHint="search"
+                aria-label="Search policies"
+                placeholder="Client, agent, policy no."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full h-12 bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-500 dark:bg-white/5 dark:border-white/20 dark:text-white dark:placeholder:text-white/50 text-base rounded-xl pl-10 pr-3 focus:outline-none focus:border-accent"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              aria-label={activeFilterCount ? `Filters, ${activeFilterCount} active` : 'Filters'}
+              className="h-12 shrink-0 flex items-center gap-2 px-3.5 rounded-xl border border-gray-300 dark:border-white/30 text-gray-900 dark:text-white text-[15px] font-semibold hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-primary text-white dark:bg-white dark:text-primary text-xs font-bold flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {activeChips.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4">
+              {activeChips.map(c => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.clear}
+                  aria-label={`Remove filter ${c.label}`}
+                  className="shrink-0 h-10 pl-3.5 pr-2.5 inline-flex items-center gap-2 rounded-full bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/15 text-[13px] font-medium text-gray-800 dark:text-white whitespace-nowrap"
+                >
+                  {c.label}
+                  <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-white/15 flex items-center justify-center" aria-hidden="true">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={resetSheetFilters}
+                className="shrink-0 h-10 px-2 text-[13px] font-semibold text-gray-700 dark:text-white/80 underline underline-offset-4"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Tablet / desktop: inline filter controls ─────────────────────
+            Below xl the Sort select drops to the date-range row (two rows
+            instead of three on an iPad); at xl it sits with the other selects. */}
+        <div className="hidden md:flex flex-wrap items-center gap-3 mb-5">
           {/* Search */}
           <div className="relative flex-1 min-w-[180px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-white/30 pointer-events-none"
@@ -409,16 +537,16 @@ export default function PoliciesPage() {
             </svg>
             <input
               type="text"
-              placeholder="Search client, agent, or policy no…"
+              placeholder="Search client, agent, policy…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/15 dark:text-white dark:placeholder:text-white/25 text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-accent/60"
+              className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-500 dark:bg-white/5 dark:border-white/15 dark:text-white dark:placeholder:text-white/40 text-sm rounded-lg pl-8 pr-3 py-2 touch:min-h-[44px] focus:outline-none focus:border-accent/60"
             />
           </div>
 
           {/* Status */}
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[140px]">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Status"
+            className={`${ctlBase} min-w-[140px]`}>
             <option value="all" style={optionStyle}>All Statuses</option>
             <option value="" style={optionStyle}>— None —</option>
             {statusOptions.map(s => (
@@ -427,8 +555,8 @@ export default function PoliciesPage() {
           </select>
 
           {/* Carrier (normalized) */}
-          <select value={carrierFilter} onChange={e => setCarrierFilter(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[150px]">
+          <select value={carrierFilter} onChange={e => setCarrierFilter(e.target.value)} aria-label="Carrier"
+            className={`${ctlBase} min-w-[150px]`}>
             <option value="all" style={optionStyle}>All Carriers</option>
             {carrierOptions.map(c => (
               <option key={c} value={c} style={optionStyle}>{c}</option>
@@ -436,88 +564,201 @@ export default function PoliciesPage() {
           </select>
 
           {/* Agent */}
-          <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[140px]">
+          <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} aria-label="Agent"
+            className={`${ctlBase} min-w-[140px]`}>
             <option value="all" style={optionStyle}>All Agents</option>
             {agentOptions.map(a => (
               <option key={a} value={a.toLowerCase()} style={optionStyle}>{a}</option>
             ))}
           </select>
 
+          {/* Row break below xl; Sort + date range live on the second row */}
+          <div className="basis-full h-0 xl:hidden" />
+
           {/* Order By */}
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-900 dark:bg-white/5 dark:border-white/15 dark:text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent/60 cursor-pointer min-w-[160px]">
-            <option value="submit_date"  style={optionStyle}>↓ Submit Date</option>
-            <option value="issue_date"   style={optionStyle}>↓ Issue Date</option>
-            <option value="last_update"  style={optionStyle}>↓ Last Update</option>
-            <option value="agent"        style={optionStyle}>Agent Name A–Z</option>
-            <option value="carrier"      style={optionStyle}>Carrier A–Z</option>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} aria-label="Order by"
+            className={`${ctlBase} min-w-[160px] order-3 ml-auto xl:order-none xl:ml-0`}>
+            {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v} style={optionStyle}>{l}</option>)}
           </select>
-        </div>
 
-        {/* ── Custom date range ────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3 mb-5">
-          {/* Field toggle */}
-          <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
-            {[['submit_date', 'Submit Date'], ['issue_date', 'Issue Date']].map(([val, lbl]) => (
+          {/* Custom date range — on its own row at xl, inline on the second row below */}
+          <div className="order-2 xl:order-none xl:basis-full flex flex-wrap items-center gap-3">
+            {/* Field toggle */}
+            <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
+              {[['submit_date', 'Submit Date'], ['issue_date', 'Issue Date']].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  onClick={() => setDateField(val)}
+                  className={`text-xs px-3 py-1.5 touch:min-h-[44px] transition-colors
+                    ${dateField === val
+                      ? 'bg-gray-100 dark:bg-white/15 text-gray-900 dark:text-white font-medium'
+                      : 'bg-transparent text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'
+                    }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="date"
+              aria-label="From date"
+              value={dateStart}
+              onChange={e => setDateStart(e.target.value)}
+              className="bg-gray-50 border border-gray-200 text-gray-700 dark:bg-white/5 dark:border-white/15 dark:text-white/80 text-xs rounded-lg px-3 py-1.5 touch:min-h-[44px] focus:outline-none focus:border-accent/60 dark:[color-scheme:dark]"
+            />
+            <span className="text-gray-500 dark:text-white/40 text-xs">to</span>
+            <input
+              type="date"
+              aria-label="To date"
+              value={dateEnd}
+              onChange={e => setDateEnd(e.target.value)}
+              className="bg-gray-50 border border-gray-200 text-gray-700 dark:bg-white/5 dark:border-white/15 dark:text-white/80 text-xs rounded-lg px-3 py-1.5 touch:min-h-[44px] focus:outline-none focus:border-accent/60 dark:[color-scheme:dark]"
+            />
+
+            {/* Clear all filters */}
+            {hasSecondaryFilter && (
               <button
-                key={val}
-                onClick={() => setDateField(val)}
-                className={`text-xs px-3 py-1.5 transition-colors
-                  ${dateField === val
-                    ? 'bg-gray-100 dark:bg-white/15 text-gray-900 dark:text-white font-medium'
-                    : 'bg-transparent text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/70'
-                  }`}
+                onClick={clearAll}
+                className="text-xs text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1.5 touch:min-h-[44px] rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap"
               >
-                {lbl}
+                Clear filters
               </button>
-            ))}
+            )}
           </div>
-
-          <input
-            type="date"
-            value={dateStart}
-            onChange={e => setDateStart(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-700 dark:bg-white/5 dark:border-white/15 dark:text-white/80 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-accent/60 dark:[color-scheme:dark]"
-          />
-          <span className="text-gray-400 dark:text-white/30 text-xs">to</span>
-          <input
-            type="date"
-            value={dateEnd}
-            onChange={e => setDateEnd(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-gray-700 dark:bg-white/5 dark:border-white/15 dark:text-white/80 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-accent/60 dark:[color-scheme:dark]"
-          />
-
-          {/* Clear all filters */}
-          {hasSecondaryFilter && (
-            <button
-              onClick={clearAll}
-              className="text-xs text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap ml-1"
-            >
-              Clear filters
-            </button>
-          )}
         </div>
 
-        {/* ── Summary stat chips ───────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        {/* ── Summary: one strip on phones, three cards from md up ────────── */}
+        <div className="md:hidden grid grid-cols-3 mb-1 bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl py-3 mt-3">
+          {[
+            ['Records',   filtered.length.toLocaleString()],
+            ['Submitted', fmtAmt(totalSubm)],
+            ['Issued',    fmtAmt(totalIss)],
+          ].map(([label, value]) => (
+            <div key={label} className="px-3 min-w-0 border-l border-gray-200 dark:border-white/10 first:border-l-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-white/60">{label}</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums truncate">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:grid grid-cols-3 gap-3 mb-5">
           <StatChip label="Records"       value={filtered.length.toLocaleString()} />
           <StatChip label="Submitted APV" value={fmtAmt(totalSubm)} />
           <StatChip label="Issued APV"    value={fmtAmt(totalIss)} />
         </div>
 
-        {/* ── Table ───────────────────────────────────────────────────────── */}
+        {/* ── Results ─────────────────────────────────────────────────────── */}
         {sorted.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-white/40 text-center py-8">No records match your filters.</p>
+          <p className="text-sm text-gray-500 dark:text-white/50 text-center py-10 md:py-8">No records match your filters.</p>
         ) : (
           <>
-          <div className="overflow-x-auto -mx-1 mb-4">
+          {/* Phone list header: range + sort */}
+          <div className="md:hidden flex items-center justify-between h-11 mt-1 text-[13px] text-gray-600 dark:text-white/70">
+            <span className="tabular-nums">{pageStart.toLocaleString()}–{pageEnd.toLocaleString()} of {sorted.length.toLocaleString()}</span>
+            <label className="relative inline-flex items-center gap-1 h-11 pl-2 text-gray-900 dark:text-white font-semibold">
+              {sortLabel.replace(/^↓ /, '')}
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+              {/* Native picker lives invisibly on top, so iOS shows its own wheel */}
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+                aria-label="Sort policies"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              >
+                {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v} style={optionStyle}>{l}</option>)}
+              </select>
+            </label>
+          </div>
+
+          {/* Phone: cards */}
+          <ul className="md:hidden space-y-2.5 mb-4">
+            {paginated.map(p => (
+              <li key={p.id ?? `${p.sfg_id}-${p.policy_no}-${p.applicant}`}>
+                <button
+                  type="button"
+                  onClick={() => openFromTable(p)}
+                  className="w-full text-left bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl px-4 pt-3 pb-3 active:bg-gray-50 dark:active:bg-white/10 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base font-semibold text-gray-900 dark:text-white truncate">{p.applicant || '—'}</span>
+                    <StatusBadge status={p.status} />
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-white/70 mt-0.5 truncate">
+                    {normalizeCarrier(p.carrier) || '—'}{p.policy_type ? ` · ${p.policy_type}` : ''}
+                  </div>
+                  <div className="flex items-center justify-between gap-3 mt-1.5">
+                    <span className="text-sm text-gray-800 dark:text-white/85 truncate min-w-0">
+                      {p.agent || '—'}
+                      {p.splits?.length > 0 && <SplitPill splits={p.splits} />}
+                    </span>
+                    <span className="text-base font-bold text-gray-900 dark:text-white tabular-nums shrink-0">{fmtAmt(p.issued_apv)}</span>
+                  </div>
+                  <div className="mt-0.5 text-[13px] text-gray-500 dark:text-white/60">
+                    Submitted {fmtDateShort(p.submit_date)}{p.issue_date ? ` · Issued ${fmtDateShort(p.issue_date)}` : ''}
+                  </div>
+                  {p.application_notes && (
+                    <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/10 text-[13px] text-gray-700 dark:text-white/75 truncate">
+                      <span className="font-semibold text-gray-900 dark:text-white">Open req:</span> {p.application_notes}
+                    </div>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* Tablet: compact six-column table */}
+          <div className="hidden md:block xl:hidden overflow-x-auto mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-white/10">
+                  {[['Client', ''], ['Carrier', ''], ['Status', ''], ['APV', 'text-right'], ['Submitted', ''], ['Issued', '']].map(([h, extra]) => (
+                    <th key={h} className={`text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 pb-2.5 pr-3 last:pr-0 whitespace-nowrap ${extra}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                {paginated.map(p => (
+                  <tr
+                    key={p.id ?? `${p.sfg_id}-${p.policy_no}-${p.applicant}`}
+                    onClick={() => openFromTable(p)}
+                    onKeyDown={e => { if (e.key === 'Enter') openFromTable(p) }}
+                    tabIndex={0}
+                    className="cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 focus:outline-none focus-visible:bg-gray-50 dark:focus-visible:bg-white/5 transition-colors"
+                  >
+                    <td className="py-2.5 pr-3 align-top max-w-[220px]">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{p.applicant || '—'}</div>
+                      <div className="text-xs text-gray-500 dark:text-white/60 truncate">
+                        {p.agent || '—'}
+                        {p.splits?.length > 0 && <SplitPill splits={p.splits} />}
+                      </div>
+                      {p.application_notes && (
+                        <div className="text-xs text-gray-700 dark:text-white/75 truncate"><span className="font-semibold">Open req:</span> {p.application_notes}</div>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-3 align-top max-w-[170px]">
+                      <div className="text-sm text-gray-800 dark:text-white/85 truncate">{normalizeCarrier(p.carrier) || '—'}</div>
+                      <div className="text-xs text-gray-500 dark:text-white/60 truncate">{p.policy_type || '—'}</div>
+                    </td>
+                    <td className="py-2.5 pr-3 align-top"><StatusBadge status={p.status} /></td>
+                    <td className="py-2.5 pr-3 align-top text-right text-sm font-semibold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">{fmtAmt(p.issued_apv)}</td>
+                    <td className="py-2.5 pr-3 align-top text-xs text-gray-600 dark:text-white/70 whitespace-nowrap">{fmtDateShort(p.submit_date)}</td>
+                    <td className="py-2.5 align-top text-xs text-gray-600 dark:text-white/70 whitespace-nowrap">{fmtDateShort(p.issue_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Desktop: full table */}
+          <div className="hidden xl:block overflow-x-auto -mx-1 mb-4">
             <table className="w-full text-sm min-w-[1060px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Client', 'Carrier', 'Policy', 'Status',
                     'APV', 'Submit Date', 'Issue Date', 'Last Update', 'Open Req'].map(h => (
-                    <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
+                    <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -532,14 +773,7 @@ export default function PoliciesPage() {
                   >
                     <td className="py-2.5 pr-4 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">
                       {p.agent || '—'}
-                      {p.splits?.length > 0 && (
-                        <span
-                          title={p.splits.map(s => `${s.agent || s.sfg_id}: ${Math.round(s.credit_pct * 1000) / 10}%`).join(' · ')}
-                          className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent/15 text-accent align-middle"
-                        >
-                          Split
-                        </span>
-                      )}
+                      {p.splits?.length > 0 && <SplitPill splits={p.splits} />}
                     </td>
                     <td className="py-2.5 pr-4 text-gray-700 dark:text-white/80 text-xs">
                       <span className="group-hover:text-accent transition-colors">{p.applicant || '—'}</span>
@@ -561,24 +795,24 @@ export default function PoliciesPage() {
           {/* ── Pagination controls ───────────────────────────────────────── */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-1">
-              <span className="text-xs text-gray-400 dark:text-white/40 tabular-nums">
-                {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, sorted.length).toLocaleString()} of {sorted.length.toLocaleString()}
+              <span className="hidden md:inline text-xs text-gray-500 dark:text-white/50 tabular-nums">
+                {pageStart.toLocaleString()}–{pageEnd.toLocaleString()} of {sorted.length.toLocaleString()}
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 w-full md:w-auto justify-between md:justify-start">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="text-sm md:text-xs font-medium px-4 md:px-3 h-11 md:h-auto md:py-1.5 touch:md:min-h-[44px] rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   ← Prev
                 </button>
-                <span className="text-xs text-gray-400 dark:text-white/40 px-2 tabular-nums">
+                <span className="text-sm md:text-xs text-gray-500 dark:text-white/50 px-2 tabular-nums">
                   {page} / {totalPages}
                 </span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="text-sm md:text-xs font-medium px-4 md:px-3 h-11 md:h-auto md:py-1.5 touch:md:min-h-[44px] rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Next →
                 </button>
@@ -588,6 +822,71 @@ export default function PoliciesPage() {
           </>
         )}
       </section>
+
+      {/* Phone filters sheet */}
+      <FilterSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        onReset={resetSheetFilters}
+        applyLabel={`Show ${filtered.length.toLocaleString()} ${filtered.length === 1 ? 'policy' : 'policies'}`}
+      >
+        <SheetField label="Status">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={SHEET_INPUT}>
+            <option value="all" style={optionStyle}>All Statuses</option>
+            <option value="" style={optionStyle}>— None —</option>
+            {statusOptions.map(s => (
+              <option key={s} value={s} style={optionStyle}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
+        </SheetField>
+        <SheetField label="Carrier">
+          <select value={carrierFilter} onChange={e => setCarrierFilter(e.target.value)} className={SHEET_INPUT}>
+            <option value="all" style={optionStyle}>All Carriers</option>
+            {carrierOptions.map(c => <option key={c} value={c} style={optionStyle}>{c}</option>)}
+          </select>
+        </SheetField>
+        <SheetField label="Agent">
+          <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} className={SHEET_INPUT}>
+            <option value="all" style={optionStyle}>All Agents</option>
+            {agentOptions.map(a => <option key={a} value={a.toLowerCase()} style={optionStyle}>{a}</option>)}
+          </select>
+        </SheetField>
+        <SheetField label="Sort by">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={SHEET_INPUT}>
+            {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v} style={optionStyle}>{l}</option>)}
+          </select>
+        </SheetField>
+
+        <div className="mb-2">
+          <span className="block mb-1.5 text-[11.5px] font-semibold uppercase tracking-widest text-gray-500 dark:text-white/60">Date range</span>
+          <div className="flex rounded-xl overflow-hidden border border-gray-300 dark:border-white/20 mb-3" role="group" aria-label="Date field">
+            {[['submit_date', 'Submit date'], ['issue_date', 'Issue date']].map(([val, lbl]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setDateField(val)}
+                aria-pressed={dateField === val}
+                className={`flex-1 h-11 text-sm font-semibold transition-colors
+                  ${dateField === val
+                    ? 'bg-accent/20 text-gray-900 dark:text-white shadow-[inset_0_-3px_0_0_rgb(var(--color-accent))]'
+                    : 'bg-transparent text-gray-600 dark:text-white/70'}`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block mb-1 text-xs text-gray-500 dark:text-white/60">From</span>
+              <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className={`${SHEET_INPUT} dark:[color-scheme:dark]`} />
+            </label>
+            <label className="block">
+              <span className="block mb-1 text-xs text-gray-500 dark:text-white/60">To</span>
+              <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} className={`${SHEET_INPUT} dark:[color-scheme:dark]`} />
+            </label>
+          </div>
+        </div>
+      </FilterSheet>
 
       {/* Quick Search */}
       {quickSearchOpen && (
@@ -657,12 +956,25 @@ export default function PoliciesPage() {
   )
 }
 
+// ─── Split pill ────────────────────────────────────────────────────────────────
+
+function SplitPill({ splits }) {
+  return (
+    <span
+      title={splits.map(s => `${s.agent || s.sfg_id}: ${Math.round(s.credit_pct * 1000) / 10}%`).join(' · ')}
+      className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-semibold leading-none border border-accent/70 bg-accent/15 text-gray-800 dark:text-white align-middle"
+    >
+      Split
+    </span>
+  )
+}
+
 // ─── Stat Chip ─────────────────────────────────────────────────────────────────
 
 function StatChip({ label, value }) {
   return (
     <div className="bg-gray-50 dark:bg-primary/60 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-1">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-1">{label}</p>
       <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">{value}</p>
     </div>
   )
@@ -693,12 +1005,12 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center sm:pt-[12vh] sm:px-4 bg-black/60 backdrop-blur-sm !mt-0"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-gray-50 dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
+      <div className="bg-gray-50 dark:bg-secondary sm:border border-gray-200 dark:border-white/15 sm:rounded-2xl shadow-2xl w-full sm:max-w-xl overflow-hidden max-sm:h-dvh max-sm:flex max-sm:flex-col">
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-white/10">
+        <div className="flex items-center gap-3 px-4 py-3 max-sm:pt-[max(0.75rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-white/10">
           <svg className="w-4 h-4 text-gray-400 dark:text-white/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
           </svg>
@@ -708,19 +1020,20 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
             placeholder="Search by client name or policy number…"
             value={query}
             onChange={e => onQueryChange(e.target.value)}
-            className="flex-1 bg-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/25 text-sm focus:outline-none"
+            className="flex-1 min-w-0 bg-transparent text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-white/40 text-sm max-sm:h-11 focus:outline-none"
           />
           {query && (
-            <button onClick={() => onQueryChange('')} className="text-gray-400 dark:text-white/30 hover:text-gray-900 dark:hover:text-white transition-colors">
+            <button onClick={() => onQueryChange('')} aria-label="Clear search" className="text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors max-sm:w-11 max-sm:h-11 max-sm:-mr-2 flex items-center justify-center">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           )}
+          <button onClick={onClose} className="sm:hidden h-11 px-1 text-sm font-semibold text-gray-800 dark:text-white">Cancel</button>
         </div>
 
         {/* Results */}
-        <div className="max-h-[52vh] overflow-y-auto">
+        <div className="sm:max-h-[52vh] max-sm:flex-1 max-sm:min-h-0 overflow-y-auto">
           {!query.trim() ? (
             <p className="text-sm text-gray-400 dark:text-white/25 text-center py-10">Start typing to search all policies</p>
           ) : results.length === 0 ? (
@@ -731,7 +1044,7 @@ function QuickSearchModal({ policies, query, onQueryChange, onSelect, onClose, o
                 <li key={i}>
                   <button
                     onClick={() => onSelect(p)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group"
+                    className="w-full text-left px-4 py-3 max-sm:min-h-[64px] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-accent transition-colors truncate">

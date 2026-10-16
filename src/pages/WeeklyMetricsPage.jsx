@@ -92,6 +92,7 @@ function buildWeekly(policies, scopeIds) {
 }
 
 const TOP_N = 20
+const PHONE_WEEKS = 26
 
 const SORT_OPTIONS = [
   { id: 'apv',           label: 'APV' },
@@ -112,6 +113,7 @@ export default function WeeklyMetricsPage() {
   const [loading, setLoading]               = useState(false)
   const [selectedScope, setSelectedScope]   = useState('master')
   const [topSort, setTopSort]       = useState('apv')
+  const [showAllWeeks, setShowAllWeeks] = useState(false)
 
 
 
@@ -198,22 +200,22 @@ export default function WeeklyMetricsPage() {
   }, [weeks, topSort])
 
   if (!permissions.metrics.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
+      <p className="text-sm text-red-600 dark:text-red-400">You don't have access to this section.</p>
     </main>
   )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view metrics.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view metrics.</p>
     </div>
   )
 
   return (
-    <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8">
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Weekly Metrics</h1>
+      <div className="flex items-center gap-3 sm:gap-4">
+        <h1 className="text-[22px] sm:text-xl font-bold text-gray-900 dark:text-white min-w-0 truncate">Weekly Metrics</h1>
         {isDirector && (
           <ScopeDropdown
             masterPersonnel={masterPersonnel}
@@ -253,21 +255,22 @@ export default function WeeklyMetricsPage() {
 
           {/* ── Top 20 ─────────────────────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 px-4 sm:px-5 py-4 border-b border-gray-100 dark:border-white/10">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70">
                 Top {TOP_N} Weeks
               </h2>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 dark:text-white/40">Sort by</span>
-                <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
+              <div className="flex items-center gap-2 max-sm:w-full">
+                <span className="text-xs text-gray-600 dark:text-white/50 whitespace-nowrap">Sort by</span>
+                <div className="flex rounded-lg max-sm:rounded-xl overflow-hidden border border-gray-200 dark:border-white/15 max-sm:flex-1">
                   {SORT_OPTIONS.map(opt => (
                     <button
                       key={opt.id}
                       onClick={() => setTopSort(opt.id)}
-                      className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      aria-pressed={topSort === opt.id}
+                      className={`px-3 py-1 max-sm:px-1 max-sm:flex-1 max-sm:h-11 touch:sm:min-h-[44px] text-xs font-medium transition-colors ${
                         topSort === opt.id
-                          ? 'bg-accent text-white'
-                          : 'text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
+                          ? 'bg-primary text-white dark:bg-white dark:text-primary'
+                          : 'text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
                       }`}
                     >
                       {opt.label}
@@ -277,14 +280,16 @@ export default function WeeklyMetricsPage() {
               </div>
             </div>
 
-            <table className="w-full text-sm">
+            <WeekList rows={top20} tagFor={weekTag} ranked />
+
+            <table className="hidden md:table w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-white/10">
-                  <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 pl-5 py-3 w-8">#</th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">Submit Week</th>
-                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">APV</th>
-                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">Total Writers</th>
-                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 pr-5 py-3">New Writers</th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 pl-5 py-3 w-8">#</th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">Submit Week</th>
+                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">APV</th>
+                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">Total Writers</th>
+                  <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 pr-5 py-3">New Writers</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
@@ -295,11 +300,11 @@ export default function WeeklyMetricsPage() {
                     : ''
                   return (
                     <tr key={r.submit_week} className={rowCls}>
-                      <td className="px-5 pl-5 py-2.5 text-xs tabular-nums text-gray-400 dark:text-white/30">{i + 1}</td>
+                      <td className="px-5 pl-5 py-2.5 text-xs tabular-nums text-gray-500 dark:text-white/50">{i + 1}</td>
                       <td className="px-5 py-2.5">
                         <span className="text-sm text-gray-900 dark:text-white tabular-nums">{fmtWeekDate(r.submit_week)}</span>
                         {tag && (
-                          <span className={`ml-2 text-xs font-medium ${tag === 'current' ? 'text-accent' : 'text-gray-400 dark:text-white/40'}`}>
+                          <span className={`ml-2 text-xs font-medium ${tag === 'current' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-white/50'}`}>
                             {tag === 'current' ? 'this week' : 'last week'}
                           </span>
                         )}
@@ -322,17 +327,26 @@ export default function WeeklyMetricsPage() {
 
           {/* ── All Weeks ──────────────────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-white/10">
+            <div className="px-4 sm:px-5 py-4 border-b border-gray-100 dark:border-white/10">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70">All Weeks</h2>
             </div>
-            <div className="overflow-x-auto">
+            <WeekList rows={showAllWeeks ? weeks : weeks.slice(0, PHONE_WEEKS)} tagFor={weekTag} />
+            {weeks.length > PHONE_WEEKS && (
+              <button
+                onClick={() => setShowAllWeeks(v => !v)}
+                className="md:hidden w-full h-12 border-t border-gray-100 dark:border-white/10 text-sm font-semibold text-gray-800 dark:text-white"
+              >
+                {showAllWeeks ? 'Show recent weeks only' : `Show all ${weeks.length} weeks`}
+              </button>
+            )}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm min-w-[480px]">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-white/10">
-                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">Submit Week</th>
-                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">APV</th>
-                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3">Total Writers</th>
-                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 pr-5 py-3">New Writers</th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">Submit Week</th>
+                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">APV</th>
+                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3">Total Writers</th>
+                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 pr-5 py-3">New Writers</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
@@ -346,7 +360,7 @@ export default function WeeklyMetricsPage() {
                         <td className="px-5 py-2 text-sm text-gray-900 dark:text-white tabular-nums">
                           {fmtWeekDate(r.submit_week)}
                           {tag && (
-                            <span className={`ml-2 text-xs font-medium ${tag === 'current' ? 'text-accent' : 'text-gray-400 dark:text-white/40'}`}>
+                            <span className={`ml-2 text-xs font-medium ${tag === 'current' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-white/50'}`}>
                               {tag === 'current' ? 'this week' : 'last week'}
                             </span>
                           )}
@@ -373,13 +387,45 @@ export default function WeeklyMetricsPage() {
   )
 }
 
+// ─── Phone list (the tables take over from md) ───────────────────────────────
+
+function WeekList({ rows, tagFor, ranked = false }) {
+  return (
+    <ul className="md:hidden divide-y divide-gray-100 dark:divide-white/5">
+      {rows.map((r, i) => {
+        const tag = tagFor(r)
+        const rowCls = tag === 'current' ? 'bg-accent/5' : tag === 'last' ? 'bg-gray-50 dark:bg-white/[0.03]' : ''
+        return (
+          <li key={r.submit_week} className={`flex items-center gap-3 px-4 py-3 ${rowCls}`}>
+            {ranked && <span className="w-6 shrink-0 text-sm tabular-nums text-gray-500 dark:text-white/50">{i + 1}</span>}
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-medium text-gray-900 dark:text-white tabular-nums">
+                {fmtWeekDate(r.submit_week)}
+                {tag && (
+                  <span className={`ml-2 text-xs font-medium ${tag === 'current' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-white/50'}`}>
+                    {tag === 'current' ? 'this week' : 'last week'}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-gray-600 dark:text-white/55 mt-0.5">
+                {r.total_writers} writer{r.total_writers === 1 ? '' : 's'} · {r.new_writers} new
+              </p>
+            </div>
+            <span className="shrink-0 text-base font-semibold tabular-nums text-gray-900 dark:text-white">{fmtApv(r.apv)}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 // ─── Week Card ────────────────────────────────────────────────────────────────
 
 function WeekCard({ label, apv, newWriters, totalWriters }) {
   return (
-    <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5">
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-4">{label}</p>
-      <div className="flex flex-wrap gap-6">
+    <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-4">{label}</p>
+      <div className="flex flex-wrap gap-x-6 gap-y-3">
         <WeekStat label="Submitted APV"  value={fmtApv(apv)} large />
         <WeekStat label="Total Writers"  value={totalWriters ?? '—'} />
         <WeekStat label="New Writers"    value={newWriters ?? '—'} />
@@ -391,7 +437,7 @@ function WeekCard({ label, apv, newWriters, totalWriters }) {
 function WeekStat({ label, value, large }) {
   return (
     <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">{label}</p>
       <p className={`font-bold tabular-nums text-gray-900 dark:text-white ${large ? 'text-2xl' : 'text-xl'}`}>
         {value}
       </p>

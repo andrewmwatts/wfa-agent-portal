@@ -68,7 +68,7 @@ function fmt(dateStr) {
 function Field({ label, value, mono, accent }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-0.5">{label}</p>
       <p className={`text-sm ${mono ? 'font-mono' : ''} ${accent ? 'text-accent' : 'text-gray-900 dark:text-white'}`}>
         {value ?? '—'}
       </p>
@@ -91,9 +91,9 @@ function Skeleton() {
 
 export function SectionShell({ title, children }) {
   return (
-    <section className="bg-white border border-primary/15 shadow-sm dark:bg-primary/30 dark:border-white/10 dark:shadow-none rounded-2xl p-6">
-      <div className="flex items-center justify-between mb-5">
-        <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-400 dark:text-white/50">{title}</h3>
+    <section className="bg-white border border-primary/15 shadow-sm dark:bg-primary/30 dark:border-white/10 dark:shadow-none rounded-2xl p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-5">
+        <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">{title}</h3>
       </div>
       {children}
     </section>

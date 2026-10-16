@@ -7,6 +7,10 @@ import { useTheme } from '../context/ThemeContext'
 import AddAgentModal from '../components/AddAgentModal'
 import BulkAgentImportModal from '../components/BulkAgentImportModal'
 import ScopeDropdown from '../components/ScopeDropdown'
+import MoreMenu from '../components/ui/MoreMenu'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { useMinSm } from '../hooks/useMediaQuery'
+import { SHEET_OVERLAY, SHEET_PANEL, SHEET_FOOT_PAD } from '../components/ui/sheetClasses'
 import { getBaseshopIds } from '../../shared/agencyScope'
 import { toInputDate, fmtDate, parseDateLocal } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
@@ -166,7 +170,7 @@ export default function OnboardingPage() {
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
-    <main className="max-w-5xl mx-auto px-6 py-8">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6 space-y-4 animate-pulse">
         <div className="flex gap-2">
           {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 dark:bg-white/10 rounded-full w-28" />)}
@@ -177,63 +181,90 @@ export default function OnboardingPage() {
   )
 
   if (error) return (
-    <main className="max-w-5xl mx-auto px-6 py-8">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
         <p className="text-sm text-accent/80">{error}</p>
       </div>
     </main>
   )
 
+  const ctlCls = 'bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg focus:outline-none focus:border-accent cursor-pointer'
+
   return (
-    <main className="max-w-5xl mx-auto px-6 py-8 space-y-5">
-      <section className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-5">
+      <section className="md:bg-white md:dark:bg-primary/30 md:border md:border-gray-200 md:dark:border-white/10 md:rounded-2xl md:p-6">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Contracting</h3>
-          <div className="flex items-center gap-3">
-            {isDirector && (
-              <ScopeDropdown
-                masterPersonnel={masterPersonnel}
-                selfId={activeSubject?.sfg_id}
-                value={selectedScope}
-                onChange={setSelectedScope}
-              />
-            )}
-            <span className="text-xs text-gray-400 dark:text-white/30">
-              {rows.length.toLocaleString()} of {visibleCount.toLocaleString()} agents
-            </span>
-            {isSuperAdmin && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowAdd(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-accent text-accent font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
-                >
-                  + Add Agent
-                </button>
-                <button
-                  onClick={() => setShowImport(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors whitespace-nowrap"
-                >
-                  Import CSV
-                </button>
-              </div>
-            )}
-          </div>
+        {/* Phone: title with the scope select beside it; Add / Import move behind the ⋯ menu */}
+        <div className="flex items-center gap-1.5 md:gap-3 mb-3 md:mb-5">
+          <h3 className="flex-1 min-w-0 truncate text-[22px] font-bold text-gray-900 dark:text-white md:flex-none md:text-sm md:font-semibold md:uppercase md:tracking-widest md:text-gray-500 md:dark:text-white/50">Contracting</h3>
+          <div className="md:flex-1" />
+          {isDirector && (
+            <ScopeDropdown
+              masterPersonnel={masterPersonnel}
+              selfId={activeSubject?.sfg_id}
+              value={selectedScope}
+              onChange={setSelectedScope}
+            />
+          )}
+          <span className="hidden md:inline text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">
+            {rows.length.toLocaleString()} of {visibleCount.toLocaleString()} agents
+          </span>
+          <MoreMenu
+            className="md:hidden shrink-0"
+            items={[
+              { label: '+ Add Agent', onClick: () => setShowAdd(true),    hidden: !isSuperAdmin },
+              { label: 'Import CSV',  onClick: () => setShowImport(true), hidden: !isSuperAdmin },
+            ]}
+          />
+          {isSuperAdmin && (
+            <div className="hidden md:flex gap-2">
+              <button
+                onClick={() => setShowAdd(true)}
+                className="text-xs px-3 py-1.5 touch:min-h-[44px] rounded-lg border border-accent text-gray-900 dark:text-white font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
+              >
+                + Add Agent
+              </button>
+              <button
+                onClick={() => setShowImport(true)}
+                className="text-xs px-3 py-1.5 touch:min-h-[44px] rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 transition-colors whitespace-nowrap"
+              >
+                Import CSV
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Filter bar ───────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
+          <p className="md:hidden w-full text-sm text-gray-600 dark:text-white/60">
+            {rows.length.toLocaleString()} of {visibleCount.toLocaleString()} agents
+          </p>
 
-          {/* Show-hidden + search */}
-          <div className="ml-auto flex items-center gap-2">
+          {/* Search first on a phone (full width); right-aligned with the other controls from md up */}
+          <div className="relative w-full md:w-44 order-first md:order-last">
+            <svg className="absolute left-3.5 md:left-3 top-1/2 -translate-y-1/2 w-[18px] h-[18px] md:w-3 md:h-3 text-gray-400 dark:text-white/50 pointer-events-none"
+                 fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search agent…"
+              aria-label="Search agent"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-500 dark:bg-white/5 dark:border-white/15 dark:text-white dark:placeholder:text-white/40 text-base md:text-xs rounded-xl md:rounded-lg pl-10 md:pl-7 pr-3 h-12 md:h-auto md:py-1.5 touch:md:min-h-[44px] focus:outline-none focus:border-accent/60"
+            />
+          </div>
 
+          <div className="md:ml-auto flex items-center gap-2 w-full md:w-auto">
             {/* Missing carrier — only among agents with contracting complete */}
             {coreCarriers.length > 0 && (
               <select
                 value={carrierFilter}
                 onChange={e => setCarrierFilter(e.target.value)}
-                className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+                aria-label="Missing carrier"
+                className={`${ctlCls} flex-1 md:flex-none min-w-0 text-xs max-md:text-base max-md:h-11 max-md:rounded-xl px-2.5 max-md:px-3 py-1 touch:md:min-h-[44px]`}
               >
                 <option value="" style={theme === 'dark' ? { background: '#003539', color: '#fff' } : {}}>Missing carrier…</option>
                 {coreCarriers.map(c => (
@@ -245,41 +276,73 @@ export default function OnboardingPage() {
             {/* Show hidden — secondary escape hatch */}
             <button
               onClick={() => setShowHidden(v => !v)}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors whitespace-nowrap
+              aria-pressed={showHidden}
+              className={`text-sm md:text-xs font-medium px-3 max-md:h-11 md:py-1.5 touch:md:min-h-[44px] rounded-xl md:rounded-lg border transition-colors whitespace-nowrap
                 ${showHidden
-                  ? 'text-accent border-accent/40 bg-accent/10'
-                  : 'text-gray-400 dark:text-white/30 border-gray-200 dark:border-white/10 hover:text-gray-600 dark:hover:text-white/50 hover:border-gray-300 dark:hover:border-white/20'
+                  ? 'text-gray-900 dark:text-white border-accent bg-accent/15'
+                  : 'text-gray-600 dark:text-white/60 border-gray-200 dark:border-white/15 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-white/25'
                 }`}
             >
               Show hidden
             </button>
-
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 dark:text-white/30 pointer-events-none"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search agent…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/15 dark:text-white dark:placeholder:text-white/25 text-xs rounded-lg pl-7 pr-3 py-1.5 w-44 focus:outline-none focus:border-accent/60"
-            />
           </div>
-          </div>{/* end ml-auto */}
         </div>{/* end filter bar */}
 
-        {/* ── Table ────────────────────────────────────────────────────────── */}
+        {/* ── Results ──────────────────────────────────────────────────────── */}
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-white/40 text-center py-8">No agents match the current filter.</p>
+          <p className="text-sm text-gray-500 dark:text-white/50 text-center py-8">No agents match the current filter.</p>
         ) : (
-          <div className="overflow-x-auto -mx-1">
+          <>
+          {/* Phone: one card per agent */}
+          <ul className="md:hidden space-y-2.5">
+            {rows.map(r => {
+              const id       = r.sfg_id?.toLowerCase() ?? ''
+              const isHidden = hiddenIds.has(id)
+              const hasIssue = r.profile_issues || !!r.no_eando
+              return (
+                <li key={r.sfg_id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(r)}
+                    className={`w-full text-left rounded-2xl border px-4 py-3 transition-colors active:bg-gray-50 dark:active:bg-white/10
+                      ${hasIssue && !isHidden ? 'bg-amber-500/5 border-amber-500/40' : 'bg-white dark:bg-primary/30 border-gray-200 dark:border-white/10'}
+                      ${isHidden ? 'opacity-50' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-base font-semibold text-gray-900 dark:text-white truncate">{r.name}</span>
+                      <span className="shrink-0">
+                        <ContractingCell
+                          toProducerDate={r.contracting_to_producer}
+                          complete={r.contracting_complete}
+                          contractCount={contractCounts[r.sfg_id] ?? 0}
+                          totalCarriers={totalCarriers}
+                          agentCarriers={carrierSets[r.sfg_id] ?? []}
+                          coreCarriers={coreCarriers}
+                          noEando={!!r.no_eando}
+                        />
+                      </span>
+                    </div>
+                    <div className="mt-1 text-sm text-gray-600 dark:text-white/65">
+                      {r.upline_name ? `Upline ${r.upline_name}` : 'No upline'} · Hired {fmtDate(r.hire_date)}
+                    </div>
+                    {(r.profile_issues || !!r.no_eando) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {r.profile_issues && <span className="text-xs bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>}
+                        {!!r.no_eando && <span className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 font-medium px-2 py-0.5 rounded">No E&amp;O</span>}
+                      </div>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="hidden md:block overflow-x-auto -mx-1">
             <table className="w-full text-sm min-w-[680px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Upline', 'Hire Date', 'Issues', 'No E&O', 'Contracting'].map(h => (
-                    <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
+                    <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -307,12 +370,12 @@ export default function OnboardingPage() {
                       <td className="py-3 pr-4">
                         {r.profile_issues
                           ? <span className="text-xs bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>
-                          : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
+                          : <span className="text-gray-400 dark:text-white/35 text-xs">—</span>}
                       </td>
                       <td className="py-3 pr-4 text-center">
                         {!!r.no_eando
                           ? <span className="text-xs font-bold text-accent">✕</span>
-                          : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
+                          : <span className="text-gray-400 dark:text-white/35 text-xs">—</span>}
                       </td>
                       <td className="py-3 pr-4">
                         <ContractingCell
@@ -331,6 +394,7 @@ export default function OnboardingPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </section>
 
@@ -375,7 +439,7 @@ export default function OnboardingPage() {
 
       {/* ── Add success toast ──────────────────────────────────────────────── */}
       {addSuccess && (
-        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all
+        <div className={`fixed z-[60] max-sm:inset-x-4 max-sm:bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:right-6 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all !mt-0
           ${addSuccess.uplineWarning ? 'bg-amber-500' : 'bg-green-600'}`}>
           {addSuccess.uplineWarning
             ? 'Agent added — upline SFG ID not found in personnel'
@@ -425,28 +489,28 @@ function ContractingCell({
 }) {
   // All contracts received → green Complete
   if (complete && contractCount >= totalCarriers)
-    return <span className="text-xs bg-green-500/20 text-green-600 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
+    return <span className="text-sm md:text-xs bg-green-500/20 text-green-700 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
 
   // Contracting marked complete, numbers partially or not yet populated
   if (complete) {
     const red = contractingIsRed(agentCarriers, coreCarriers, complete, noEando)
-    const cls = red ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
+    const cls = red ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
     if (contractCount > 0)
-      return <span className={`text-xs font-semibold ${cls}`}>{contractCount} of {totalCarriers}</span>
-    return <span className={`text-xs font-semibold ${cls}`}>Requested</span>
+      return <span className={`text-sm md:text-xs font-semibold ${cls}`}>{contractCount} of {totalCarriers}</span>
+    return <span className={`text-sm md:text-xs font-semibold ${cls}`}>Requested</span>
   }
 
   // Contracting sent but not complete → orange
   if (toProducerDate)
-    return <span className="text-xs font-medium text-orange-600 dark:text-orange-400">Sent {fmtDate(toProducerDate)}</span>
+    return <span className="text-sm md:text-xs font-medium text-orange-700 dark:text-orange-400">Sent {fmtDate(toProducerDate)}</span>
 
   // Not started
-  return <span className="text-xs bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/40 font-medium px-2 py-0.5 rounded-full">Not Started</span>
+  return <span className="text-sm md:text-xs bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60 font-medium px-2 py-0.5 rounded-full">Not Started</span>
 }
 
 // ─── Agent Detail Modal ────────────────────────────────────────────────────────
 
-const OB_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
+const OB_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:py-3 max-sm:rounded-xl touch:sm:min-h-[44px] focus:outline-none focus:ring-2 focus:ring-accent/60'
 
 function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, onUpdate }) {
   const [contractNums,  setContractNums]  = useState([])
@@ -457,6 +521,8 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
   const [draft,         setDraft]         = useState(null)
   const [saving,        setSaving]        = useState(false)
   const [saveError,     setSaveError]     = useState(null)
+  const isSm = useMinSm()
+  useBodyScrollLock(true)
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -524,15 +590,60 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
   const coreCarrierNames = new Set(carriers.map(c => c.name))
   const otherContracts   = Object.values(contractNums).filter(c => !coreCarrierNames.has(c.carrier))
 
+  const spinner = (
+    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+  )
+
+  // Phone: Hide / Text live behind "⋯" so the top bar stays one tidy row.
+  const moreItems = [
+    { label: 'Text agent', hidden: !agent.phone, onClick: () => { window.location.href = `sms:${agent.phone}` } },
+    { label: isHidden ? 'Unhide agent' : 'Hide agent', onClick: () => onHideToggle?.(agent.sfg_id, !isHidden) },
+  ]
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className={SHEET_OVERLAY}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-gray-50 dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+      <div className={`${SHEET_PANEL} bg-gray-50 dark:bg-secondary sm:max-w-2xl sm:max-h-[88vh]`}>
 
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
+        {/* ── Phone top bar ───────────────────────────────────────────────── */}
+        <div className="sm:hidden shrink-0 pt-[env(safe-area-inset-top)] bg-white dark:bg-primary border-b border-gray-200 dark:border-white/10">
+          <div className="flex items-center h-14 pl-1 pr-2">
+            {editing ? (
+              <>
+                <button type="button" onClick={cancelEdit} className="h-11 w-24 px-3 text-left text-base font-semibold text-gray-900 dark:text-white">Cancel</button>
+                <h2 className="flex-1 min-w-0 text-center text-base font-bold text-gray-900 dark:text-white truncate">Edit details</h2>
+                <div className="w-24" />
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="m15 5-7 7 7 7" /></svg>
+                </button>
+                <h2 className="flex-1 min-w-0 ml-1 text-base font-bold text-gray-900 dark:text-white truncate">Agent</h2>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="h-10 px-4 mr-1.5 rounded-xl border border-accent text-sm font-semibold text-gray-900 dark:text-white hover:bg-accent/10"
+                  >
+                    Edit
+                  </button>
+                )}
+                <MoreMenu items={moreItems} />
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Header (sm+) ────────────────────────────────────────────────── */}
+        <div className="hidden sm:flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
           <div className="flex-1 min-w-0 pr-4">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-gray-900 dark:text-white truncate">{agent.name}</h2>
@@ -541,7 +652,8 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
                   href={`sms:${agent.phone}`}
                   onClick={e => e.stopPropagation()}
                   title="Text"
-                  className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
+                  aria-label={`Text ${agent.name}`}
+                  className="flex items-center justify-center w-7 h-7 touch:w-11 touch:h-11 rounded-full text-gray-500 dark:text-white/50 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -549,163 +661,213 @@ function AgentDetailModal({ agent, onClose, canWrite, isHidden, onHideToggle, on
                 </a>
               )}
             </div>
-            <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">{agent.sfg_id}</p>
+            <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">{agent.sfg_id}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => onHideToggle?.(agent.sfg_id, !isHidden)}
-              className={`text-xs font-medium transition-colors px-2 py-1 rounded-lg
-                ${isHidden ? 'text-accent hover:text-accent/80 hover:bg-accent/10'
-                : 'text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'}`}
+              className={`text-xs font-medium transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg
+                ${isHidden ? 'text-gray-900 dark:text-white hover:bg-accent/10'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10'}`}
             >
               {isHidden ? 'Unhide' : 'Hide'}
             </button>
             {canWrite && !editing && (
-              <button onClick={startEdit} className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10">
+              <button onClick={startEdit} className="text-xs font-medium text-gray-900 dark:text-white transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg hover:bg-accent/10">
                 Edit Details
               </button>
             )}
             {editing && (
               <>
-                <button onClick={cancelEdit} className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10">Cancel</button>
+                <button onClick={cancelEdit} className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg hover:bg-gray-100 dark:hover:bg-white/10">Cancel</button>
                 <button onClick={handleSave} disabled={saving}
-                  className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 flex items-center gap-1.5">
-                  {saving && <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
+                  className="text-xs font-semibold border border-accent bg-primary text-white dark:bg-white dark:text-primary px-3 py-1.5 touch:min-h-[44px] rounded-lg hover:bg-primary/85 dark:hover:bg-white/90 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+                  {saving && spinner}
                   {saving ? 'Saving…' : 'Save'}
                 </button>
               </>
             )}
-            <button onClick={onClose} className="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white transition-colors p-1">
+            <button onClick={onClose} aria-label="Close" className="text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors p-1 touch:p-3">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
 
-        {saveError && (
-          <div className="mx-4 mt-3 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300 flex-shrink-0">{saveError}</div>
-        )}
+        {/* ── Scroll area ─────────────────────────────────────────────────── */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
 
-        {/* Edit form */}
-        {editing && draft && (
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Edit Details</p>
-            <div className="grid grid-cols-2 gap-3">
-              <OBEditField label="Hire Date"            value={toInputDate(draft.hire_date)}               onChange={v => setField('hire_date', v)}               type="date" />
-              <OBEditField label="Upline SFG ID"         value={draft.upline_sfg_id ?? ''}                  onChange={v => setField('upline_sfg_id', v)} />
-              <OBEditField label="Profile Issues"       value={draft.profile_issues ?? ''}                 onChange={v => setField('profile_issues', v)} />
-              <div>
-                <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">No E&amp;O</p>
-                <label className="flex items-center gap-2 cursor-pointer mt-1.5">
-                  <input type="checkbox" checked={!!draft.no_eando}
-                    onChange={e => setField('no_eando', e.target.checked ? 'TRUE' : '')}
-                    className="w-4 h-4 accent-accent rounded cursor-pointer" />
-                  <span className="text-sm text-gray-700 dark:text-white/80">No E&amp;O</span>
-                </label>
-              </div>
-              <OBEditField label="Contracting Sent"     value={toInputDate(draft.contracting_to_producer)} onChange={v => setField('contracting_to_producer', v)} type="date" />
-              <OBEditField label="Contracting Complete" value={toInputDate(draft.contracting_complete)}    onChange={v => setField('contracting_complete', v)}    type="date" />
-              <OBEditField label="SureLC Profile Date"  value={toInputDate(draft.surelc_profile_date)}    onChange={v => setField('surelc_profile_date', v)}    type="date" />
-            </div>
+          {/* Phone summary: the sm+ header carries this instead */}
+          <div className="sm:hidden px-4 pt-4 pb-3">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{agent.name}</h2>
+            <p className="text-sm text-gray-600 dark:text-white/60 mt-0.5">{agent.sfg_id}{isHidden ? ' · Hidden' : ''}</p>
           </div>
-        )}
 
-        {/* Agent status strip */}
-        <div className="px-6 py-3 border-b border-gray-200 dark:border-white/10 flex-shrink-0 flex flex-wrap items-center gap-2">
-          {agent.profile_issues
-            ? <span className="text-xs bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{agent.profile_issues}</span>
-            : <span className="text-xs text-gray-300 dark:text-white/20">No profile issues</span>
-          }
-          {isTruthy(agent.no_eando)
-            ? <span className="text-xs bg-red-500/15 text-red-600 dark:text-red-400 font-medium px-2 py-0.5 rounded">No E&amp;O</span>
-            : <span className="text-xs text-gray-300 dark:text-white/20">E&amp;O on file</span>
-          }
-          {agent.contracting_complete
-            ? <span className="text-xs text-green-600 dark:text-green-400">Contracts completed {fmtDate(agent.contracting_complete)}</span>
-            : agent.contracting_to_producer
-            ? <span className="text-xs text-amber-600 dark:text-amber-400">Contracts sent {fmtDate(agent.contracting_to_producer)}</span>
-            : <span className="text-xs text-gray-400 dark:text-white/30">Contracts not sent</span>
-          }
-        </div>
+          {saveError && (
+            <div className="mx-4 mt-3 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-600 dark:text-red-300">{saveError}</div>
+          )}
 
-        {/* Contract numbers */}
-        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">Contract Numbers</p>
-
-          {cnLoading ? (
-            <div className="space-y-2 animate-pulse">
-              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 dark:bg-white/10 rounded-lg" />)}
+          {/* Edit form */}
+          {editing && draft && (
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-white/10">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-3">Edit Details</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <OBEditField label="Hire Date"            value={toInputDate(draft.hire_date)}               onChange={v => setField('hire_date', v)}               type="date" />
+                <OBEditField label="Upline SFG ID"         value={draft.upline_sfg_id ?? ''}                  onChange={v => setField('upline_sfg_id', v)} />
+                <OBEditField label="Profile Issues"       value={draft.profile_issues ?? ''}                 onChange={v => setField('profile_issues', v)} />
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">No E&amp;O</p>
+                  <label className="flex items-center gap-3 sm:gap-2 cursor-pointer mt-1 max-sm:min-h-[44px] touch:min-h-[44px]">
+                    <input type="checkbox" checked={!!draft.no_eando}
+                      onChange={e => setField('no_eando', e.target.checked ? 'TRUE' : '')}
+                      className="w-5 h-5 sm:w-4 sm:h-4 accent-accent rounded cursor-pointer" />
+                    <span className="text-base sm:text-sm text-gray-700 dark:text-white/80">No E&amp;O</span>
+                  </label>
+                </div>
+                <OBEditField label="Contracting Sent"     value={toInputDate(draft.contracting_to_producer)} onChange={v => setField('contracting_to_producer', v)} type="date" />
+                <OBEditField label="Contracting Complete" value={toInputDate(draft.contracting_complete)}    onChange={v => setField('contracting_complete', v)}    type="date" />
+                <OBEditField label="SureLC Profile Date"  value={toInputDate(draft.surelc_profile_date)}    onChange={v => setField('surelc_profile_date', v)}    type="date" />
+              </div>
             </div>
-          ) : (
-            <>
-              {/* Core carriers — inline-editable */}
-              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
-                      {['Carrier', 'Contract Number', 'Status'].map(h => (
-                        <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-3 py-2 first:pl-4 last:pr-4 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+          )}
+
+          {/* Agent status strip */}
+          <div className="px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-white/10 flex flex-wrap items-center gap-2">
+            {agent.profile_issues
+              ? <span className="text-xs bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{agent.profile_issues}</span>
+              : <span className="text-xs text-gray-500 dark:text-white/45">No profile issues</span>
+            }
+            {isTruthy(agent.no_eando)
+              ? <span className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 font-medium px-2 py-0.5 rounded">No E&amp;O</span>
+              : <span className="text-xs text-gray-500 dark:text-white/45">E&amp;O on file</span>
+            }
+            {agent.contracting_complete
+              ? <span className="text-xs text-green-700 dark:text-green-400">Contracts completed {fmtDate(agent.contracting_complete)}</span>
+              : agent.contracting_to_producer
+              ? <span className="text-xs text-amber-700 dark:text-amber-400">Contracts sent {fmtDate(agent.contracting_to_producer)}</span>
+              : <span className="text-xs text-gray-500 dark:text-white/45">Contracts not sent</span>
+            }
+          </div>
+
+          {/* Contract numbers */}
+          <div className="px-4 sm:px-6 py-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">Contract Numbers</p>
+
+            {cnLoading ? (
+              <div className="space-y-2 animate-pulse">
+                {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 dark:bg-white/10 rounded-lg" />)}
+              </div>
+            ) : (
+              <>
+                {/* Core carriers — inline-editable. Phone: one block per carrier; sm+: table */}
+                {!isSm ? (
+                  <ul className="space-y-2.5">
                     {carriers.map(c => {
                       const cn     = contractNums[c.name]
                       const status = computeContractStatus(cn, agent, c.alert_threshold_days)
                       return (
-                        <tr key={c.name} className="bg-white dark:bg-primary/20">
-                          <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-800 dark:text-white/80 whitespace-nowrap w-40">{c.name}</td>
-                          <td className="px-3 py-1.5">
-                            <ContractNumberInput
-                              sfgId={agent.sfg_id}
-                              carrier={c.name}
-                              initialValue={cn?.contract_number ?? ''}
-                              onSaved={loadContractData}
-                            />
-                          </td>
-                          <td className="px-3 pr-4 py-2 whitespace-nowrap">
+                        <li key={c.name} className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-primary/20 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">{c.name}</span>
                             <ContractStatusBadge status={status} />
-                          </td>
-                        </tr>
+                          </div>
+                          <ContractNumberInput
+                            sfgId={agent.sfg_id}
+                            carrier={c.name}
+                            initialValue={cn?.contract_number ?? ''}
+                            onSaved={loadContractData}
+                            ariaLabel={`${c.name} contract number`}
+                          />
+                        </li>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Other carriers (collapsible, read-only) */}
-              {otherContracts.length > 0 && (
-                <div>
-                  <button
-                    onClick={() => setShowOther(v => !v)}
-                    className="flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors"
-                  >
-                    <svg className={`w-3 h-3 transition-transform ${showOther ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                    Other carriers ({otherContracts.length})
-                  </button>
-                  {showOther && (
-                    <div className="mt-2 rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
-                      <table className="w-full text-sm">
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                          {otherContracts.map(cn => (
-                            <tr key={cn.carrier} className="bg-white dark:bg-primary/20">
-                              <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-700 dark:text-white/70 w-40">{cn.carrier}</td>
-                              <td className="px-3 pr-4 py-2 text-xs font-mono text-gray-500 dark:text-white/50">{cn.contract_number}</td>
-                            </tr>
+                  </ul>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                          {['Carrier', 'Contract Number', 'Status'].map(h => (
+                            <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-3 py-2 first:pl-4 last:pr-4 whitespace-nowrap">{h}</th>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                        {carriers.map(c => {
+                          const cn     = contractNums[c.name]
+                          const status = computeContractStatus(cn, agent, c.alert_threshold_days)
+                          return (
+                            <tr key={c.name} className="bg-white dark:bg-primary/20">
+                              <td className="px-3 pl-4 py-2 text-xs font-medium text-gray-800 dark:text-white/80 whitespace-nowrap w-40">{c.name}</td>
+                              <td className="px-3 py-1.5">
+                                <ContractNumberInput
+                                  sfgId={agent.sfg_id}
+                                  carrier={c.name}
+                                  initialValue={cn?.contract_number ?? ''}
+                                  onSaved={loadContractData}
+                                  ariaLabel={`${c.name} contract number`}
+                                />
+                              </td>
+                              <td className="px-3 pr-4 py-2 whitespace-nowrap">
+                                <ContractStatusBadge status={status} />
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Other carriers (collapsible, read-only) */}
+                {otherContracts.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowOther(v => !v)}
+                      aria-expanded={showOther}
+                      className="flex items-center gap-1.5 text-sm sm:text-xs font-medium text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white transition-colors max-sm:min-h-[44px] touch:min-h-[44px]"
+                    >
+                      <svg className={`w-3 h-3 transition-transform ${showOther ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                      Other carriers ({otherContracts.length})
+                    </button>
+                    {showOther && (
+                      <div className="mt-2 rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                            {otherContracts.map(cn => (
+                              <tr key={cn.carrier} className="bg-white dark:bg-primary/20">
+                                <td className="px-3 pl-4 py-2.5 text-xs font-medium text-gray-700 dark:text-white/70 sm:w-40">{cn.carrier}</td>
+                                <td className="px-3 pr-4 py-2.5 text-xs font-mono text-gray-600 dark:text-white/60 text-right sm:text-left">{cn.contract_number}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="px-6 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0 flex items-center justify-end">
-          <span className="text-xs text-gray-400 dark:text-white/25">Esc to close</span>
+        {/* Phone: pinned Save while editing */}
+        {editing && (
+          <div className={`sm:hidden shrink-0 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-primary px-4 pt-3 ${SHEET_FOOT_PAD}`}>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full h-12 rounded-xl border border-accent bg-primary text-white dark:bg-white dark:text-primary text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {saving && spinner}
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        )}
+
+        <div className="hidden sm:flex px-6 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0 items-center justify-end">
+          <span className="text-xs text-gray-500 dark:text-white/40">Esc to close</span>
         </div>
       </div>
     </div>
@@ -737,7 +899,7 @@ function computeContractStatus(cn, agent, thresholdDays) {
   return { type: 'pending', days: days ?? 0 }
 }
 
-function ContractNumberInput({ sfgId, carrier, initialValue, onSaved }) {
+function ContractNumberInput({ sfgId, carrier, initialValue, onSaved, ariaLabel }) {
   const [value,   setValue]   = useState(initialValue)
   const [saving,  setSaving]  = useState(false)
   const [saved,   setSaved]   = useState(false)
@@ -777,30 +939,31 @@ function ContractNumberInput({ sfgId, carrier, initialValue, onSaved }) {
         onBlur={handleBlur}
         onKeyDown={e => e.key === 'Enter' && e.target.blur()}
         placeholder="—"
-        className="w-full max-w-[160px] bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white/80 text-xs font-mono rounded px-2 py-1 focus:outline-none focus:border-accent/60 focus:bg-white dark:focus:bg-white/10 transition-colors"
+        aria-label={ariaLabel}
+        className="w-full sm:max-w-[160px] bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white/80 text-xs font-mono max-sm:h-11 max-sm:rounded-lg max-sm:px-3 sm:rounded sm:px-2 sm:py-1 touch:sm:min-h-[44px] focus:outline-none focus:border-accent/60 focus:bg-white dark:focus:bg-white/10 transition-colors"
       />
-      {saving && <span className="text-[10px] text-gray-400 dark:text-white/30 whitespace-nowrap">Saving…</span>}
-      {saved   && <span className="text-[10px] text-green-600 dark:text-green-400 whitespace-nowrap">✓</span>}
-      {error   && <span className="text-[10px] text-red-500 whitespace-nowrap">!</span>}
+      {saving && <span className="text-xs text-gray-500 dark:text-white/50 whitespace-nowrap">Saving…</span>}
+      {saved   && <span className="text-xs text-green-700 dark:text-green-400 whitespace-nowrap">✓</span>}
+      {error   && <span className="text-xs text-red-600 whitespace-nowrap">!</span>}
     </div>
   )
 }
 
 function ContractStatusBadge({ status }) {
   if (status.type === 'ok') {
-    return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600 dark:text-green-400"><span className="text-xs">✓</span>On file</span>
+    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-400"><span className="text-xs">✓</span>On file</span>
   }
   if (status.type === 'not_requested') {
-    return <span className="text-[10px] text-gray-400 dark:text-white/30">Not requested</span>
+    return <span className="text-xs text-gray-500 dark:text-white/50">Not requested</span>
   }
   if (status.type === 'pending') {
-    return <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Pending {status.days}d</span>
+    return <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Pending {status.days}d</span>
   }
   if (status.type === 'overdue') {
-    return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">Overdue {status.overdueDays}d</span>
+    return <span className="text-xs font-semibold text-red-700 dark:text-red-400">Overdue {status.overdueDays}d</span>
   }
   if (status.type === 'data_issue') {
-    return <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">Requested — # missing</span>
+    return <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">Requested — # missing</span>
   }
   return null
 }
@@ -808,7 +971,7 @@ function ContractStatusBadge({ status }) {
 function OBEditField({ label, value, onChange, type = 'text' }) {
   return (
     <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">{label}</p>
       <input
         type={type}
         value={value ?? ''}

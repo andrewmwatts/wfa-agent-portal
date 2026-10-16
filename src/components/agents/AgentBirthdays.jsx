@@ -43,9 +43,9 @@ export default function AgentBirthdays({ personnel, onAgentClick }) {
             <button
               key={r.key}
               onClick={() => setRange(r.key)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`px-3 py-1.5 max-sm:min-h-11 touch:min-h-11 text-xs font-medium transition-colors ${
                 range === r.key
-                  ? 'bg-accent text-white'
+                  ? 'bg-primary text-white dark:bg-white dark:text-primary font-semibold'
                   : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10'
               }`}
             >
@@ -53,18 +53,42 @@ export default function AgentBirthdays({ personnel, onAgentClick }) {
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-400 dark:text-white/30">
+        <span className="text-xs text-gray-500 dark:text-white/50">
           {upcoming.length} birthday{upcoming.length !== 1 ? 's' : ''}
         </span>
       </div>
 
-      <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
+      {/* Phone: card list */}
+      <ul className="sm:hidden bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden divide-y divide-gray-100 dark:divide-white/5">
+        {upcoming.length === 0 ? (
+          <li className="px-4 py-8 text-center text-sm text-gray-500 dark:text-white/50">No birthdays in this window.</li>
+        ) : upcoming.map(p => (
+          <li key={p.sfg_id}>
+            <button
+              type="button"
+              onClick={() => onAgentClick(p)}
+              className="w-full min-h-[60px] px-4 py-3 text-left flex items-center justify-between gap-3 active:bg-gray-50 dark:active:bg-white/[0.05]"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{p.name || '—'}</p>
+                <p className="mt-0.5 text-xs text-gray-500 dark:text-white/50">{p.sfg_id}{p.upline_name ? ` · ↑ ${p.upline_name}` : ''}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">{p._date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                <p className="text-xs text-gray-500 dark:text-white/60">{fmtInDays(p._days)}</p>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <div className="max-sm:hidden bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead>
               <tr className="border-b border-gray-200 dark:border-white/10">
                 {['Name', 'Upline', 'Birthday', 'In'].map(h => (
-                  <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3 first:pl-6 whitespace-nowrap">
+                  <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3 first:pl-6 whitespace-nowrap">
                     {h}
                   </th>
                 ))}
@@ -73,7 +97,7 @@ export default function AgentBirthdays({ personnel, onAgentClick }) {
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {upcoming.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400 dark:text-white/30">
+                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-white/50">
                     No birthdays in this window.
                   </td>
                 </tr>
@@ -85,7 +109,7 @@ export default function AgentBirthdays({ personnel, onAgentClick }) {
                 >
                   <td className="px-5 pl-6 py-3">
                     <span className="font-medium text-gray-900 dark:text-white">{p.name || '—'}</span>
-                    <p className="text-xs text-gray-400 dark:text-white/30 mt-0.5">{p.sfg_id}</p>
+                    <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">{p.sfg_id}</p>
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-600 dark:text-white/70">{p.upline_name || '—'}</td>
                   <td className="px-5 py-3 text-sm text-gray-600 dark:text-white/70">

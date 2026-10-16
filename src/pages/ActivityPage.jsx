@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import DialTallySheet from '../components/DialTallySheet'
+import MoreMenu from '../components/ui/MoreMenu'
 
 // ─── Metric definitions ────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ export default function ActivityPage() {
   const [statsRange, setStatsRange] = useState('week')
   const [statsLogs,  setStatsLogs]  = useState([])
   const [statsLoading, setStatsLoading] = useState(false)
+  const [phoneDay,   setPhoneDay]   = useState(null)   // phone: which day of the week is open
 
   // Lead spend transactions (still derived)
   const [leadTxs, setLeadTxs] = useState([])
@@ -182,6 +184,11 @@ export default function ActivityPage() {
   )
 
   const todayStr = toDateStr(new Date())
+
+  // Phone shows one day at a time: the tapped day, else today (if in this week), else the first day.
+  const activeDay = phoneDay && days.some(d => toDateStr(d) === phoneDay)
+    ? phoneDay
+    : days.some(d => toDateStr(d) === todayStr) ? todayStr : toDateStr(days[0])
 
   // ── Load week's logs ─────────────────────────────────────────────────────────
   const loadLogs = useCallback(async () => {
@@ -488,45 +495,51 @@ export default function ActivityPage() {
 
   // ── Guards ───────────────────────────────────────────────────────────────────
   if (!permissions.activity.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
+      <p className="text-sm text-red-600 dark:text-red-400">You don't have access to this section.</p>
     </main>
   )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to track activity.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to track activity.</p>
     </div>
   )
 
   return (
-    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-6">
 
       {/* ── Page header ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1 min-w-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
+        <h1 className="text-[22px] sm:text-xl font-bold text-gray-900 dark:text-white flex-1 min-w-0 truncate">
           Activity Tracking
         </h1>
+        <MoreMenu
+          className="sm:hidden shrink-0"
+          items={[{ label: 'Printable dial tally sheet', onClick: () => setShowTally(true) }]}
+        />
         <button
           onClick={() => setShowTally(true)}
-          className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-accent text-accent hover:bg-accent/10 transition-colors"
+          className="hidden sm:block shrink-0 text-xs font-semibold px-3 py-1.5 touch:min-h-[44px] rounded-lg border border-accent text-gray-900 dark:text-white hover:bg-accent/10 transition-colors"
         >
           Printable Dial Tally Sheet
         </button>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 max-sm:w-full">
           <button
             onClick={() => setWeekStart(w => addDays(w, -7))}
-            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
+            aria-label="Previous week"
+            className="w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl sm:rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
           >‹</button>
-          <span className="text-sm font-medium text-gray-700 dark:text-white/80 min-w-[168px] text-center">
+          <span className="text-sm font-medium text-gray-700 dark:text-white/80 sm:min-w-[168px] max-sm:flex-1 text-center">
             {fmtWeekRange(weekStart)}
           </span>
           <button
             onClick={() => setWeekStart(w => addDays(w, 7))}
-            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
+            aria-label="Next week"
+            className="w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl sm:rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-lg leading-none"
           >›</button>
           <button
             onClick={() => setWeekStart(getWeekStart(new Date()))}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+            className="text-sm sm:text-xs px-3 h-11 sm:h-auto sm:py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-gray-200 dark:border-white/15 text-gray-700 dark:text-white/70 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
           >
             This Week
           </button>
@@ -534,19 +547,19 @@ export default function ActivityPage() {
       </div>
 
       {/* -- Quick log (today) -------------------------------------------------- */}
-      <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+      <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 mb-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">
             Quick Log · Today
           </p>
-          <p className="text-xs text-gray-400 dark:text-white/30">
+          <p className="text-xs text-gray-500 dark:text-white/50">
             {fmtFullDay(todayStr)} — tap as it happens, saves instantly
           </p>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
           {QUICK_METRICS.map(m => (
-            <div key={m.key} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.03] px-2 py-3 flex flex-col items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50">{m.label}</span>
+            <div key={m.key} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.03] px-2 py-3 flex flex-col items-center gap-2 max-sm:flex-row max-sm:justify-between max-sm:px-4 max-sm:py-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-white/60">{m.label}</span>
               <div className="flex items-center gap-2.5">
                 <button
                   type="button"
@@ -563,13 +576,13 @@ export default function ActivityPage() {
                   aria-label={`Increase ${m.label}`}
                   disabled={!todayReady}
                   onClick={() => quickAdjust(m.key, 1)}
-                  className="w-12 h-12 rounded-full bg-accent text-white text-3xl leading-none hover:bg-accent/90 active:scale-95 disabled:opacity-40 transition"
+                  className="w-12 h-12 rounded-full border border-accent bg-primary text-white dark:bg-white dark:text-primary text-3xl leading-none hover:bg-primary/85 dark:hover:bg-white/90 active:scale-95 disabled:opacity-40 transition"
                 >+</button>
               </div>
             </div>
           ))}
         </div>
-        {quickError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{quickError}</p>}
+        {quickError && <p className="text-xs text-red-600 dark:text-red-400 mt-3">{quickError}</p>}
       </div>
 
       {loading ? (
@@ -580,33 +593,35 @@ export default function ActivityPage() {
       ) : (
         <>
           {/* ── Goals section ────────────────────────────────────────────────── */}
-          <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
+          <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5 transition-opacity ${goalsLoading ? 'opacity-50' : ''}`}>
             <div className="flex flex-wrap items-center gap-3 mb-5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">
                 Goals
               </p>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => { setGoalsMonth(m => addMonths(m, -1)); setGoalsDraft(null) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                  aria-label="Previous month"
+                  className="w-11 h-11 sm:w-7 sm:h-7 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl sm:rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
                 >‹</button>
-                <span className="text-xs font-medium text-gray-600 dark:text-white/70 min-w-[110px] text-center">
+                <span className="text-sm sm:text-xs font-medium text-gray-700 dark:text-white/70 min-w-[110px] text-center">
                   {fmtGoalsMonth(goalsMonth)}
                 </span>
                 <button
                   onClick={() => { setGoalsMonth(m => addMonths(m, 1)); setGoalsDraft(null) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
+                  aria-label="Next month"
+                  className="w-11 h-11 sm:w-7 sm:h-7 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl sm:rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-base leading-none"
                 >›</button>
               </div>
               <div className="ml-auto flex gap-2">
                 {goalsDraft ? (
                   <>
                     <button onClick={saveGoals} disabled={goalsSaving}
-                      className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
+                      className="text-sm sm:text-xs px-4 max-sm:h-11 sm:py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-40 transition-colors">
                       {goalsSaving ? 'Saving…' : 'Save'}
                     </button>
                     <button onClick={() => setGoalsDraft(null)}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                      className="text-sm sm:text-xs px-3 max-sm:h-11 sm:py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-gray-300 dark:border-white/20 text-gray-700 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                       Cancel
                     </button>
                   </>
@@ -618,7 +633,7 @@ export default function ActivityPage() {
                       monthly_apv_issued:    goals?.monthly_apv_issued    ?? '',
                       monthly_income:        goals?.monthly_income        ?? '',
                     })}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    className="text-sm sm:text-xs px-3 max-sm:h-11 sm:py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-gray-300 dark:border-white/15 text-gray-700 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   >
                     {goals && Object.values(goals).some(v => v !== null && v !== undefined && v !== '') ? 'Edit' : 'Set Goals'}
                   </button>
@@ -629,8 +644,8 @@ export default function ActivityPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {GOAL_FIELDS.map(f => (
                 <div key={f.key}>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{f.label}</p>
-                  <p className="text-[10px] text-gray-300 dark:text-white/20 mb-2">{f.period}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/55 mb-0.5">{f.label}</p>
+                  <p className="text-xs text-gray-500 dark:text-white/45 mb-2">{f.period}</p>
                   {goalsDraft ? (
                     <input
                       type="number" min="0"
@@ -640,7 +655,7 @@ export default function ActivityPage() {
                       onChange={e => setGoalsDraft(d => ({ ...d, [f.key]: e.target.value }))}
                       onFocus={e => e.target.select()}
                       placeholder="—"
-                      className={`${NO_SPIN} w-full text-sm rounded-lg px-2.5 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
+                      className={`${NO_SPIN} w-full text-sm rounded-lg max-sm:rounded-xl px-2.5 py-1.5 max-sm:py-3 touch:sm:min-h-[44px] border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
                     />
                   ) : (
                     <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
@@ -654,11 +669,74 @@ export default function ActivityPage() {
 
           {/* ── Weekly grid ──────────────────────────────────────────────────── */}
           <div className="bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
+
+            {/* Phone: pick a day, see that day's numbers */}
+            <div className="md:hidden">
+              <div role="tablist" aria-label="Day of week" className="grid grid-cols-7 gap-1 px-3 pt-3">
+                {days.map(day => {
+                  const ds      = toDateStr(day)
+                  const sel     = ds === activeDay
+                  const isToday = ds === todayStr
+                  const hasData = !!logs[ds]
+                  return (
+                    <button
+                      key={ds}
+                      role="tab"
+                      aria-selected={sel}
+                      onClick={() => { setPhoneDay(ds); if (editDate && editDate !== ds) setEditDate(null) }}
+                      className={`flex flex-col items-center gap-0.5 rounded-xl py-2 min-h-[60px] border transition-colors ${
+                        sel ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-gray-50 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="text-xs font-semibold text-gray-600 dark:text-white/60">{fmtDayHeader(day)}</span>
+                      <span className="text-base font-bold tabular-nums text-gray-900 dark:text-white">{day.getDate()}</span>
+                      <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${hasData ? 'bg-accent' : isToday ? 'border border-accent' : ''}`} />
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="px-4 pt-3 pb-2">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="text-base font-semibold text-gray-900 dark:text-white">
+                    {fmtFullDay(activeDay)}
+                    {activeDay === todayStr && <span className="ml-2 text-xs font-medium text-gray-600 dark:text-white/60">today</span>}
+                  </p>
+                  <button
+                    onClick={() => toggleEdit(activeDay)}
+                    className="h-10 px-4 rounded-xl border border-accent text-sm font-semibold text-gray-900 dark:text-white hover:bg-accent/10 transition-colors"
+                  >
+                    {editDate === activeDay ? 'Close' : logs[activeDay] ? 'Edit' : 'Log'}
+                  </button>
+                </div>
+                <dl className="divide-y divide-gray-100 dark:divide-white/5">
+                  {METRICS.map(metric => {
+                    const val = logs[activeDay]?.[metric.key]
+                    const hasVal = val !== undefined && val !== null && val !== 0
+                    return (
+                      <div key={metric.key} className="flex items-baseline justify-between py-2">
+                        <dt className="text-sm text-gray-600 dark:text-white/60">{metric.label}</dt>
+                        <dd className={`text-base font-semibold tabular-nums ${hasVal ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
+                          {hasVal ? (metric.currency ? fmtCurrency(val) : val) : '—'}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                  <div className="flex items-baseline justify-between py-2">
+                    <dt className="text-sm italic text-gray-600 dark:text-white/60">{DERIVED_ROW.label}</dt>
+                    <dd className={`text-base font-semibold tabular-nums ${leadsByDate[activeDay] > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
+                      {leadsByDate[activeDay] > 0 ? fmtCurrency(leadsByDate[activeDay]) : '—'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm md:min-w-[560px]">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-white/10">
-                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-[130px]">
+                    <th className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-4 py-3 w-[130px]">
                       Metric
                     </th>
                     {days.map(day => {
@@ -669,20 +747,20 @@ export default function ActivityPage() {
                       return (
                         <th key={ds} className="px-1.5 py-2.5 text-center">
                           <div className="flex flex-col items-center gap-1.5">
-                            <span className={`block text-xs font-semibold ${isToday ? 'text-accent' : 'text-gray-500 dark:text-white/50'}`}>
+                            <span className={`block text-xs font-semibold ${isToday ? 'text-gray-900 dark:text-white underline decoration-accent decoration-2 underline-offset-4' : 'text-gray-600 dark:text-white/60'}`}>
                               {fmtDayHeader(day)}
                             </span>
-                            <span className={`block text-[10px] tabular-nums ${isToday ? 'text-accent/70' : 'text-gray-400 dark:text-white/30'}`}>
+                            <span className={`block text-xs tabular-nums ${isToday ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-white/50'}`}>
                               {fmtDayDate(day)}
                             </span>
                             <button
                               onClick={() => toggleEdit(ds)}
-                              className={`text-[10px] px-2 py-0.5 rounded-md font-medium transition-colors ${
+                              className={`text-xs px-2 py-0.5 touch:min-h-[44px] touch:px-3 rounded-md font-medium transition-colors ${
                                 isEdit
-                                  ? 'bg-accent text-white'
+                                  ? 'border border-accent bg-primary text-white dark:bg-white dark:text-primary'
                                   : hasData
-                                    ? 'bg-accent/10 text-accent hover:bg-accent/20 dark:bg-accent/15 dark:hover:bg-accent/25'
-                                    : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-white/30 hover:bg-gray-200 dark:hover:bg-white/10'
+                                    ? 'bg-accent/10 text-gray-900 dark:text-white hover:bg-accent/20 dark:bg-accent/15 dark:hover:bg-accent/25'
+                                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10'
                               }`}
                             >
                               {isEdit ? 'Close' : hasData ? 'Edit' : 'Log'}
@@ -691,7 +769,7 @@ export default function ActivityPage() {
                         </th>
                       )
                     })}
-                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 w-20">
+                    <th className="text-right text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-4 py-3 w-20">
                       Total
                     </th>
                   </tr>
@@ -712,14 +790,14 @@ export default function ActivityPage() {
                           : '—'
                         return (
                           <td key={ds} className="px-1.5 py-2.5 text-center">
-                            <span className={`text-sm tabular-nums font-medium ${hasVal ? 'text-gray-900 dark:text-white' : 'text-gray-200 dark:text-white/15'}`}>
+                            <span className={`text-sm tabular-nums font-medium ${hasVal ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
                               {display}
                             </span>
                           </td>
                         )
                       })}
                       <td className="px-4 py-2.5 text-right">
-                        <span className={`text-sm tabular-nums font-bold ${weekTotals[metric.key] ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'}`}>
+                        <span className={`text-sm tabular-nums font-bold ${weekTotals[metric.key] ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
                           {weekTotals[metric.key]
                             ? (metric.currency ? fmtCurrency(weekTotals[metric.key]) : weekTotals[metric.key])
                             : '—'}
@@ -742,14 +820,14 @@ export default function ActivityPage() {
                           const val = amt > 0 ? fmtCurrency(amt) : null
                           return (
                             <td key={ds} className="px-1.5 py-2.5 text-center">
-                              <span className={`text-sm tabular-nums font-medium ${val ? 'text-gray-900 dark:text-white' : 'text-gray-200 dark:text-white/15'}`}>
+                              <span className={`text-sm tabular-nums font-medium ${val ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
                                 {val ?? '—'}
                               </span>
                             </td>
                           )
                         })}
                         <td className="px-4 py-2.5 text-right">
-                          <span className={`text-sm tabular-nums font-bold ${weekLeadTotal ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'}`}>
+                          <span className={`text-sm tabular-nums font-bold ${weekLeadTotal ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
                             {weekLeadTotal ? fmtCurrency(weekLeadTotal) : '—'}
                           </span>
                         </td>
@@ -762,8 +840,8 @@ export default function ActivityPage() {
 
             {/* ── Inline day editor ──────────────────────────────────────────── */}
             {editDate && (
-              <div className="border-t border-gray-100 dark:border-white/10 bg-gray-50/50 dark:bg-white/[0.02] px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-4">
+              <div className="border-t border-gray-100 dark:border-white/10 bg-gray-50/50 dark:bg-white/[0.02] px-4 sm:px-5 py-5">
+                <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-4">
                   {fmtFullDay(editDate)}
                 </p>
 
@@ -782,7 +860,7 @@ export default function ActivityPage() {
                         onChange={e => setField(metric.key, e.target.value)}
                         onFocus={e => e.target.select()}
                         placeholder="0"
-                        className={`${NO_SPIN} w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
+                        className={`${NO_SPIN} w-full text-sm text-center rounded-lg max-sm:rounded-xl px-2 py-1.5 max-sm:py-3 touch:sm:min-h-[44px] border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
                       />
                     </div>
                   ))}
@@ -796,13 +874,13 @@ export default function ActivityPage() {
                       onChange={e => setField('lead_spend', e.target.value)}
                       onFocus={e => e.target.select()}
                       placeholder="0"
-                      className={`${NO_SPIN} w-full text-sm text-center rounded-lg px-2 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
+                      className={`${NO_SPIN} w-full text-sm text-center rounded-lg max-sm:rounded-xl px-2 py-1.5 max-sm:py-3 touch:sm:min-h-[44px] border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors tabular-nums`}
                     />
                   </div>
                 </div>
 
                 <div className="mb-4">
-                  <label className="block text-xs text-gray-400 dark:text-white/40 mb-1.5">
+                  <label className="block text-xs text-gray-500 dark:text-white/50 mb-1.5">
                     Notes <span className="font-normal">(optional)</span>
                   </label>
                   <textarea
@@ -810,39 +888,61 @@ export default function ActivityPage() {
                     onChange={e => setField('notes', e.target.value)}
                     rows={2}
                     placeholder="Follow-ups, observations…"
-                    className="w-full text-sm rounded-lg px-3 py-1.5 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors resize-y"
+                    className="w-full text-sm rounded-lg max-sm:rounded-xl px-3 py-1.5 max-sm:py-3 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors resize-y"
                   />
                 </div>
 
-                {saveError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{saveError}</p>}
+                {saveError && <p className="text-xs text-red-600 dark:text-red-400 mb-3">{saveError}</p>}
 
                 <div className="flex gap-2">
                   <button onClick={handleSave} disabled={saving}
-                    className="text-sm px-5 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    className="max-sm:flex-1 max-sm:h-12 text-sm px-5 py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                     {saving ? 'Saving…' : 'Save'}
                   </button>
                   <button onClick={() => setEditDate(null)}
-                    className="text-sm px-4 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                    className="max-sm:h-12 text-sm px-4 py-1.5 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-gray-300 dark:border-white/20 text-gray-700 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                     Cancel
                   </button>
                 </div>
               </div>
             )}
+
+            {/* Phone: the week's totals sit under the day view / editor */}
+            <div className="md:hidden border-t border-gray-100 dark:border-white/10 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-3">This week</p>
+              <div className="grid grid-cols-3 gap-x-3 gap-y-3">
+                {METRICS.map(metric => (
+                  <div key={metric.key}>
+                    <p className="text-xs text-gray-600 dark:text-white/55">{metric.short}</p>
+                    <p className={`text-base font-bold tabular-nums ${weekTotals[metric.key] ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
+                      {weekTotals[metric.key] ? (metric.currency ? fmtCurrency(weekTotals[metric.key]) : weekTotals[metric.key]) : '—'}
+                    </p>
+                  </div>
+                ))}
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-white/55">Lead $</p>
+                  <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white">
+                    {(() => { const t = days.reduce((sum, d) => sum + (leadsByDate[toDateStr(d)] ?? 0), 0); return t ? fmtCurrency(t) : '—' })()}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── Stats section ────────────────────────────────────────────────── */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">
                 Stats
               </p>
-              <div className="flex gap-1">
+              <div className="flex gap-1 max-sm:w-full">
                 {STAT_RANGES.map(r => (
                   <button key={r.key} onClick={() => setStatsRange(r.key)}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                    aria-pressed={statsRange === r.key}
+                    className={`text-xs px-3 py-1.5 max-sm:px-1 max-sm:flex-1 max-sm:h-11 touch:sm:min-h-[44px] rounded-lg max-sm:rounded-xl font-semibold transition-colors ${
                       statsRange === r.key
-                        ? 'bg-accent text-white'
-                        : 'border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
+                        ? 'border border-accent bg-primary text-white dark:bg-white dark:text-primary'
+                        : 'border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
                     }`}>
                     {r.label}
                   </button>
@@ -851,25 +951,25 @@ export default function ActivityPage() {
             </div>
 
             {/* Conversion ratios */}
-            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
+            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-5">
                 Conversion Ratios
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 sm:gap-6 max-sm:[&>:last-child:nth-child(odd)]:col-span-2">
                 {ratios.map(r => <RatioCard key={r.label} {...r} />)}
               </div>
             </div>
 
             {/* Totals */}
-            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-5">
+            <div className={`bg-white border border-primary/15 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5 transition-opacity ${statsLoading ? 'opacity-50' : ''}`}>
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-5">
                 Totals
               </p>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 mb-4">
                 {METRICS.map(m => (
                   <div key={m.key}>
                     <p className={`text-xs font-semibold mb-1 ${NEUTRAL}`}>{m.label}</p>
-                    <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                    <p className="text-xl sm:text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
                       {m.currency
                         ? (totals[m.key] > 0 ? fmtCurrency(totals[m.key]) : '0')
                         : (totals[m.key] || 0)}
@@ -903,10 +1003,10 @@ function RatioCard({ label, pct, num, den, display, sub, title }) {
   const subline = display !== undefined ? sub       : (den > 0 ? `${num} / ${den}` : null)
   return (
     <div className="text-center" title={title}>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-1.5 leading-tight">{label}</p>
+      <p className="text-xs text-gray-600 dark:text-white/55 mb-1.5 leading-tight">{label}</p>
       <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{value ?? '—'}</p>
       {subline && (
-        <p className="text-[10px] text-gray-400 dark:text-white/30 mt-0.5 tabular-nums">{subline}</p>
+        <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5 tabular-nums">{subline}</p>
       )}
     </div>
   )

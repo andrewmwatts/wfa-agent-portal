@@ -6,12 +6,12 @@ import { useViewing } from '../context/ViewingContext'
 
 const STATUSES = [
   { key: 'new',          label: 'New',                 cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20' },
-  { key: 'contacted',    label: 'Contacted',           cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20' },
+  { key: 'contacted',    label: 'Contacted',           cls: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20' },
   { key: 'appt_booked',  label: 'Appointment Booked',  cls: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20' },
   { key: 'presentation', label: 'Presentation',        cls: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20' },
   { key: 'sold',         label: 'Sold',                cls: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/20' },
   { key: 'enrolled',     label: 'Enrolled',            cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20' },
-  { key: 'not_interested', label: 'Not Interested',    cls: 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10' },
+  { key: 'not_interested', label: 'Not Interested',    cls: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-white/5 dark:text-white/60 dark:border-white/10' },
   { key: 'nurture',      label: 'Long-Term Nurture',   cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20' },
 ]
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.key, s]))
@@ -24,9 +24,9 @@ const BUCKETS = [
     key: 'gold',     label: 'Gold',              subtitle: 'Your core; work first',
     life_fit: 'high', relationship: 'high',
     headerCls: 'bg-yellow-50 dark:bg-yellow-500/10 border-yellow-200 dark:border-yellow-500/20',
-    labelCls:  'text-yellow-700 dark:text-yellow-300',
-    countCls:  'text-yellow-600 dark:text-yellow-400',
-    chipCls:   'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-300 dark:border-yellow-500/20',
+    labelCls:  'text-yellow-800 dark:text-yellow-300',
+    countCls:  'text-yellow-700 dark:text-yellow-400',
+    chipCls:   'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-300 dark:border-yellow-500/20',
   },
   {
     key: 'referral', label: 'Referral Pipeline', subtitle: 'Ask for referrals',
@@ -48,9 +48,9 @@ const BUCKETS = [
     key: 'park',     label: 'Park',              subtitle: 'Not now',
     life_fit: 'low',  relationship: 'low',
     headerCls: 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10',
-    labelCls:  'text-gray-500 dark:text-white/50',
-    countCls:  'text-gray-400 dark:text-white/30',
-    chipCls:   'bg-gray-100 text-gray-500 border-gray-200 dark:bg-white/5 dark:text-white/40 dark:border-white/10',
+    labelCls:  'text-gray-600 dark:text-white/60',
+    countCls:  'text-gray-500 dark:text-white/50',
+    chipCls:   'bg-gray-100 text-gray-600 border-gray-200 dark:bg-white/5 dark:text-white/60 dark:border-white/10',
   },
 ]
 const BUCKET_ORDER = ['gold', 'referral', 'earnin', 'park']
@@ -61,13 +61,14 @@ function getBucket(entry) {
 
 // ─── Shared styles ─────────────────────────────────────────────────────────────
 
-const INPUT  = 'text-sm rounded-lg px-2.5 py-1.5 border bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors'
+const INPUT  = 'text-sm rounded-lg px-2.5 py-1.5 max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px] border bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors'
 const SELECT = INPUT + ' cursor-pointer'
-const FL     = 'text-[10px] text-gray-400 dark:text-white/30 font-medium uppercase tracking-wide mb-1'
+const FL     = 'text-xs text-gray-500 dark:text-white/50 font-medium uppercase tracking-wide mb-1'
 
-function Field({ label, children }) {
+// `ord` sets the phone-only visual order inside the 2-column form grid (Tailwind class, e.g. 'max-sm:order-2').
+function Field({ label, children, span = false, ord = '' }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={`flex flex-col gap-1 ${span ? 'max-sm:col-span-2' : ''} ${ord}`}>
       <label className={FL}>{label}</label>
       {children}
     </div>
@@ -80,30 +81,30 @@ function EntryFields({ form, setForm, nameRef, autoFocusName }) {
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
   return (
     <>
-      <Field label="Name *">
+      <Field label="Name *" span ord="max-sm:order-1">
         <input ref={nameRef} type="text" value={form.name} onChange={e => set('name', e.target.value)}
-          placeholder="Full name" className={INPUT + ' min-w-[140px]'} autoFocus={autoFocusName} />
+          placeholder="Full name" className={INPUT + ' sm:min-w-[140px]'} autoFocus={autoFocusName} />
       </Field>
-      <Field label="Phone">
+      <Field label="Phone" ord="max-sm:order-2">
         <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
-          placeholder="555-555-5555" className={INPUT + ' w-32'} />
+          placeholder="555-555-5555" className={INPUT + ' sm:w-32'} />
       </Field>
-      <Field label="Email">
+      <Field label="Email" span ord="max-sm:order-4">
         <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-          placeholder="email@example.com" className={INPUT + ' w-44'} />
+          placeholder="email@example.com" className={INPUT + ' sm:w-44'} />
       </Field>
-      <Field label="Social">
+      <Field label="Social" ord="max-sm:order-3">
         <input type="text" value={form.social_handle} onChange={e => set('social_handle', e.target.value)}
-          placeholder="@handle" className={INPUT + ' w-28'} />
+          placeholder="@handle" className={INPUT + ' sm:w-28'} />
       </Field>
-      <Field label="Life Fit">
-        <select value={form.life_fit} onChange={e => set('life_fit', e.target.value)} className={SELECT + ' w-24'}>
+      <Field label="Life Fit" ord="max-sm:order-5">
+        <select value={form.life_fit} onChange={e => set('life_fit', e.target.value)} className={SELECT + ' sm:w-24'}>
           <option value="high">High</option>
           <option value="low">Low</option>
         </select>
       </Field>
-      <Field label="Relationship">
-        <select value={form.relationship} onChange={e => set('relationship', e.target.value)} className={SELECT + ' w-24'}>
+      <Field label="Relationship" ord="max-sm:order-6">
+        <select value={form.relationship} onChange={e => set('relationship', e.target.value)} className={SELECT + ' sm:w-24'}>
           <option value="high">High</option>
           <option value="low">Low</option>
         </select>
@@ -118,16 +119,16 @@ function EditStatusFields({ form, setForm }) {
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
   return (
     <>
-      <Field label="Status">
-        <select value={form.status} onChange={e => set('status', e.target.value)} className={SELECT + ' w-40'}>
+      <Field label="Status" span ord="max-sm:order-7">
+        <select value={form.status} onChange={e => set('status', e.target.value)} className={SELECT + ' sm:w-40'}>
           {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </Field>
-      <label className="flex items-center gap-1.5 self-end pb-1.5 cursor-pointer select-none">
+      <label className="flex items-center gap-2 sm:gap-1.5 self-end sm:pb-1.5 max-sm:order-8 max-sm:col-span-2 max-sm:min-h-11 touch:min-h-11 cursor-pointer select-none">
         <input type="checkbox" checked={!!form.referral_given}
           onChange={e => set('referral_given', e.target.checked)}
-          className="w-3.5 h-3.5 rounded accent-accent" />
-        <span className="text-xs text-gray-600 dark:text-white/60 whitespace-nowrap">Referral given</span>
+          className="w-5 h-5 sm:w-3.5 sm:h-3.5 touch:w-5 touch:h-5 rounded accent-accent" />
+        <span className="text-xs text-gray-700 dark:text-white/70 whitespace-nowrap">Referral given</span>
       </label>
     </>
   )
@@ -271,20 +272,20 @@ export default function Project100Page() {
   // ── Guards ─────────────────────────────────────────────────────────────────
 
   if (!permissions.project100?.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <p className="text-sm text-red-500">You don't have access to this section.</p>
     </main>
   )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view Project 100.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view Project 100.</p>
     </div>
   )
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-7">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-7">
 
       {/* Header */}
       <div>
@@ -297,9 +298,9 @@ export default function Project100Page() {
       {/* Progress bar */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-400 dark:text-white/40 font-medium">Progress to 100</span>
+          <span className="text-gray-500 dark:text-white/50 font-medium">Progress to 100</span>
           <span className="font-bold tabular-nums text-gray-700 dark:text-white/80">
-            {total}<span className="text-gray-400 dark:text-white/30 font-normal">/100</span>
+            {total}<span className="text-gray-500 dark:text-white/50 font-normal">/100</span>
           </span>
         </div>
         <div className="h-3 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
@@ -311,52 +312,52 @@ export default function Project100Page() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 max-sm:[&>:last-child:nth-child(odd)]:col-span-2">
         {[
-          { label: 'In Pipeline',    value: stats.inPipeline,    color: 'text-violet-600 dark:text-violet-400' },
-          { label: 'Sold',           value: stats.sold,          color: 'text-green-600 dark:text-green-400' },
-          { label: 'Enrolled',       value: stats.enrolled,      color: 'text-emerald-600 dark:text-emerald-400' },
-          { label: 'Referral Given', value: stats.referralGiven, color: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Needs a Touch',  value: stats.needsTouch,    color: stats.needsTouch > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-white/30', urgent: stats.needsTouch > 0 },
+          { label: 'In Pipeline',    value: stats.inPipeline,    color: 'text-violet-700 dark:text-violet-400' },
+          { label: 'Sold',           value: stats.sold,          color: 'text-green-700 dark:text-green-400' },
+          { label: 'Enrolled',       value: stats.enrolled,      color: 'text-emerald-700 dark:text-emerald-400' },
+          { label: 'Referral Given', value: stats.referralGiven, color: 'text-blue-700 dark:text-blue-400' },
+          { label: 'Needs a Touch',  value: stats.needsTouch,    color: stats.needsTouch > 0 ? 'text-red-700 dark:text-red-400' : 'text-gray-500 dark:text-white/50', urgent: stats.needsTouch > 0 },
         ].map(s => (
           <div key={s.label} className={`rounded-xl p-3 text-center border ${s.urgent ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20' : 'bg-white dark:bg-primary/30 border-primary/15 dark:border-white/10'}`}>
             <p className={`text-2xl font-extrabold tabular-nums ${s.color}`}>{s.value}</p>
-            <p className="text-[10px] text-gray-400 dark:text-white/40 mt-1 font-medium leading-tight">{s.label}</p>
+            <p className="text-xs text-gray-600 dark:text-white/60 mt-1 font-medium leading-tight">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Bucket matrix */}
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 mb-3">
           Bucket matrix
-          <span className="normal-case font-normal tracking-normal ml-2 text-gray-400 dark:text-white/30">
-            · Relationship strength and life fit. Click a quadrant to filter.
+          <span className="normal-case font-normal tracking-normal ml-2 text-gray-500 dark:text-white/50">
+            · Relationship strength and life fit. Tap a quadrant to filter.
           </span>
         </p>
 
         {/* Grid: label col | card col | card col */}
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'auto 1fr 1fr', gridTemplateRows: 'auto 1fr 1fr' }}>
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-[auto_1fr_1fr]">
 
           {/* Header row */}
-          <div /> {/* corner */}
-          <div className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/30 pb-1">Life Fit: High</div>
-          <div className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/30 pb-1">Life Fit: Low</div>
+          <div className="max-sm:hidden" /> {/* corner */}
+          <div className="text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 pb-1">Life Fit: High</div>
+          <div className="text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 pb-1">Life Fit: Low</div>
 
           {/* Row 1 label */}
-          <div className="flex items-center justify-end pr-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/30 whitespace-nowrap">Relationship: High</span>
+          <div className="flex items-center sm:justify-end sm:pr-3 max-sm:col-span-2 max-sm:pt-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 whitespace-nowrap">Relationship: High</span>
           </div>
           {/* Gold */}
           {[BUCKETS[0], BUCKETS[1]].map(b => (
             <button key={b.key}
               onClick={() => setFilter(f => f === b.key ? null : b.key)}
-              className={`rounded-xl border p-4 text-left transition-all ${b.headerCls} ${filter === b.key ? 'ring-2 ring-accent shadow-md' : 'hover:shadow-sm hover:opacity-90'}`}
+              className={`rounded-xl border p-3 sm:p-4 min-h-[76px] text-left transition-all ${b.headerCls} ${filter === b.key ? 'ring-2 ring-accent shadow-md' : 'hover:shadow-sm hover:opacity-90'}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className={`text-sm font-bold ${b.labelCls}`}>{b.label}</p>
-                  <p className="text-[11px] text-gray-500 dark:text-white/40 mt-0.5">{b.subtitle}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 mt-0.5">{b.subtitle}</p>
                 </div>
                 <span className={`text-2xl font-extrabold tabular-nums ${b.countCls}`}>{bucketCounts[b.key]}</span>
               </div>
@@ -364,19 +365,19 @@ export default function Project100Page() {
           ))}
 
           {/* Row 2 label */}
-          <div className="flex items-center justify-end pr-3">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/30 whitespace-nowrap">Relationship: Low</span>
+          <div className="flex items-center sm:justify-end sm:pr-3 max-sm:col-span-2 max-sm:pt-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 whitespace-nowrap">Relationship: Low</span>
           </div>
           {/* Earn-In, Park */}
           {[BUCKETS[2], BUCKETS[3]].map(b => (
             <button key={b.key}
               onClick={() => setFilter(f => f === b.key ? null : b.key)}
-              className={`rounded-xl border p-4 text-left transition-all ${b.headerCls} ${filter === b.key ? 'ring-2 ring-accent shadow-md' : 'hover:shadow-sm hover:opacity-90'}`}
+              className={`rounded-xl border p-3 sm:p-4 min-h-[76px] text-left transition-all ${b.headerCls} ${filter === b.key ? 'ring-2 ring-accent shadow-md' : 'hover:shadow-sm hover:opacity-90'}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className={`text-sm font-bold ${b.labelCls}`}>{b.label}</p>
-                  <p className="text-[11px] text-gray-500 dark:text-white/40 mt-0.5">{b.subtitle}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 mt-0.5">{b.subtitle}</p>
                 </div>
                 <span className={`text-2xl font-extrabold tabular-nums ${b.countCls}`}>{bucketCounts[b.key]}</span>
               </div>
@@ -386,11 +387,11 @@ export default function Project100Page() {
 
         {filter && (
           <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs text-gray-400 dark:text-white/30">
-              Showing: <span className="font-semibold text-accent">{BUCKETS.find(b => b.key === filter)?.label}</span>
+            <span className="text-xs text-gray-500 dark:text-white/50">
+              Showing: <span className="font-semibold text-gray-900 dark:text-white">{BUCKETS.find(b => b.key === filter)?.label}</span>
             </span>
             <button onClick={() => setFilter(null)}
-              className="text-[10px] text-gray-400 dark:text-white/30 hover:text-gray-600 dark:hover:text-white/60 border border-gray-200 dark:border-white/10 rounded-full px-2 py-0.5 transition-colors">
+              className="text-xs text-gray-600 dark:text-white/60 hover:text-gray-800 dark:hover:text-white/80 border border-gray-200 dark:border-white/15 rounded-full px-3 py-0.5 max-sm:min-h-11 touch:min-h-11 transition-colors">
               Show all ✕
             </button>
           </div>
@@ -399,9 +400,9 @@ export default function Project100Page() {
 
       {/* Warm market list */}
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40 mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50 mb-3">
           Warm market list
-          <span className="normal-case font-normal tracking-normal ml-2 text-gray-400 dark:text-white/30">
+          <span className="normal-case font-normal tracking-normal ml-2 text-gray-500 dark:text-white/50">
             · {displayEntries.length}{filter ? ` of ${total}` : ''} {total === 1 ? 'person' : 'people'}
           </span>
         </p>
@@ -409,14 +410,14 @@ export default function Project100Page() {
         {/* Quick-add */}
         <form onSubmit={handleAdd} className="mb-3">
           <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3">
-            <div className="flex flex-wrap gap-2 items-end">
+            <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-2 sm:items-end">
               <EntryFields form={addForm} setForm={setAddForm} nameRef={nameRef} />
-              <div className="flex items-center gap-2 self-end pb-0.5">
+              <div className="flex items-center gap-2 sm:self-end sm:pb-0.5 max-sm:order-9 max-sm:col-span-2 max-sm:flex-col max-sm:items-stretch">
                 <button type="submit" disabled={adding || !addForm.name.trim()}
-                  className="px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
+                  className="px-4 py-1.5 max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px] rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary text-sm font-semibold hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-40 transition-colors">
                   {adding ? 'Adding…' : '+ Add'}
                 </button>
-                {addErr && <p className="text-xs text-red-500 dark:text-red-400">{addErr}</p>}
+                {addErr && <p className="text-xs text-red-700 dark:text-red-400">{addErr}</p>}
               </div>
             </div>
           </div>
@@ -428,7 +429,7 @@ export default function Project100Page() {
             {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-100 dark:bg-white/5 rounded-xl" />)}
           </div>
         ) : displayEntries.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 dark:text-white/30">
+          <div className="text-center py-12 text-gray-500 dark:text-white/50">
             <p className="text-2xl mb-2">📋</p>
             <p className="text-sm">{filter ? 'No one in this bucket yet' : 'Add your first warm market contact above'}</p>
           </div>
@@ -442,21 +443,21 @@ export default function Project100Page() {
               if (isEditing) {
                 return (
                   <div key={entry.id} className="bg-white dark:bg-primary/30 border border-accent/40 rounded-xl px-4 py-3 space-y-3">
-                    <div className="flex flex-wrap gap-2 items-end">
+                    <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-2 sm:items-end">
                       <EntryFields form={editForm} setForm={setEditForm} autoFocusName />
                       <EditStatusFields form={editForm} setForm={setEditForm} />
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => saveEdit(entry.id)} disabled={!editForm.name.trim()}
-                        className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">
+                        className="text-xs max-sm:text-sm px-4 py-1.5 max-sm:h-11 max-sm:flex-1 touch:sm:min-h-11 rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-40 transition-colors">
                         Save
                       </button>
                       <button onClick={() => setEditId(null)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                        className="text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 max-sm:flex-1 touch:sm:min-h-11 rounded-lg border border-gray-300 dark:border-white/20 text-gray-700 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                         Cancel
                       </button>
                       <button onClick={() => { if (confirm('Delete this person?')) handleDelete(entry.id) }}
-                        className="text-xs px-3 py-1.5 rounded-lg text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 border border-transparent hover:border-red-200 dark:hover:border-red-500/20 transition-colors ml-auto">
+                        className="text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 touch:sm:min-h-11 rounded-lg text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 border border-transparent hover:border-red-200 dark:hover:border-red-500/20 transition-colors ml-auto">
                         Delete
                       </button>
                     </div>
@@ -466,38 +467,39 @@ export default function Project100Page() {
 
               return (
                 <div key={entry.id}
-                  className="group bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 flex items-center gap-3 hover:border-gray-300 dark:hover:border-white/20 transition-colors">
+                  className="group bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 lg:py-2.5 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-2 hover:border-gray-300 dark:hover:border-white/20 transition-colors">
 
                   {/* Bucket chip */}
-                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${bucket.chipCls}`}>
+                  <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border order-2 lg:order-none ${bucket.chipCls}`}>
                     {bucket.label}
                   </span>
 
                   {/* Name */}
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white w-36 truncate shrink-0">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white truncate min-w-0 flex-1 order-1 lg:order-none lg:flex-none lg:w-36 lg:shrink-0">
                     {entry.name}
                   </span>
 
                   {/* Contact details */}
-                  <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 min-w-0">
+                  <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0 lg:gap-y-1 min-w-0 order-4 lg:order-none max-md:basis-full">
                     {entry.phone ? (
                       <span className="flex items-center gap-1.5">
                         <a href={`tel:+1${entry.phone.replace(/[^0-9]/g, '')}`}
                           onClick={e => e.stopPropagation()}
-                          className="text-xs text-gray-500 dark:text-white/50 hover:text-green-600 dark:hover:text-green-400 transition-colors whitespace-nowrap">
+                          className="text-xs text-gray-600 dark:text-white/60 hover:text-green-700 dark:hover:text-green-400 transition-colors whitespace-nowrap max-lg:inline-flex max-lg:items-center max-lg:min-h-11 touch:min-h-11">
                           📞 {entry.phone}
                         </a>
                         <a href={`sms:+1${entry.phone.replace(/[^0-9]/g, '')}`}
                           onClick={e => e.stopPropagation()}
-                          className="text-xs text-gray-400 dark:text-white/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                          aria-label="Text"
+                          className="text-xs text-gray-500 dark:text-white/50 hover:text-blue-700 dark:hover:text-blue-400 transition-colors max-lg:inline-flex max-lg:items-center max-lg:justify-center max-lg:min-h-11 max-lg:min-w-11 touch:min-h-11 touch:min-w-11">
                           💬
                         </a>
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-300 dark:text-white/20">No phone</span>
+                      <span className="text-xs text-gray-500 dark:text-white/50">No phone</span>
                     )}
-                    {entry.email && <a href={`mailto:${entry.email}`} onClick={e => e.stopPropagation()} className="text-xs text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 truncate transition-colors">✉ {entry.email}</a>}
-                    {entry.social_handle && <span className="text-xs text-gray-400 dark:text-white/40">@ {entry.social_handle}</span>}
+                    {entry.email && <a href={`mailto:${entry.email}`} onClick={e => e.stopPropagation()} className="text-xs text-gray-600 dark:text-white/60 hover:text-blue-700 dark:hover:text-blue-400 truncate transition-colors max-lg:inline-flex max-lg:items-center max-lg:min-h-11 touch:min-h-11">✉ {entry.email}</a>}
+                    {entry.social_handle && <span className="text-xs text-gray-600 dark:text-white/60">@ {entry.social_handle}</span>}
                   </div>
 
                   {/* Inline status dropdown */}
@@ -505,22 +507,22 @@ export default function Project100Page() {
                     value={entry.status ?? 'new'}
                     onChange={e => patchField(entry.id, { status: e.target.value })}
                     onClick={e => e.stopPropagation()}
-                    className={`shrink-0 text-[11px] font-semibold rounded-full border px-2 py-0.5 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors ${statusCfg.cls}`}
+                    className={`shrink-0 order-5 lg:order-none text-xs font-semibold rounded-full border px-3 sm:px-2 py-0.5 max-sm:min-h-11 touch:min-h-11 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-accent/30 transition-colors ${statusCfg.cls}`}
                   >
                     {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
 
                   {/* Inline referral checkbox */}
-                  <label className="shrink-0 flex items-center gap-1 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
+                  <label className="shrink-0 order-6 lg:order-none flex items-center gap-2 lg:gap-1 max-lg:min-h-11 touch:min-h-11 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={!!entry.referral_given}
                       onChange={e => patchField(entry.id, { referral_given: e.target.checked })}
-                      className="w-3.5 h-3.5 rounded accent-accent" />
-                    <span className="text-[11px] text-gray-500 dark:text-white/40 whitespace-nowrap">Referral given</span>
+                      className="w-5 h-5 lg:w-3.5 lg:h-3.5 touch:w-5 touch:h-5 rounded accent-accent" />
+                    <span className="text-xs text-gray-600 dark:text-white/60 whitespace-nowrap">Referral given</span>
                   </label>
 
                   {/* Edit */}
                   <button onClick={() => startEdit(entry)}
-                    className="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-gray-200 dark:border-white/10 text-gray-400 dark:text-white/30 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-white/30 opacity-0 group-hover:opacity-100 transition-all">
+                    className="shrink-0 order-3 lg:order-none text-xs px-3 lg:px-2.5 py-1 max-lg:min-h-11 touch:min-h-11 rounded-lg border border-gray-300 dark:border-white/15 text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white hover:border-gray-400 dark:hover:border-white/30 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 touch:opacity-100 transition-all">
                     Edit
                   </button>
                 </div>

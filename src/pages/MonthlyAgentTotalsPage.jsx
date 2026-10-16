@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
+import { useMinXl } from '../hooks/useMediaQuery'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
 import { isOwnerRecord, getBaseshopIds } from '../../shared/agencyScope'
 import { fmtCurrency as fmtAmt } from '../utils/format'
 
@@ -156,6 +158,8 @@ export default function MonthlyAgentTotalsPage() {
   const [selectedScope,    setSelectedScope]    = useState('master')
   const [modal,            setModal]            = useState(null)
   const [includeLikelyCb,  setIncludeLikelyCb]  = useState(false)
+  const [showWeeks,        setShowWeeks]        = useState(false) // tablet only: weekly columns are opt-in below xl
+  const isXl = useMinXl()
 
   const optionStyle = theme === 'dark' ? { background: '#003539', color: '#fff' } : {}
 
@@ -533,7 +537,7 @@ export default function MonthlyAgentTotalsPage() {
   for (let y = now.getFullYear(); y >= 2022; y--) yearOptions.push(y)
 
   if (!permissions.metrics.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
       <p className="text-sm text-red-500">You don't have access to this section.</p>
     </main>
   )
@@ -543,17 +547,22 @@ export default function MonthlyAgentTotalsPage() {
     </div>
   )
 
+  const selectCls = 'text-sm bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 max-md:h-11 max-md:rounded-xl max-md:px-3 touch:md:min-h-[44px] min-w-0 focus:outline-none focus:border-accent cursor-pointer'
+  const weeksVisible = isXl || showWeeks
+
   return (
-    <main className="max-w-[1800px] mx-auto px-6 py-8">
+    <main className="max-w-[1800px] mx-auto px-4 sm:px-6 py-4 sm:py-8">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Monthly Agent Totals</h1>
+      {/* Phone: title, then Month|Year, then Scope|toggle on their own rows; wraps naturally from md up */}
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-4 md:mb-6">
+        <h1 className="w-full md:w-auto text-[22px] md:text-xl font-bold text-gray-900 dark:text-white mb-1 md:mb-0">Monthly Agent Totals</h1>
 
         <select
           value={selectedMonth}
           onChange={e => setSelectedMonth(Number(e.target.value))}
-          className="text-sm bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer"
+          aria-label="Month"
+          className={`${selectCls} max-md:flex-[1.4]`}
         >
           {MONTH_NAMES.map((m, i) => (
             <option key={i} value={i} style={optionStyle}>{m}</option>
@@ -563,12 +572,15 @@ export default function MonthlyAgentTotalsPage() {
         <select
           value={selectedYear}
           onChange={e => setSelectedYear(Number(e.target.value))}
-          className="text-sm bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer"
+          aria-label="Year"
+          className={`${selectCls} max-md:flex-1`}
         >
           {yearOptions.map(y => (
             <option key={y} value={y} style={optionStyle}>{y}</option>
           ))}
         </select>
+
+        <div className="basis-full h-0 md:hidden" />
 
         {isDirector && (
           <ScopeDropdown
@@ -579,21 +591,38 @@ export default function MonthlyAgentTotalsPage() {
           />
         )}
 
-        {/* Likely-chargeback toggle */}
-        <button
-          onClick={() => setIncludeLikelyCb(v => !v)}
-          className={`ml-auto flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-            includeLikelyCb
-              ? 'bg-orange-500/10 border-orange-400/40 text-orange-600 dark:text-orange-400'
-              : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:border-gray-300 dark:hover:border-white/25'
-          }`}
-        >
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${includeLikelyCb ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/25'}`} />
-          Possible chargebacks
-        </button>
+        <div className="max-md:flex-1 md:ml-auto flex items-center justify-end gap-2">
+          {/* Tablet: weekly columns are opt-in so the table fits beside the pinned Agent column */}
+          <button
+            type="button"
+            onClick={() => setShowWeeks(v => !v)}
+            aria-pressed={showWeeks}
+            className={`hidden md:flex xl:hidden items-center gap-2 text-xs px-3 py-1.5 touch:min-h-[44px] rounded-lg border transition-colors ${
+              showWeeks
+                ? 'bg-accent/15 border-accent text-gray-900 dark:text-white'
+                : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/25'
+            }`}
+          >
+            Weekly columns
+          </button>
+
+          {/* Likely-chargeback toggle */}
+          <button
+            onClick={() => setIncludeLikelyCb(v => !v)}
+            aria-pressed={includeLikelyCb}
+            className={`flex items-center gap-2 text-sm md:text-xs max-md:flex-1 max-md:justify-center px-3 py-1.5 max-md:h-11 touch:md:min-h-[44px] rounded-xl md:rounded-lg border transition-colors ${
+              includeLikelyCb
+                ? 'bg-orange-500/10 border-orange-400/40 text-orange-700 dark:text-orange-400'
+                : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/25'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${includeLikelyCb ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/25'}`} />
+            Possible chargebacks
+          </button>
+        </div>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────────────────────── */}
+      {/* ── Results ───────────────────────────────────────────────────────── */}
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 12 }).map((_, i) => (
@@ -601,7 +630,20 @@ export default function MonthlyAgentTotalsPage() {
           ))}
         </div>
       ) : (
-        <AgentTotalsTable agentRows={agentRows} weekColumns={weekColumns} onCellClick={setModal} />
+        <>
+          {/* Phone: one card per agent */}
+          <div className="md:hidden">
+            <p className="text-sm text-gray-600 dark:text-white/60 mb-3">
+              {agentRows.length} {agentRows.length === 1 ? 'agent' : 'agents'} with production · A–Z
+            </p>
+            <AgentCards agentRows={agentRows} weekColumns={weekColumns} onCellClick={setModal} />
+          </div>
+
+          {/* Tablet / desktop: table (weekly columns hidden below xl unless switched on) */}
+          <div className="hidden md:block">
+            <AgentTotalsTable agentRows={agentRows} weekColumns={weeksVisible ? weekColumns : []} onCellClick={setModal} />
+          </div>
+        </>
       )}
 
       <PolicyBreakdownModal modal={modal} onClose={() => setModal(null)} />
@@ -618,7 +660,7 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
     `text-xs font-bold uppercase tracking-widest px-2.5 py-1.5 text-center border-b border-gray-200 dark:border-white/10 ${color} ${extra}`
 
   const thCol = (extra = '') =>
-    `text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-2.5 py-2 text-right whitespace-nowrap ${extra}`
+    `text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-2.5 py-2 text-right whitespace-nowrap ${extra}`
 
   const THEAD_BG  = 'bg-gray-50 dark:bg-white/[0.04]'
   const STICKY_BG = 'bg-gray-50 dark:bg-secondary'
@@ -693,6 +735,7 @@ function AgentTotalsTable({ agentRows, weekColumns, onCellClick }) {
 // ─── Policy Breakdown Modal ────────────────────────────────────────────────────
 
 function PolicyBreakdownModal({ modal, onClose }) {
+  useBodyScrollLock(!!modal)
   if (!modal) return null
 
   const { title, pols = [], cbPols = [], likelyCbPols = [], showAgent, apvField, showNotes,
@@ -722,38 +765,92 @@ function PolicyBreakdownModal({ modal, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center sm:p-4 bg-black/40 sm:backdrop-blur-sm"
       onClick={onClose}
     >
+      {/* Full-screen sheet on phones, dialog from sm up */}
       <div
-        className="bg-white dark:bg-primary border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+        className="bg-white dark:bg-primary sm:border border-gray-200 dark:border-white/10 sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl max-sm:h-dvh sm:max-h-[80vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 max-sm:pt-[max(0.75rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-white/10 flex-shrink-0">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
+            <h2 className="text-base sm:text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
             {anyCapped && (
-              <p className="text-[11px] text-gray-400 dark:text-white/40 mt-0.5">
+              <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">
                 Each policy counts up to {fmtAmt(SINGLE_APV_CAP)} toward qualification
               </p>
             )}
             {anySplit && (
-              <p className="text-[11px] text-gray-400 dark:text-white/40 mt-0.5">
+              <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">
                 Split policies show the credited share, not the full sale
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/10 transition-colors text-base leading-none"
+            aria-label="Close"
+            className="w-11 h-11 sm:w-7 sm:h-7 touch:sm:w-11 touch:sm:h-11 shrink-0 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-white/50 dark:hover:text-white dark:hover:bg-white/10 transition-colors text-base leading-none"
           >
             ✕
           </button>
         </div>
 
+        {/* Phone: stacked list (the five-column table cannot fit) */}
+        <div className="sm:hidden overflow-y-auto flex-1 overscroll-contain">
+          {sorted.length === 0 && cbPols.length === 0 && likelyCbPols.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-gray-500 dark:text-white/50">No policies found.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 dark:divide-white/10">
+              {sorted.map((p, i) => (
+                <li key={i} className="px-5 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-base font-medium text-gray-900 dark:text-white min-w-0 break-words">{p.applicant || '—'}</span>
+                    <span className="text-base font-semibold text-gray-900 dark:text-white tabular-nums shrink-0">
+                      {fmtAmt(capVal(p))}
+                      {rawVal(p) > capOf(p) && <span className="ml-1 text-xs font-normal text-gray-500 dark:text-white/50">({fmtAmt(rawVal(p))})</span>}
+                      {p.splits?.length > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-semibold leading-none border border-accent/70 bg-accent/15 text-gray-800 dark:text-white align-middle">Split</span>}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-white/65 mt-0.5">
+                    {p.carrier || '—'}{showAgent && p.agent ? ` · ${p.agent}` : ''}
+                  </p>
+                  {showNotes && p.application_notes && (
+                    <p className="text-[13px] text-gray-700 dark:text-white/70 mt-1">{p.application_notes}</p>
+                  )}
+                </li>
+              ))}
+              {cbPols.map((p, i) => (
+                <li key={`cb-${i}`} className="px-5 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-base text-gray-700 dark:text-white/70 min-w-0 break-words">
+                      {p.applicant || '—'}
+                      <span className="ml-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">CB</span>
+                    </span>
+                    <span className="text-base font-semibold text-red-600 dark:text-red-400 tabular-nums shrink-0">{fmtAmt(-parseCbApv(p.snapshot_chargeback_apv))}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-white/65 mt-0.5">{p.carrier || '—'}{showAgent && p.agent ? ` · ${p.agent}` : ''}</p>
+                </li>
+              ))}
+              {likelyCbPols.map((p, i) => (
+                <li key={`lcb-${i}`} className="px-5 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-base text-gray-700 dark:text-white/70 min-w-0 break-words">
+                      {p.applicant || '—'}
+                      <span className="ml-1.5 text-xs font-semibold text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 px-1.5 py-0.5 rounded">LC</span>
+                    </span>
+                    <span className="text-base font-semibold text-orange-600 dark:text-orange-400 tabular-nums shrink-0">{fmtAmt(-likelyCbAmount(p))}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-white/65 mt-0.5">{p.carrier || '—'}{showAgent && p.agent ? ` · ${p.agent}` : ''}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {/* Table */}
-        <div className="overflow-y-auto flex-1">
+        <div className="hidden sm:block overflow-y-auto flex-1">
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
               <tr>
@@ -835,18 +932,195 @@ function PolicyBreakdownModal({ modal, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-white/10 flex-shrink-0">
-          <span className="text-xs text-gray-400 dark:text-white/35">
+        <div className="flex items-center justify-between px-5 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-gray-200 dark:border-white/10 flex-shrink-0">
+          <span className="text-xs text-gray-500 dark:text-white/50">
             {sorted.length + cbPols.length + likelyCbPols.length}{' '}
             {sorted.length + cbPols.length + likelyCbPols.length === 1 ? 'policy' : 'policies'}
             {cbPols.length > 0 && ` (${cbPols.length} CB)`}
             {likelyCbPols.length > 0 && ` (${likelyCbPols.length} LC)`}
           </span>
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
+          <span className="text-base sm:text-sm font-semibold text-gray-900 dark:text-white">
             Total: {fmtAmt(total)}
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Drill-down configs ────────────────────────────────────────────────────────
+// What each APV figure opens in the breakdown modal — shared by the table row and
+// the phone card so a figure always drills into the same policies on both.
+
+function modalConfigsFor(r) {
+  return {
+    agentSubmitted: { title: `${r.name} — Agent Submitted`, pols: r.ownPols, cbPols: [], creditIds: r.ownIds,
+      showAgent: false, apvField: 'submitted_apv', showNotes: true },
+    agentIssued: { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols, creditIds: r.ownIds,
+      likelyCbPols: r.ownLikelyCbPols,
+      showAgent: false, apvField: 'issued_apv', showNotes: false },
+    agentPending: { title: `${r.name} — Agent Pending`, pols: r.agentPendingPols, cbPols: [], creditIds: r.ownIds,
+      showAgent: false, apvField: 'issued_apv', showNotes: true },
+    agentIncomplete: { title: `${r.name} — Agent Incomplete`, pols: r.agentIncompletePols, cbPols: [], creditIds: r.ownIds,
+      showAgent: false, apvField: 'issued_apv', showNotes: true },
+    teamIssued: { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols, creditIds: r.teamIds,
+      likelyCbPols: r.teamLikelyCbPols, capLevel: r.capLevel,
+      showAgent: true, apvField: 'issued_apv', showNotes: false },
+    teamPending: { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [], creditIds: r.teamIds,
+      showAgent: true, apvField: 'issued_apv', showNotes: true },
+    teamIncomplete: { title: `${r.name} — Team Incomplete`, pols: r.teamIncompletePols, cbPols: [], creditIds: r.teamIds,
+      showAgent: true, apvField: 'issued_apv', showNotes: true },
+  }
+}
+
+// ─── Phone cards ───────────────────────────────────────────────────────────────
+
+function AgentCards({ agentRows, weekColumns, onCellClick }) {
+  if (agentRows.length === 0) {
+    return <p className="text-center py-14 text-gray-500 dark:text-white/50 text-sm">No submissions found for this month.</p>
+  }
+  return (
+    <ul className="space-y-3">
+      {agentRows.map(r => (
+        <li key={r.sfg_id}><AgentCard row={r} weekColumns={weekColumns} onCellClick={onCellClick} /></li>
+      ))}
+    </ul>
+  )
+}
+
+// One tappable APV figure. Behaves like a table cell: opens the policy breakdown when
+// there is something behind it, otherwise shows a muted dash.
+function FigureButton({ label, value, config, onCellClick }) {
+  const hasChargebacks = (config?.cbPols?.length ?? 0) > 0 || (config?.likelyCbPols?.length ?? 0) > 0
+  const clickable = !!config && (value !== 0 || hasChargebacks)
+  const tone = value > 0 ? 'text-gray-900 dark:text-white'
+             : value < 0 ? 'text-red-600 dark:text-red-400'
+             :             'text-gray-400 dark:text-white/35'
+  const body = (
+    <>
+      <span className="block text-xs text-gray-600 dark:text-white/60">{label}</span>
+      <span className={`block text-[15px] font-bold tabular-nums mt-0.5 ${tone}`}>
+        {(value !== 0 || clickable) ? fmtAmt(value) : '—'}
+      </span>
+    </>
+  )
+  return clickable ? (
+    <button
+      type="button"
+      onClick={() => onCellClick(config)}
+      className="flex flex-col items-start justify-start text-left min-w-0 min-h-[56px] -mx-1 px-1 py-1 rounded-lg active:bg-gray-100 dark:active:bg-white/10"
+    >
+      {body}
+    </button>
+  ) : (
+    <div className="flex flex-col items-start justify-start min-w-0 min-h-[56px] -mx-1 px-1 py-1">{body}</div>
+  )
+}
+
+function CardAccordion({ title, summary, children }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-t border-gray-200 dark:border-white/10">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 min-h-[48px] text-left"
+      >
+        <span className="text-[15px] font-semibold text-gray-900 dark:text-white">{title}</span>
+        <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-white/70 min-w-0">
+          <span className="truncate">{summary}</span>
+          <svg className={`w-4 h-4 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="pb-3">{children}</div>}
+    </div>
+  )
+}
+
+function AgentCard({ row: r, weekColumns, onCellClick }) {
+  const mc = modalConfigsFor(r)
+  const showWeekly   = weekColumns.length > 0 && r.submissionStatus !== 'suppress'
+  const weeksPresent = weekColumns.filter(wk => r.agentWeekNums.has(wk.numStr))
+  const hl = (value, status, fmt = v => v) => (
+    value == null
+      ? <span className="text-gray-400 dark:text-white/35">—</span>
+      : <span className={`px-1.5 py-0.5 ${hlCls(status)}`}>{fmt(value)}</span>
+  )
+  const target = (label, node) => (
+    <div className="min-w-0">
+      <span className="block text-xs text-gray-600 dark:text-white/60">{label}</span>
+      <span className="block text-[15px] font-bold tabular-nums mt-0.5 text-gray-900 dark:text-white">{node}</span>
+    </div>
+  )
+
+  return (
+    <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl px-4 pt-3 pb-1">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white truncate">{r.name || r.sfg_id}</h2>
+        <span className="text-xs text-gray-600 dark:text-white/60 shrink-0">
+          Issued <span className={`ml-1 text-[15px] font-bold tabular-nums ${r.agentIssued < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{fmtAmt(r.agentIssued)}</span>
+        </span>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2 pb-2">
+        <FigureButton label="Submitted"  value={r.agentSubmitted}  config={mc.agentSubmitted}  onCellClick={onCellClick} />
+        <FigureButton label="Issued"     value={r.agentIssued}     config={mc.agentIssued}     onCellClick={onCellClick} />
+        <FigureButton label="Pending"    value={r.agentPending}    config={mc.agentPending}    onCellClick={onCellClick} />
+        <FigureButton label="Incomplete" value={r.agentIncomplete} config={mc.agentIncomplete} onCellClick={onCellClick} />
+      </div>
+
+      <CardAccordion title="Team" summary={`Issued ${fmtAmt(r.teamIssued)}`}>
+        <div className="grid grid-cols-4 gap-2">
+          <FigureButton label="Issued"     value={r.teamIssued}     config={mc.teamIssued}     onCellClick={onCellClick} />
+          <FigureButton label="Pending"    value={r.teamPending}    config={mc.teamPending}    onCellClick={onCellClick} />
+          <FigureButton label="Incomplete" value={r.teamIncomplete} config={mc.teamIncomplete} onCellClick={onCellClick} />
+          <div className="min-w-0 min-h-[56px] py-1">
+            <span className="block text-xs text-gray-600 dark:text-white/60">Writers</span>
+            <span className={`block text-[15px] font-bold tabular-nums mt-0.5 ${r.hasDownlines && r.writers > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/35'}`}>
+              {r.hasDownlines && r.writers > 0 ? r.writers : '—'}
+            </span>
+          </div>
+        </div>
+      </CardAccordion>
+
+      {r.promoQual && (
+        <CardAccordion title="Promotion targets" summary={r.promoQual.regular != null ? `APV ${fmtAmt(r.promoQual.regular)}` : '—'}>
+          <div className="grid grid-cols-3 gap-2">
+            {target('APV',       hl(r.promoQual.regular,   r.promoStat.apv,       fmtAmt))}
+            {target('Slingshot', hl(r.promoQual.slingshot, r.promoStat.slingshot, fmtAmt))}
+            {target('Writers',   hl(r.promoQual.writers,   r.promoStat.writers))}
+          </div>
+        </CardAccordion>
+      )}
+
+      {r.hasDownlines && r.leadQual && (
+        <CardAccordion title="Leadership targets" summary={r.leadQual.regular != null ? `APV ${fmtAmt(r.leadQual.regular)}` : '—'}>
+          <div className="grid grid-cols-3 gap-2">
+            {target('APV',     hl(r.leadQual.regular, r.leadStat.apv,     fmtAmt))}
+            {target('Writers', hl(r.leadQual.writers, r.leadStat.writers))}
+          </div>
+        </CardAccordion>
+      )}
+
+      {showWeekly && (
+        <CardAccordion title="Weekly" summary={`${weeksPresent.length} of ${weekColumns.length} weeks`}>
+          <div className="flex flex-wrap gap-2">
+            {weekColumns.map(wk => {
+              const hasIt = r.agentWeekNums.has(wk.numStr)
+              return (
+                <span key={wk.numStr} className="text-sm tabular-nums">
+                  {hasIt
+                    ? <span className={`px-2 py-1 inline-block ${hlCls(r.submissionStatus)}`}>{wk.label}</span>
+                    : <span className="px-2 py-1 inline-block text-gray-400 dark:text-white/35">—</span>}
+                </span>
+              )
+            })}
+          </div>
+        </CardAccordion>
+      )}
     </div>
   )
 }
@@ -857,6 +1131,7 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
   const BL       = 'border-l border-gray-100 dark:border-white/5 '
   const rowBg    = isEven ? 'bg-white dark:bg-transparent' : 'bg-gray-50/50 dark:bg-white/[0.018]'
   const stickyBg = isEven ? 'bg-white dark:bg-secondary'  : 'bg-gray-50 dark:bg-secondary'
+  const mc       = modalConfigsFor(r)
 
   // Production cells — value, dash, or negative (red); clickable when non-zero
   function apvCell(v, borderL = false, modalConfig = null) {
@@ -938,31 +1213,15 @@ function AgentRow({ row: r, weekColumns, isEven, onCellClick }) {
       </td>
 
       {/* Agent APVs */}
-      {apvCell(r.agentSubmitted, true,
-        { title: `${r.name} — Agent Submitted`, pols: r.ownPols, cbPols: [], creditIds: r.ownIds,
-          showAgent: false, apvField: 'submitted_apv', showNotes: true })}
-      {apvCell(r.agentIssued, false,
-        { title: `${r.name} — Agent Issued`, pols: r.agentIssuedPols, cbPols: r.ownCbPols, creditIds: r.ownIds,
-          likelyCbPols: r.ownLikelyCbPols,
-          showAgent: false, apvField: 'issued_apv', showNotes: false })}
-      {apvCell(r.agentPending, false,
-        { title: `${r.name} — Agent Pending`, pols: r.agentPendingPols, cbPols: [], creditIds: r.ownIds,
-          showAgent: false, apvField: 'issued_apv', showNotes: true })}
-      {apvCell(r.agentIncomplete, false,
-        { title: `${r.name} — Agent Incomplete`, pols: r.agentIncompletePols, cbPols: [], creditIds: r.ownIds,
-          showAgent: false, apvField: 'issued_apv', showNotes: true })}
+      {apvCell(r.agentSubmitted,  true,  mc.agentSubmitted)}
+      {apvCell(r.agentIssued,     false, mc.agentIssued)}
+      {apvCell(r.agentPending,    false, mc.agentPending)}
+      {apvCell(r.agentIncomplete, false, mc.agentIncomplete)}
 
       {/* Team APVs */}
-      {apvCell(r.teamIssued, true,
-        { title: `${r.name} — Team Issued`, pols: r.teamIssuedPols, cbPols: r.teamCbPols, creditIds: r.teamIds,
-          likelyCbPols: r.teamLikelyCbPols, capLevel: r.capLevel,
-          showAgent: true, apvField: 'issued_apv', showNotes: false })}
-      {apvCell(r.teamPending, false,
-        { title: `${r.name} — Team Pending`, pols: r.teamPendingPols, cbPols: [], creditIds: r.teamIds,
-          showAgent: true, apvField: 'issued_apv', showNotes: true })}
-      {apvCell(r.teamIncomplete, false,
-        { title: `${r.name} — Team Incomplete`, pols: r.teamIncompletePols, cbPols: [], creditIds: r.teamIds,
-          showAgent: true, apvField: 'issued_apv', showNotes: true })}
+      {apvCell(r.teamIssued,     true,  mc.teamIssued)}
+      {apvCell(r.teamPending,    false, mc.teamPending)}
+      {apvCell(r.teamIncomplete, false, mc.teamIncomplete)}
       {numCell(r.hasDownlines ? r.writers : 0)}
 
       {/* Promotion Targets */}

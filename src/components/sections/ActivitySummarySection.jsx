@@ -70,9 +70,9 @@ export default function ActivitySummarySection({ subject, loading: parentLoading
   const isLoading = parentLoading || loading
 
   return (
-    <section className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
+    <section className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl p-4 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 sm:mb-5">
         <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50">
           Activity Summary
         </p>
@@ -81,9 +81,9 @@ export default function ActivitySummarySection({ subject, loading: parentLoading
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`text-xs px-3 py-1 rounded-lg font-semibold transition-colors ${
+              className={`text-xs px-3 py-1 max-sm:min-h-11 touch:sm:min-h-11 rounded-lg font-semibold transition-colors ${
                 tab === key
-                  ? 'bg-accent text-white'
+                  ? 'border border-accent bg-primary text-white dark:bg-white dark:text-primary'
                   : 'border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
               }`}
             >
@@ -109,7 +109,7 @@ export default function ActivitySummarySection({ subject, loading: parentLoading
             <div key={m.key}>
               <p className={`text-xs font-semibold mb-1 ${m.accent}`}>{m.label}</p>
               <p className={`text-2xl font-bold tabular-nums ${
-                totals[m.key] ? 'text-gray-900 dark:text-white' : 'text-gray-300 dark:text-white/20'
+                totals[m.key] ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-white/30'
               }`}>
                 {totals[m.key] || 0}
               </p>

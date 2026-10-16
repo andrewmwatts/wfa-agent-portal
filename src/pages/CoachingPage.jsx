@@ -1614,7 +1614,7 @@ export default function CoachingPage() {
     <>
     {/* ── Sticky period bar (fixed below app header, desktop accounts for sidebar) */}
     {selectedSfgId && data && (
-      <div className="fixed top-14 left-0 lg:left-56 right-0 z-20
+      <div className="fixed top-[var(--header-h)] left-0 lg:left-16 xl:left-56 right-0 z-20
                       bg-white/90 dark:bg-primary/90 backdrop-blur-sm
                       border-b border-gray-200 dark:border-white/10
                       px-4 sm:px-6 py-2 flex items-center gap-3">

@@ -65,7 +65,7 @@ export default function ResetPassword() {
     return (
       <Shell>
         <CardHeader title="Password updated" subtitle="Your new password is set." />
-        <div className="px-8 py-6 text-center">
+        <div className="px-6 sm:px-8 py-6 text-center">
           <p className="text-gray-400 dark:text-white/50 text-sm mb-6">You can now sign in with your new password.</p>
           <button
             onClick={() => navigate('/login', { replace: true })}
@@ -83,7 +83,7 @@ export default function ResetPassword() {
     return (
       <Shell>
         <CardHeader title="Link expired" subtitle="This reset link is no longer valid." />
-        <div className="px-8 py-6 text-center">
+        <div className="px-6 sm:px-8 py-6 text-center">
           <p className="text-gray-400 dark:text-white/50 text-sm mb-6">
             Reset links expire after 1 hour. Request a new one from the login page.
           </p>
@@ -103,7 +103,7 @@ export default function ResetPassword() {
     return (
       <Shell>
         <CardHeader title="Verifying link…" subtitle="Just a moment." />
-        <div className="px-8 py-6 flex justify-center">
+        <div className="px-6 sm:px-8 py-6 flex justify-center">
           <span className="text-gray-400 dark:text-white/30 text-sm">Checking your reset token…</span>
         </div>
       </Shell>
@@ -115,7 +115,7 @@ export default function ResetPassword() {
     <Shell>
       <CardHeader title="New password" subtitle="Choose a strong password for your account." />
 
-      <form onSubmit={handleSubmit} className="px-8 py-6 space-y-4">
+      <form onSubmit={handleSubmit} className="px-6 sm:px-8 py-6 space-y-4">
         <Field label="New password">
           <input
             type="password"
@@ -157,7 +157,7 @@ export default function ResetPassword() {
         </button>
       </form>
 
-      <div className="border-t border-gray-200 dark:border-white/10 px-8 py-4 text-center">
+      <div className="border-t border-gray-200 dark:border-white/10 px-6 sm:px-8 py-4 text-center">
         <button
           onClick={() => navigate('/login', { replace: true })}
           className="text-sm text-gray-300 hover:text-gray-500 dark:text-white/40 dark:hover:text-white/70 transition-colors"
@@ -183,7 +183,7 @@ function Shell({ children }) {
 
 function CardHeader({ title, subtitle }) {
   return (
-    <div className="bg-white dark:bg-secondary px-8 pt-8 pb-6">
+    <div className="bg-white dark:bg-secondary px-6 sm:px-8 pt-8 pb-6">
       <div className="flex items-center gap-2 mb-1">
         <svg className="w-4 h-4 fill-accent" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />

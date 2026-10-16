@@ -23,7 +23,7 @@ export default function AcceptInvite() {
   if (!session || !inviteId) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-primary">
-        <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+        <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl p-6 sm:p-8 max-w-sm w-full text-center">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Invalid Link</h2>
           <p className="text-gray-500 dark:text-white/60 text-sm mb-6">
             This invite link is invalid or has expired. Contact the person who invited you for a new link.
@@ -88,7 +88,7 @@ export default function AcceptInvite() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-primary">
       <div className="bg-white dark:bg-secondary rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
         {/* Header */}
-        <div className="px-8 pt-8 pb-6">
+        <div className="px-6 sm:px-8 pt-8 pb-6">
           <div className="flex items-center gap-2 mb-1">
             <svg className="w-4 h-4 text-accent fill-accent" viewBox="0 0 24 24">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
@@ -102,7 +102,7 @@ export default function AcceptInvite() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="px-8 py-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-6 sm:px-8 py-6 space-y-4">
           <Field label="Your Name">
             <input
               type="text"

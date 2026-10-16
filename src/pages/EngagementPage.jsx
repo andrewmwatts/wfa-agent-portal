@@ -3,11 +3,12 @@ import { useViewing } from '../context/ViewingContext'
 import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../../shared/agencyScope'
-import { fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
+import { fmtDate, fmtDateShort, fmtCurrency as fmtAmt } from '../utils/format'
 import { normalizeCarrier } from '../../shared/carriers'
 import { getPolicyStatusClass } from '../utils/status'
 import PolicyModal, { PolicyModalErrorBoundary } from '../components/PolicyEditModal'
 import { matchesPolicy } from '../utils/policySearch'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,30 +64,43 @@ function parseIssueDate(str) {
   return isNaN(d) ? null : d
 }
 
+const TONE = {
+  overdue:  'bg-red-500/10 border-red-500/40',
+  critical: 'bg-red-500/5 border-red-500/30',
+  warning:  'bg-amber-500/5 border-amber-500/30',
+}
+
+function lapseText(days) {
+  if (days === null) return '—'
+  if (days < 0)  return `Overdue ${Math.abs(days)}d`
+  if (days === 0) return 'Lapses today'
+  return `Lapses in ${days}d`
+}
+
 // ─── Badge components ─────────────────────────────────────────────────────────
 
 function ConsBadge({ status, urg = 'none' }) {
-  if (!status) return <span className="text-gray-300 dark:text-white/20 text-xs">—</span>
+  if (!status) return <span className="text-gray-400 dark:text-white/40 text-xs">—</span>
   const cls = (urg === 'overdue' || urg === 'critical')
-    ? 'bg-red-500/15 text-red-500 dark:text-red-300'
+    ? 'bg-red-500/15 text-red-700 dark:text-red-300'
     : urg === 'warning'
-    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
-    : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-white/60'
+    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/60'
   return <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${cls}`}>{status}</span>
 }
 
 function DaysBadge({ days }) {
-  if (days === null) return <span className="text-gray-300 dark:text-white/30 text-xs">—</span>
+  if (days === null) return <span className="text-gray-400 dark:text-white/40 text-xs">—</span>
   const cls = days < 0
-    ? 'text-red-500 dark:text-red-300 font-bold'
-    : days <= 7  ? 'text-red-500 dark:text-red-300 font-semibold'
-    : days <= 30 ? 'text-amber-600 dark:text-amber-300'
-    : 'text-gray-500 dark:text-white/60'
+    ? 'text-red-700 dark:text-red-300 font-bold'
+    : days <= 7  ? 'text-red-700 dark:text-red-300 font-semibold'
+    : days <= 30 ? 'text-amber-700 dark:text-amber-300'
+    : 'text-gray-600 dark:text-white/60'
   return <span className={`text-xs tabular-nums ${cls}`}>{days}</span>
 }
 
 function StatusBadge({ status }) {
-  if (!status) return <span className="text-gray-400 dark:text-white/30 text-xs">—</span>
+  if (!status) return <span className="text-gray-400 dark:text-white/40 text-xs">—</span>
   return <span className={`text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap ${getPolicyStatusClass(status)}`}>{status}</span>
 }
 
@@ -97,7 +111,8 @@ function SelectFilter({ value, onChange, options, allLabel, optionStyle }) {
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer"
+      aria-label={allLabel}
+      className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer min-w-0 max-sm:flex-1 max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px]"
     >
       <option value="" style={optionStyle}>{allLabel}</option>
       {options.map(o => <option key={o} value={o} style={optionStyle}>{o}</option>)}
@@ -108,23 +123,25 @@ function SelectFilter({ value, onChange, options, allLabel, optionStyle }) {
 function SearchInput({ value, onChange }) {
   return (
     <input
-      type="text"
+      type="search"
       placeholder="Search client or policy #…"
+      aria-label="Search client or policy number"
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="text-xs bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/30 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/60 w-44"
+      className="text-xs bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-500 dark:bg-white/5 dark:border-white/10 dark:text-white dark:placeholder:text-white/40 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/60 w-44 max-sm:w-full max-sm:basis-full max-sm:order-first max-sm:h-12 max-sm:rounded-xl max-sm:px-4 touch:sm:min-h-[44px]"
     />
   )
 }
 
 function SortSelect({ value, onChange, options, optionStyle }) {
   return (
-    <div className="ml-auto flex items-center gap-2">
-      <span className="text-xs text-gray-400 dark:text-white/40 whitespace-nowrap">Order by</span>
+    <div className="ml-auto max-sm:ml-0 max-sm:basis-full flex items-center gap-2">
+      <span className="text-xs text-gray-600 dark:text-white/50 whitespace-nowrap">Order by</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer"
+        aria-label="Order by"
+        className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-accent cursor-pointer min-w-0 max-sm:flex-1 max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px]"
       >
         {options.map(o => <option key={o.id} value={o.id} style={optionStyle}>{o.label}</option>)}
       </select>
@@ -134,15 +151,16 @@ function SortSelect({ value, onChange, options, optionStyle }) {
 
 function SelfTeamToggle({ value, onChange }) {
   return (
-    <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-white/15">
+    <div className="flex rounded-lg max-sm:rounded-xl overflow-hidden border border-gray-200 dark:border-white/15 max-sm:basis-full">
       {[['self', 'Self'], ['team', 'Team']].map(([id, label]) => (
         <button
           key={id}
           onClick={() => onChange(id)}
-          className={`text-xs px-3 py-1.5 transition-colors ${
+          aria-pressed={value === id}
+          className={`text-xs px-3 py-1.5 max-sm:flex-1 max-sm:h-11 max-sm:text-sm touch:sm:min-h-[44px] transition-colors ${
             value === id
-              ? 'bg-accent/20 text-accent font-semibold'
-              : 'text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5'
+              ? 'bg-accent/20 text-gray-900 dark:text-white font-semibold'
+              : 'text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5'
           }`}
         >
           {label}
@@ -155,7 +173,7 @@ function SelfTeamToggle({ value, onChange }) {
 function EmptyState({ message = 'No records match your filters.' }) {
   return (
     <div className="text-center py-16">
-      <p className="text-gray-400 dark:text-white/30 text-sm">{message}</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">{message}</p>
     </div>
   )
 }
@@ -170,8 +188,42 @@ function LoadingSkeleton() {
   )
 }
 
-const TH_CLS = 'text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-4 py-3 first:pl-5 last:pr-5 whitespace-nowrap'
-const TABLE_WRAP = 'bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden'
+const TH_CLS = 'text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-4 py-3 first:pl-5 last:pr-5 whitespace-nowrap'
+const TABLE_WRAP = 'hidden md:block bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden'
+// Below xl (tablet) the lower-priority columns drop out so the table fits without side-scrolling.
+const XL_ONLY = 'hidden xl:table-cell'
+
+// Phone layout: one tappable card per policy. `tone` tints the card for urgent lapses.
+function PolicyCards({ rows, onSelect, renderCard }) {
+  return (
+    <ul className="md:hidden space-y-2.5">
+      {rows.map((p, i) => {
+        const c = renderCard(p)
+        return (
+          <li key={p.id ?? i}>
+            <button
+              type="button"
+              onClick={() => onSelect(p)}
+              className={`w-full text-left rounded-2xl border px-4 py-3 transition-colors active:bg-gray-50 dark:active:bg-white/10 ${c.tone ?? 'bg-white dark:bg-primary/30 border-gray-200 dark:border-white/10'}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-base font-semibold text-gray-900 dark:text-white leading-snug min-w-0">{p.applicant || '—'}</span>
+                <span className="shrink-0 pt-0.5">{c.badge}</span>
+              </div>
+              <p className="mt-0.5 text-sm text-gray-600 dark:text-white/65">{c.sub}</p>
+              <div className="mt-2 flex items-baseline justify-between gap-3 text-sm">
+                <span className="text-gray-700 dark:text-white/75">{c.left}</span>
+                <span className="text-right">{c.right}</span>
+              </div>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+const dot = <span aria-hidden className="mx-1.5 text-gray-400 dark:text-white/30">·</span>
 
 const LAPSE_SORT = [
   { id: 'lapse-date', label: 'Lapse Date' },
@@ -229,17 +281,18 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <button
           onClick={() => setFilterNotExempt(v => !v)}
-          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+          aria-pressed={filterNotExempt}
+          className={`text-sm md:text-xs font-medium px-3 max-md:h-11 md:py-1.5 touch:md:min-h-[44px] rounded-xl md:rounded-lg border transition-colors ${
             filterNotExempt
-              ? 'bg-orange-500/15 border border-orange-400/40 text-orange-600 dark:text-orange-400'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+              ? 'bg-orange-500/15 border-orange-400/50 text-gray-900 dark:text-white'
+              : 'bg-gray-100 border-transparent text-gray-700 hover:bg-gray-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15'
           }`}
         >
           Not Chargeback Exempt
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
         <SelectFilter value={carrierFilter} onChange={setCarrierFilter} options={carriers} allLabel="All Carriers" optionStyle={optionStyle} />
         <SelectFilter value={agentFilter}   onChange={setAgentFilter}   options={agents}   allLabel="All Agents"   optionStyle={optionStyle} />
         <SearchInput  value={search}        onChange={setSearch} />
@@ -247,13 +300,32 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
       </div>
 
       {sorted.length === 0 ? <EmptyState /> : (
+        <>
+        <PolicyCards
+          rows={sorted}
+          onSelect={onSelect}
+          renderCard={p => {
+            const days = daysToLapse(p.conservation_date)
+            const urg  = getUrgency(days)
+            const tone = TONE[urg] ? `${TONE[urg]}` : undefined
+            return {
+              tone,
+              badge: <ConsBadge status={p.conservation_status} urg={urg} />,
+              sub: <>{p.agent || '—'}{dot}{p.carrier || '—'}</>,
+              left: <>{fmtAmt(p.issued_apv)} APV{p.issue_date ? <>{dot}Issued {fmtDateShort(p.issue_date)}</> : null}</>,
+              right: <span className={`font-semibold tabular-nums ${urg === 'overdue' || urg === 'critical' ? 'text-red-700 dark:text-red-300' : urg === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-white/75'}`}>{lapseText(days)}</span>,
+            }
+          }}
+        />
         <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[860px]">
+            <table className="w-full text-sm xl:min-w-[860px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Client', 'Carrier', 'Status', 'Issued APV', 'Issue Date', 'Expected Lapse Date', 'Days'].map(h => (
-                    <th key={h} className={TH_CLS}>{h}</th>
+                    <th key={h} className={`${TH_CLS} ${h === 'Carrier' || h === 'Issue Date' ? XL_ONLY : ''}`}>
+                      {h === 'Expected Lapse Date' ? <><span className="xl:hidden">Lapse Date</span><span className="hidden xl:inline">{h}</span></> : h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -264,13 +336,16 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
                   const rowBg = { overdue: 'bg-red-500/10', critical: 'bg-red-500/5', warning: 'bg-amber-500/5', normal: '', none: '' }[urg]
                   return (
                     <tr key={i} onClick={() => onSelect(p)} className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors ${rowBg}`}>
-                      <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs">{p.agent}</td>
-                      <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs">{p.applicant}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{p.carrier}</td>
+                      <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">{p.agent}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs">
+                        {p.applicant}
+                        <span className="xl:hidden block text-gray-500 dark:text-white/50 mt-0.5">{p.carrier}</span>
+                      </td>
+                      <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap ${XL_ONLY}`}>{p.carrier}</td>
                       <td className="px-4 py-3"><ConsBadge status={p.conservation_status} urg={urg} /></td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.issue_date)}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
+                      <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap ${XL_ONLY}`}>{fmtDate(p.issue_date)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
                       <td className="px-4 py-3 pr-5"><DaysBadge days={days} /></td>
                     </tr>
                   )
@@ -279,6 +354,7 @@ function PendingLapseTab({ policies, onSelect, optionStyle }) {
             </table>
           </div>
         </div>
+        </>
       )}
     </>
   )
@@ -339,17 +415,18 @@ function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionSt
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <button
           onClick={() => setFilterNotExempt(v => !v)}
-          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+          aria-pressed={filterNotExempt}
+          className={`text-sm md:text-xs font-medium px-3 max-md:h-11 md:py-1.5 touch:md:min-h-[44px] rounded-xl md:rounded-lg border transition-colors ${
             filterNotExempt
-              ? 'bg-orange-500/15 border border-orange-400/40 text-orange-600 dark:text-orange-400'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+              ? 'bg-orange-500/15 border-orange-400/50 text-gray-900 dark:text-white'
+              : 'bg-gray-100 border-transparent text-gray-700 hover:bg-gray-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15'
           }`}
         >
           Not Chargeback Exempt
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
         <SelfTeamToggle value={scope} onChange={setScope} />
         <SelectFilter value={carrierFilter} onChange={setCarrierFilter} options={carriers} allLabel="All Carriers" optionStyle={optionStyle} />
         <SelectFilter value={agentFilter}   onChange={setAgentFilter}   options={agents}   allLabel="All Agents"   optionStyle={optionStyle} />
@@ -358,32 +435,47 @@ function LapsedTab({ policies, masterPersonnel, subjectSfgId, onSelect, optionSt
       </div>
 
       {sorted.length === 0 ? <EmptyState /> : (
+        <>
+        <PolicyCards
+          rows={sorted}
+          onSelect={onSelect}
+          renderCard={p => ({
+            badge: <ConsBadge status={p.conservation_status} />,
+            sub: <>{p.agent || '—'}{dot}{p.carrier || '—'}{p.policy_type ? <>{dot}{p.policy_type}</> : null}</>,
+            left: <>{fmtAmt(p.issued_apv)} APV</>,
+            right: <span className="text-gray-700 dark:text-white/75">{p.conservation_date ? `Lapsed ${fmtDateShort(p.conservation_date)}` : '—'}</span>,
+          })}
+        />
         <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[900px]">
+            <table className="w-full text-sm xl:min-w-[900px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Client', 'Carrier', 'Policy Type', 'Status', 'Issued APV', 'Lapse Date'].map(h => (
-                    <th key={h} className={TH_CLS}>{h}</th>
+                    <th key={h} className={`${TH_CLS} ${h === 'Carrier' || h === 'Policy Type' ? XL_ONLY : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {sorted.map((p, i) => (
                   <tr key={i} onClick={() => onSelect(p)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs">{p.agent}</td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs">{p.applicant}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{p.carrier}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs max-w-[140px] truncate">{p.policy_type || '—'}</td>
+                    <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">{p.agent}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs">
+                      {p.applicant}
+                      <span className="xl:hidden block text-gray-500 dark:text-white/50 mt-0.5">{p.carrier}{p.policy_type ? ` · ${p.policy_type}` : ''}</span>
+                    </td>
+                    <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap ${XL_ONLY}`}>{p.carrier}</td>
+                    <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs max-w-[140px] truncate ${XL_ONLY}`}>{p.policy_type || '—'}</td>
                     <td className="px-4 py-3"><ConsBadge status={p.conservation_status} /></td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
-                    <td className="px-4 py-3 pr-5 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
+                    <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
+                    <td className="px-4 py-3 pr-5 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.conservation_date)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+        </>
       )}
     </>
   )
@@ -467,15 +559,16 @@ function PolicyReviewsTab({ policies, masterPersonnel, subjectSfgId, onSelect, o
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="grid grid-cols-4 gap-2 md:flex md:flex-wrap md:items-center mb-4">
         {REVIEW_QUICK_FILTERS.map(f => (
           <button
             key={f.id}
             onClick={() => setQuickFilter(f.id)}
-            className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            aria-pressed={quickFilter === f.id}
+            className={`text-[13px] md:text-xs whitespace-nowrap font-medium px-1 md:px-3 max-md:h-11 md:py-1.5 touch:md:min-h-[44px] rounded-xl md:rounded-lg border transition-colors ${
               quickFilter === f.id
-                ? 'bg-accent text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15'
+                ? 'border-accent bg-primary text-white dark:bg-white dark:text-primary'
+                : 'border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15'
             }`}
           >
             {f.label}
@@ -483,7 +576,7 @@ function PolicyReviewsTab({ policies, masterPersonnel, subjectSfgId, onSelect, o
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
         <SelfTeamToggle value={scope} onChange={setScope} />
         <SelectFilter value={carrierFilter} onChange={setCarrierFilter} options={carriers} allLabel="All Carriers" optionStyle={optionStyle} />
         <SelectFilter value={agentFilter}   onChange={setAgentFilter}   options={agents}   allLabel="All Agents"   optionStyle={optionStyle} />
@@ -492,33 +585,48 @@ function PolicyReviewsTab({ policies, masterPersonnel, subjectSfgId, onSelect, o
       </div>
 
       {sorted.length === 0 ? <EmptyState /> : (
+        <>
+        <PolicyCards
+          rows={sorted}
+          onSelect={onSelect}
+          renderCard={p => ({
+            badge: <StatusBadge status={p.status} />,
+            sub: <>{p.agent || '—'}{dot}{p.carrier || '—'}{p.policy_type ? <>{dot}{p.policy_type}</> : null}</>,
+            left: <>{fmtAmt(p.issued_apv)} APV{p.face_amt ? <>{dot}{fmtAmt(p.face_amt)} face</> : null}</>,
+            right: <span className="text-gray-700 dark:text-white/75">{p.issue_date ? `Issued ${fmtDateShort(p.issue_date)}` : '—'}</span>,
+          })}
+        />
         <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[940px]">
+            <table className="w-full text-sm xl:min-w-[940px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-white/10">
                   {['Agent', 'Client', 'Carrier', 'Policy Type', 'Status', 'APV', 'Issue Date', 'Face Value'].map(h => (
-                    <th key={h} className={TH_CLS}>{h}</th>
+                    <th key={h} className={`${TH_CLS} ${h === 'Carrier' || h === 'Policy Type' || h === 'Face Value' ? XL_ONLY : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {sorted.map((p, i) => (
                   <tr key={i} onClick={() => onSelect(p)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
-                    <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs">{p.agent || '—'}</td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs group-hover:text-accent transition-colors">{p.applicant || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{p.carrier || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs max-w-[140px] truncate">{p.policy_type || '—'}</td>
+                    <td className="px-4 py-3 first:pl-5 text-gray-900 dark:text-white font-medium text-xs whitespace-nowrap">{p.agent || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-white/80 text-xs group-hover:text-accent transition-colors">
+                      {p.applicant || '—'}
+                      <span className="xl:hidden block text-gray-500 dark:text-white/50 mt-0.5">{p.carrier || '—'}{p.policy_type ? ` · ${p.policy_type}` : ''}</span>
+                    </td>
+                    <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap ${XL_ONLY}`}>{p.carrier || '—'}</td>
+                    <td className={`px-4 py-3 text-gray-600 dark:text-white/60 text-xs max-w-[140px] truncate ${XL_ONLY}`}>{p.policy_type || '—'}</td>
                     <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.issue_date)}</td>
-                    <td className="px-4 py-3 pr-5 text-gray-500 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.face_amt)}</td>
+                    <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs tabular-nums">{fmtAmt(p.issued_apv)}</td>
+                    <td className="px-4 py-3 text-gray-600 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(p.issue_date)}</td>
+                    <td className={`px-4 py-3 pr-5 text-gray-600 dark:text-white/60 text-xs tabular-nums ${XL_ONLY}`}>{fmtAmt(p.face_amt)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+        </>
       )}
     </>
   )
@@ -593,47 +701,52 @@ export default function EngagementPage() {
 
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view engagement data.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view engagement data.</p>
     </div>
   )
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-8">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
 
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Client Engagement</h1>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4 sm:mb-6">
+        <div className="flex items-center gap-4 max-sm:contents">
+          <h1 className="text-[22px] sm:text-xl font-bold text-gray-900 dark:text-white max-sm:flex-1 max-sm:min-w-0 max-sm:truncate">Client Engagement</h1>
           {isDirector && (
-            <ScopeDropdown
-              masterPersonnel={masterPersonnel}
-              selfId={activeSubject?.sfg_id}
-              value={selectedScope}
-              onChange={handleScopeChange}
-            />
+            <div className="max-sm:order-3 max-sm:basis-full">
+              <ScopeDropdown
+                masterPersonnel={masterPersonnel}
+                selfId={activeSubject?.sfg_id}
+                value={selectedScope}
+                onChange={handleScopeChange}
+              />
+            </div>
           )}
         </div>
         <button
           onClick={() => { setQuickSearchOpen(true); setQuickSearchQuery('') }}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-white/40 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors"
+          aria-label="Quick Search"
+          className="flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-gray-900 dark:text-white/60 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-3 py-1.5 max-sm:w-11 max-sm:h-11 max-sm:p-0 max-sm:rounded-xl max-sm:order-2 touch:sm:min-h-[44px] rounded-lg transition-colors"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/>
           </svg>
-          Quick Search
+          <span className="max-sm:hidden">Quick Search</span>
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-white/10 mb-6">
+      <div role="tablist" className="flex gap-1 border-b border-gray-200 dark:border-white/10 mb-4 sm:mb-6">
         {TABS.map(t => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-4 max-sm:px-1 max-sm:flex-1 max-sm:h-11 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === t.id
-                ? 'border-accent text-accent'
-                : 'border-transparent text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white'
+                ? 'border-accent text-gray-900 dark:text-white font-semibold'
+                : 'border-transparent text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             {t.label}
@@ -709,6 +822,7 @@ export default function EngagementPage() {
 // ─── Quick Search Modal ───────────────────────────────────────────────────────
 
 function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
+  useBodyScrollLock(true)
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -716,24 +830,29 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="p-4 border-b border-gray-100 dark:border-white/10">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center sm:pt-24 sm:px-4 bg-black/60 sm:bg-transparent !mt-0"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-secondary sm:border border-gray-200 dark:border-white/15 sm:rounded-2xl shadow-2xl w-full sm:max-w-lg overflow-hidden max-sm:h-dvh max-sm:flex max-sm:flex-col">
+        <div className="flex items-center gap-2 px-4 py-3 max-sm:pt-[max(0.75rem,env(safe-area-inset-top))] border-b border-gray-100 dark:border-white/10">
           <input
             autoFocus
-            type="text"
-            placeholder="Search by client name or policy number…"
+            type="search"
+            aria-label="Search by client name or policy number"
+            placeholder="Search client or policy #…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full bg-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 text-sm focus:outline-none"
+            className="flex-1 min-w-0 bg-transparent text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-white/40 text-sm max-sm:h-11 focus:outline-none"
           />
+          <button onClick={onClose} className="sm:hidden h-11 px-1 text-sm font-semibold text-gray-800 dark:text-white">Cancel</button>
         </div>
-        <div className="max-h-80 overflow-y-auto">
+        <div className="sm:max-h-80 max-sm:flex-1 max-sm:min-h-0 overflow-y-auto overscroll-contain">
+          {!query.trim() && (
+            <p className="text-gray-500 dark:text-white/50 text-sm text-center py-10 sm:hidden">Start typing to search all policies</p>
+          )}
           {results.length === 0 && query.trim() && (
-            <p className="text-gray-400 dark:text-white/30 text-sm text-center py-8">No results</p>
+            <p className="text-gray-500 dark:text-white/50 text-sm text-center py-8">No results</p>
           )}
           {results.map((p, i) => {
             const days = daysToLapse(p.conservation_date)
@@ -742,7 +861,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
               <button
                 key={i}
                 onClick={() => onSelect(p)}
-                className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0"
+                className="w-full text-left px-4 py-3 max-sm:min-h-[64px] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0"
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-gray-900 dark:text-white">{p.applicant}</span>
@@ -751,7 +870,7 @@ function QuickSearchModal({ query, setQuery, results, onSelect, onClose }) {
                     : <StatusBadge status={p.status} />
                   }
                 </div>
-                <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">
+                <p className="text-xs text-gray-600 dark:text-white/50 mt-0.5">
                   {p.agent} · {p.carrier} · {fmtDate(p.issue_date)}
                   {p.policy_no && <> · <span className="font-mono">#{p.policy_no}</span></>}
                 </p>

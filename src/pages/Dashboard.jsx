@@ -110,18 +110,18 @@ export default function Dashboard() {
 
   if (viewLoading) return (
     <div className="flex items-center justify-center py-24">
-      <span className="text-gray-400 dark:text-white/30 text-sm">Loading…</span>
+      <span className="text-gray-500 dark:text-white/50 text-sm">Loading…</span>
     </div>
   )
 
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view your dashboard.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view your dashboard.</p>
     </div>
   )
 
   return (
-    <main className="max-w-4xl mx-auto px-6 py-8 space-y-5">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-5">
       {permissions.metrics.read && (
         <MetricsSection
           subject={activeSubject}

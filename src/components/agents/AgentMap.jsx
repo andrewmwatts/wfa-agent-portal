@@ -196,13 +196,13 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
 
       {/* Summary */}
       <div className="flex items-center">
-        <span className="ml-auto text-xs text-gray-400 dark:text-white/30">
+        <span className="ml-auto text-xs text-gray-500 dark:text-white/50">
           {shown} agent{shown !== 1 ? 's' : ''} across {mappedZips} ZIP{mappedZips !== 1 ? 's' : ''}
         </span>
       </div>
 
       {centroidErr && (
-        <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-[12px] text-amber-800 dark:text-amber-300">
+        <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
           <strong>ZIP lookup unavailable:</strong> {centroidErr}. If this is the first run, apply{' '}
           <code>scripts/migration-zip-centroids.sql</code> and seed it with{' '}
           <code>scripts/seed-zip-centroids.mjs</code>.
@@ -212,7 +212,7 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
       <div className="flex flex-col lg:flex-row gap-4">
         {/* Map */}
         <div className="flex-1 rounded-2xl overflow-hidden border border-gray-200 dark:border-white/10">
-          <div ref={mapEl} style={{ height: 560, width: '100%' }} />
+          <div ref={mapEl} className="h-[380px] sm:h-[560px] w-full" />
         </div>
 
         {/* Roster panel */}
@@ -226,7 +226,7 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
                       <p className="text-sm font-semibold text-gray-900 dark:text-white">
                         {selected.agents.length} agent{selected.agents.length !== 1 ? 's' : ''} in this area
                       </p>
-                      <p className="text-xs text-gray-400 dark:text-white/40">
+                      <p className="text-xs text-gray-500 dark:text-white/50">
                         {new Set(selected.agents.map(a => normalizeZip(a.zip))).size} ZIP codes
                       </p>
                     </>
@@ -235,13 +235,13 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
                       <p className="text-sm font-semibold text-gray-900 dark:text-white">
                         {selected.agents[0]?.city || 'ZIP'} {selected.agents[0]?.state || ''}
                       </p>
-                      <p className="text-xs text-gray-400 dark:text-white/40 font-mono">{selected.zip}</p>
+                      <p className="text-xs text-gray-500 dark:text-white/50 font-mono">{selected.zip}</p>
                     </>
                   )}
                 </div>
                 <button
                   onClick={() => setSelected(null)}
-                  className="ml-auto p-1 text-gray-400 hover:text-gray-700 dark:hover:text-white/80"
+                  className="ml-auto -mt-1 -mr-2 w-11 h-11 sm:w-8 sm:h-8 sm:-mr-1 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center text-gray-500 dark:text-white/60 hover:text-gray-700 dark:hover:text-white/80"
                   aria-label="Close"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -256,7 +256,7 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
                     <div
                       key={a.sfg_id}
                       onClick={() => onAgentClick?.(a)}
-                      className={`px-4 py-2.5 ${onAgentClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors' : ''}`}
+                      className={`px-4 py-3 sm:py-2.5 ${onAgentClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors' : ''}`}
                     >
                       <div className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: STATUS_HEX[statusOf(a)] }} />
@@ -269,12 +269,12 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
                       </div>
                       {selected.cluster
                         ? (a.city || a.state) && (
-                            <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5 ml-3.5 truncate">
+                            <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5 ml-3.5 truncate">
                               {[a.city, a.state].filter(Boolean).join(', ')}
                             </p>
                           )
                         : a.upline_name && (
-                            <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5 ml-3.5 truncate">
+                            <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5 ml-3.5 truncate">
                               ↑ {a.upline_name}
                             </p>
                           )}
@@ -284,14 +284,14 @@ export default function AgentMap({ personnel, loading, onAgentClick }) {
             </div>
           ) : (
             <div className="bg-gray-50 dark:bg-white/5 border border-dashed border-gray-200 dark:border-white/10 rounded-2xl px-4 py-8 text-center">
-              <p className="text-sm text-gray-500 dark:text-white/40">
-                {loading ? 'Loading agents…' : 'Click a pin to see who lives there.'}
+              <p className="text-sm text-gray-500 dark:text-white/50">
+                {loading ? 'Loading agents…' : 'Tap a pin to see who lives there.'}
               </p>
             </div>
           )}
 
           {(unmappable > 0 || missingCentroid > 0) && (
-            <p className="mt-3 text-[11px] text-gray-400 dark:text-white/30 leading-relaxed">
+            <p className="mt-3 text-xs text-gray-500 dark:text-white/50 leading-relaxed">
               {unmappable > 0 && <>{unmappable} agent{unmappable !== 1 ? 's' : ''} without a ZIP on file. </>}
               {missingCentroid > 0 && <>{missingCentroid} in a ZIP with no known centroid.</>}
             </p>

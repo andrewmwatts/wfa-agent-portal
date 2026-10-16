@@ -11,6 +11,8 @@ import AgentBirthdays from '../components/agents/AgentBirthdays'
 import { STATUSES, NO_STATUS, statusOf } from '../components/agents/agentStatus'
 import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { SHEET_OVERLAY, SHEET_PANEL, SHEET_HEAD_PAD, SHEET_FOOT_PAD } from '../components/ui/sheetClasses'
 
 // Leaflet is heavy — split it out so it only loads when the Map tab is opened
 const AgentMap = lazy(() => import('../components/agents/AgentMap'))
@@ -202,34 +204,37 @@ export default function AgentsPage() {
 
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view agents.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view agents.</p>
     </div>
   )
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Agents</h1>
+        {!loading && (
+          <span className="sm:hidden ml-auto text-xs text-gray-500 dark:text-white/50">{filteredRows.length} agent{filteredRows.length !== 1 ? 's' : ''}</span>
+        )}
         {isDirector && (
           <select
             value={mode}
             onChange={e => handleModeChange(e.target.value)}
-            className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer"
+            className="text-xs bg-gray-100 border border-gray-300 text-gray-900 dark:bg-white/10 dark:border-white/20 dark:text-white rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent cursor-pointer max-sm:order-last max-sm:w-full max-sm:h-11 max-sm:rounded-xl max-sm:px-3 touch:sm:min-h-[44px]"
           >
             <option value="master"   style={optionStyle}>Master Agency</option>
             <option value="baseshop" style={optionStyle}>My Baseshop</option>
           </select>
         )}
-        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+        <div className="sm:ml-auto flex items-center gap-2 flex-wrap sm:justify-end max-sm:w-full">
           {!loading && (
-            <span className="text-xs text-gray-400 dark:text-white/30">{filteredRows.length} agent{filteredRows.length !== 1 ? 's' : ''}</span>
+            <span className="max-sm:hidden text-xs text-gray-500 dark:text-white/50">{filteredRows.length} agent{filteredRows.length !== 1 ? 's' : ''}</span>
           )}
           <select
             value={uplineFilter}
             onChange={e => setUplineFilter(e.target.value)}
-            className="text-sm bg-gray-100 border border-gray-200 text-gray-900 dark:bg-white/10 dark:border-white/15 dark:text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60 cursor-pointer"
+            className="text-sm bg-gray-100 border border-gray-200 text-gray-900 dark:bg-white/10 dark:border-white/15 dark:text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60 cursor-pointer max-sm:w-full max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px]"
           >
             <option value="" style={optionStyle}>All uplines</option>
             {uplineOptions.map(u => (
@@ -241,19 +246,19 @@ export default function AgentsPage() {
             placeholder="Search name, ID, or phone…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="text-sm bg-gray-100 border border-gray-200 text-gray-900 placeholder:text-gray-400 dark:bg-white/10 dark:border-white/15 dark:text-white dark:placeholder:text-white/30 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60"
+            className="text-sm bg-gray-100 border border-gray-200 text-gray-900 placeholder:text-gray-500 dark:bg-white/10 dark:border-white/15 dark:text-white dark:placeholder:text-white/50 rounded-lg px-3 py-1.5 w-48 max-sm:w-full max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px] focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent/60"
           />
           {isSuperAdmin && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 max-sm:w-full">
               <button
                 onClick={() => setShowAdd(true)}
-                className="text-sm px-3 py-1.5 rounded-lg border border-accent text-accent font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap"
+                className="text-sm px-3 py-1.5 rounded-lg border border-accent text-gray-900 dark:text-white font-semibold hover:bg-accent/10 transition-colors whitespace-nowrap max-sm:flex-1 max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px]"
               >
                 + Add Agent
               </button>
               <button
                 onClick={() => setShowImport(true)}
-                className="text-sm px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors whitespace-nowrap"
+                className="text-sm px-3 py-1.5 rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 transition-colors whitespace-nowrap max-sm:flex-1 max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px]"
               >
                 Import CSV
               </button>
@@ -300,8 +305,8 @@ export default function AgentsPage() {
 
       {/* ── Add success toast ───────────────────────────────────────────────── */}
       {addSuccess && (
-        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all
-          ${addSuccess.uplineWarning ? 'bg-amber-500' : 'bg-green-600'}`}>
+        <div className={`fixed bottom-6 right-6 max-sm:inset-x-4 max-sm:right-4 max-sm:bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all !mt-0
+          ${addSuccess.uplineWarning ? 'bg-amber-700' : 'bg-green-700'}`}>
           {addSuccess.uplineWarning
             ? 'Agent added — upline SFG ID not found in personnel'
             : 'Agent added successfully'}
@@ -310,14 +315,14 @@ export default function AgentsPage() {
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
       {canViewMap && (
-        <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2">
+        <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-1 sm:-mt-2">
           {[{ key: 'list', label: 'List' }, { key: 'map', label: 'Map' }, { key: 'birthdays', label: 'Birthdays' }].map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-4 py-2 max-sm:py-3 touch:py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.key
-                  ? 'border-accent text-accent'
+                  ? 'border-accent text-gray-900 dark:text-white'
                   : 'border-transparent text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'
               }`}
             >
@@ -334,7 +339,7 @@ export default function AgentsPage() {
 
       {/* ── Map ────────────────────────────────────────────────────────────── */}
       {canViewMap && tab === 'map' && (
-        <Suspense fallback={<div className="py-20 text-center text-sm text-gray-400 dark:text-white/30">Loading map…</div>}>
+        <Suspense fallback={<div className="py-20 text-center text-sm text-gray-500 dark:text-white/50">Loading map…</div>}>
           <AgentMap personnel={filteredRows} loading={loading} onAgentClick={setSelected} />
         </Suspense>
       )}
@@ -354,7 +359,68 @@ export default function AgentsPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
+        <>
+        {/* Phone: sort control + one card per agent */}
+        <div className="md:hidden space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 shrink-0" htmlFor="agent-sort">Sort</label>
+            <select
+              id="agent-sort"
+              value={sort.col}
+              onChange={e => setSort({ col: e.target.value, dir: 1 })}
+              className="flex-1 min-w-0 h-11 text-sm bg-gray-100 border border-gray-200 text-gray-900 dark:bg-white/10 dark:border-white/15 dark:text-white rounded-xl px-3 focus:outline-none focus:ring-2 focus:ring-accent/60"
+            >
+              <option value="name"       style={optionStyle}>Name</option>
+              <option value="upline"     style={optionStyle}>Upline</option>
+              <option value="contract"   style={optionStyle}>Contract level</option>
+              <option value="leadership" style={optionStyle}>Leadership level</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setSort(s => ({ ...s, dir: -s.dir }))}
+              aria-label={sort.dir === 1 ? 'Ascending — tap to reverse' : 'Descending — tap to reverse'}
+              className="h-11 w-11 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 dark:border-white/15 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white text-base"
+            >
+              {sort.dir === 1 ? '↑' : '↓'}
+            </button>
+          </div>
+
+          {filteredRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500 dark:text-white/50">
+              {search ? 'No agents match your search.' : 'No agents found.'}
+            </p>
+          ) : (
+            <ul className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden divide-y divide-gray-100 dark:divide-white/5">
+              {filteredRows.map(p => (
+                <li key={p.sfg_id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(p)}
+                    className="w-full min-h-[64px] px-4 py-3 text-left flex items-start justify-between gap-3 active:bg-gray-50 dark:active:bg-white/[0.05]"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <StatusDot status={p.status} />
+                        <span className="text-sm font-medium text-gray-900 dark:text-white break-words">{p.name || '—'}</span>
+                        {p._hasEP && <Badge label="EP" color="purple" />}
+                        {p._hasTP && !p._hasEP && <Badge label="TP" color="blue" />}
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-white/50">
+                        {p.sfg_id}{p.upline_name ? ` · ↑ ${p.upline_name}` : ''}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {p._contract != null && <LevelPill value={p._contract} />}
+                      {p._leadership && <div><LeaderPill level={p._leadership} /></div>}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="hidden md:block bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
@@ -368,11 +434,11 @@ export default function AgentsPage() {
                     <th
                       key={h.col}
                       onClick={() => toggleSort(h.col)}
-                      className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3 first:pl-6 cursor-pointer select-none hover:text-gray-600 dark:hover:text-white/60 transition-colors whitespace-nowrap"
+                      className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-5 py-3 first:pl-6 cursor-pointer select-none hover:text-gray-700 dark:hover:text-white/70 transition-colors whitespace-nowrap"
                     >
                       {h.label}
                       {sort.col === h.col && (
-                        <span className="ml-1 text-accent">{sort.dir === 1 ? '↑' : '↓'}</span>
+                        <span className="ml-1 text-gray-900 dark:text-white">{sort.dir === 1 ? '↑' : '↓'}</span>
                       )}
                     </th>
                   ))}
@@ -381,7 +447,7 @@ export default function AgentsPage() {
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400 dark:text-white/30">
+                    <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500 dark:text-white/50">
                       {search ? 'No agents match your search.' : 'No agents found.'}
                     </td>
                   </tr>
@@ -399,7 +465,7 @@ export default function AgentsPage() {
                         {p._hasEP && <Badge label="EP" color="purple" />}
                         {p._hasTP && !p._hasEP && <Badge label="TP" color="blue" />}
                       </div>
-                      <p className="text-xs text-gray-400 dark:text-white/30 mt-0.5">{p.sfg_id}</p>
+                      <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">{p.sfg_id}</p>
                     </td>
                     {/* Upline */}
                     <td className="px-5 py-3 text-sm text-gray-600 dark:text-white/70">
@@ -423,6 +489,7 @@ export default function AgentsPage() {
             </table>
           </div>
         </div>
+        </>
       ))}
 
       {/* ── Modal ──────────────────────────────────────────────────────────── */}
@@ -443,9 +510,10 @@ export default function AgentsPage() {
 
 // ─── Agent Detail Modal ───────────────────────────────────────────────────────
 
-const AGENT_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
+const AGENT_INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:h-11 max-sm:rounded-xl touch:sm:min-h-[44px] focus:outline-none focus:ring-2 focus:ring-accent/60'
 
 function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
+  useBodyScrollLock(true)
   const [editing,   setEditing]   = useState(false)
   const [draft,     setDraft]     = useState(null)
   const [saving,    setSaving]    = useState(false)
@@ -561,17 +629,19 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className={SHEET_OVERLAY}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 dark:bg-black/70" onClick={onClose} />
-
-      {/* Panel */}
-      <div className="relative bg-white dark:bg-secondary rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-10">
+      {/* Panel — full-screen sheet on phones, centred dialog from sm up */}
+      <div
+        className={`${SHEET_PANEL} bg-white dark:bg-secondary sm:max-w-2xl sm:max-h-[90vh]`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={p.name || 'Agent'}
+      >
 
         {/* Header */}
-        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-gray-100 dark:border-white/10">
+        <div className={`flex items-start justify-between px-4 sm:px-6 pt-3 sm:pt-6 pb-3 sm:pb-4 border-b border-gray-100 dark:border-white/10 shrink-0 ${SHEET_HEAD_PAD}`}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">{p.name || '—'}</h2>
@@ -579,16 +649,22 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
               {hasEP && <Badge label="EP" color="purple" />}
               {hasTP && !hasEP && <Badge label="TP" color="blue" />}
               {leadershipLvl && <LeaderPill level={leadershipLvl} />}
-              {p.phone && <ContactBtn href={`tel:${p.phone}`} icon="phone" title="Call" />}
-              {p.phone && <ContactBtn href={`sms:${p.phone}`} icon="sms" title="Text" />}
+              {p.phone && <span className="max-sm:hidden"><ContactBtn href={`tel:${p.phone}`} icon="phone" title="Call" /></span>}
+              {p.phone && <span className="max-sm:hidden"><ContactBtn href={`sms:${p.phone}`} icon="sms" title="Text" /></span>}
             </div>
-            <p className="text-sm text-gray-400 dark:text-white/40 mt-0.5">{p.sfg_id}</p>
+            <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">{p.sfg_id}</p>
+            {p.phone && (
+              <div className="sm:hidden flex gap-2 mt-2">
+                <ContactBtn href={`tel:${p.phone}`} icon="phone" title="Call" labeled />
+                <ContactBtn href={`sms:${p.phone}`} icon="sms" title="Text" labeled />
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-2 sm:ml-4">
             {canWrite && !editing && (
               <button
                 onClick={startEdit}
-                className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10"
+                className="text-xs font-semibold text-gray-900 dark:text-white border border-accent/60 transition-colors px-3 py-1 max-sm:min-h-11 touch:sm:min-h-11 rounded-lg hover:bg-accent/10"
               >
                 Edit
               </button>
@@ -597,14 +673,14 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
               <>
                 <button
                   onClick={cancelEdit}
-                  className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
+                  className="max-sm:hidden text-xs font-medium text-gray-500 dark:text-white/60 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 touch:min-h-11 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="max-sm:hidden text-xs font-semibold border border-accent bg-primary text-white dark:bg-white dark:text-primary px-3 py-1.5 touch:min-h-11 rounded-lg hover:bg-primary/85 dark:hover:bg-white/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   {saving && (
                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -618,7 +694,8 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
             )}
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-700 dark:text-white/40 dark:hover:text-white transition-colors p-1 -mt-1 -mr-1"
+              aria-label="Close"
+              className="text-gray-500 hover:text-gray-700 dark:text-white/60 dark:hover:text-white transition-colors flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 sm:-mt-1 sm:-mr-1 rounded-lg"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -627,19 +704,20 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
           </div>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {saveError && (
-          <div className="mx-6 mt-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300">
+          <div className="mx-4 sm:mx-6 mt-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-700 dark:text-red-300">
             {saveError}
           </div>
         )}
 
-        <div className="px-6 py-5 space-y-6">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-6">
 
           {/* Personal Info */}
           <section>
             <SectionLabel>Personal &amp; Contact</SectionLabel>
             {editing ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
                 <AgentEditField label="Name"        value={draft.name}         onChange={v => setField('name', v)} />
                 <AgentEditField label="Upline"      value={draft.upline_name}  onChange={v => setField('upline_name', v)} />
                 <AgentEditField label="Email"       value={draft.email}        onChange={v => setField('email', v)} />
@@ -652,7 +730,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <AgentEditField label="State"       value={draft.state}        onChange={v => setField('state', v)} />
                 <AgentEditField label="Zip"         value={draft.zip}          onChange={v => setField('zip', v)} />
                 <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status</p>
+                  <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">Status</p>
                   <select
                     value={draft.status ?? ''}
                     onChange={e => setField('status', e.target.value || null)}
@@ -676,7 +754,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 {p.phone && <InfoField label="Phone" value={p.phone} />}
                 {(p.address || p.city || p.state || p.zip) && (
                   <div>
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Address</p>
+                    <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">Address</p>
                     {p.address && <p className="text-sm text-gray-800 dark:text-white/90">{p.address}</p>}
                     {(p.city || p.state || p.zip) && (
                       <p className="text-sm text-gray-800 dark:text-white/90">
@@ -768,6 +846,26 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
           )}
 
         </div>
+        </div>
+
+        {/* Phone: sticky Cancel / Save while editing (header buttons are hidden on phones) */}
+        {editing && (
+          <div className={`sm:hidden flex gap-2 px-4 pt-3 border-t border-gray-200 dark:border-white/10 shrink-0 ${SHEET_FOOT_PAD}`}>
+            <button
+              onClick={cancelEdit}
+              className="flex-1 h-11 rounded-xl border border-gray-300 dark:border-white/20 text-sm font-medium text-gray-700 dark:text-white/80"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 h-11 rounded-xl border border-accent bg-primary text-white dark:bg-white dark:text-primary text-sm font-semibold disabled:opacity-60"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -776,7 +874,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
 function AgentEditField({ label, value, onChange, type = 'text' }) {
   return (
     <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">{label}</p>
       <input
         type={type}
         value={value ?? ''}
@@ -830,7 +928,7 @@ function LevelPill({ value }) {
 
 function LeaderPill({ level }) {
   const colors = {
-    AO: 'text-accent font-semibold',
+    AO: 'text-gray-900 dark:text-white font-bold',
     KL: 'text-blue-600 dark:text-blue-300 font-medium',
     TL: 'text-gray-600 dark:text-white/70 font-medium',
   }
@@ -843,13 +941,13 @@ function LeaderPill({ level }) {
 
 function SectionLabel({ children }) {
   return (
-    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">
+    <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-3">
       {children}
     </p>
   )
 }
 
-function ContactBtn({ href, icon, title }) {
+function ContactBtn({ href, icon, title, labeled = false }) {
   const cls = icon === 'phone'
     ? 'hover:text-green-600 dark:hover:text-green-400 hover:bg-green-500/10'
     : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10'
@@ -858,7 +956,9 @@ function ContactBtn({ href, icon, title }) {
       href={href}
       onClick={e => e.stopPropagation()}
       title={title}
-      className={`flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 transition-colors flex-shrink-0 ${cls}`}
+      className={labeled
+        ? `inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-gray-200 dark:border-white/15 text-sm font-medium text-gray-700 dark:text-white/80 ${cls}`
+        : `flex items-center justify-center w-9 h-9 touch:w-11 touch:h-11 rounded-full text-gray-500 dark:text-white/60 transition-colors flex-shrink-0 ${cls}`}
     >
       {icon === 'phone' ? (
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -869,6 +969,7 @@ function ContactBtn({ href, icon, title }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
       )}
+      {labeled && title}
     </a>
   )
 }
@@ -876,7 +977,7 @@ function ContactBtn({ href, icon, title }) {
 function InfoField({ label, value }) {
   return (
     <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">{label}</p>
       <p className="text-sm text-gray-800 dark:text-white/90 break-all">{value || '—'}</p>
     </div>
   )
@@ -884,7 +985,7 @@ function InfoField({ label, value }) {
 
 function MilestoneCard({ label, dates, complete, active, accent }) {
   const border = active
-    ? 'border-accent/50 bg-accent/5'
+    ? 'border-accent bg-accent/10'
     : complete
     ? 'border-green-200 dark:border-green-500/20 bg-green-500/5'
     : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.03]'
@@ -894,7 +995,7 @@ function MilestoneCard({ label, dates, complete, active, accent }) {
     : accent === 'blue'
     ? 'text-blue-600 dark:text-blue-300'
     : active
-    ? 'text-accent'
+    ? 'text-gray-900 dark:text-white'
     : complete
     ? 'text-green-700 dark:text-green-400'
     : 'text-gray-500 dark:text-white/50'

@@ -47,14 +47,43 @@ export default function NewAgentStatusSection({ subject, canWrite, personnel = [
   return (
     <SectionShell title="New Agent Status" canWrite={canWrite}>
       {visible.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-white/40">No agents in baseshop.</p>
+        <p className="text-sm text-gray-500 dark:text-white/50">No agents in baseshop.</p>
       ) : (
-        <div className="overflow-x-auto -mx-1">
+        <>
+        {/* Phone: one card per agent — name + contracting state, then hire date and flags */}
+        <ul className="md:hidden -mx-1 divide-y divide-gray-100 dark:divide-white/5">
+          {visible.map(r => {
+            const flagged = !!(r.profile_issues || r.no_eando)
+            return (
+              <li key={r.sfg_id} className={`px-1 py-3 ${flagged ? 'bg-amber-500/5' : ''}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 font-medium text-sm text-gray-900 dark:text-white leading-tight break-words">
+                    {r.name || r.preferred_name || r.full_name}
+                  </p>
+                  <div className="shrink-0">
+                    <ContractingCell toProducerDate={r.contracting_to_producer} complete={r.contracting_complete} />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-white/60">
+                  <span>Hired {fmtDate(r.hire_date)}</span>
+                  {r.profile_issues && (
+                    <span className="bg-amber-500/20 text-amber-800 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>
+                  )}
+                  {!!r.no_eando && (
+                    <span className="border border-accent/60 bg-accent/10 text-gray-900 dark:text-white font-medium px-2 py-0.5 rounded">No E&amp;O</span>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+
+        <div className="hidden md:block overflow-x-auto -mx-1">
           <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="border-b border-gray-200 dark:border-white/10">
                 {['Agent', 'Hire Date', 'Profile Issues', 'No E&O', 'Contracting'].map(h => (
-                  <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
+                  <th key={h} className="text-left text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 pb-2.5 pr-4 last:pr-0 whitespace-nowrap">
                     {h}
                   </th>
                 ))}
@@ -71,13 +100,13 @@ export default function NewAgentStatusSection({ subject, canWrite, personnel = [
                     <td className="py-3 pr-4 text-gray-500 dark:text-white/60 text-xs whitespace-nowrap">{fmtDate(r.hire_date)}</td>
                     <td className="py-3 pr-4">
                       {r.profile_issues
-                        ? <span className="text-xs bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>
-                        : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
+                        ? <span className="text-xs bg-amber-500/20 text-amber-800 dark:text-amber-300 font-medium px-2 py-0.5 rounded">{r.profile_issues}</span>
+                        : <span className="text-gray-400 dark:text-white/30 text-xs">—</span>}
                     </td>
                     <td className="py-3 pr-4 text-center">
                       {!!r.no_eando
-                        ? <span className="text-xs font-bold text-accent">✕</span>
-                        : <span className="text-gray-300 dark:text-white/20 text-xs">—</span>}
+                        ? <span className="text-xs font-bold text-gray-900 dark:text-white">✕</span>
+                        : <span className="text-gray-400 dark:text-white/30 text-xs">—</span>}
                     </td>
                     <td className="py-3">
                       <ContractingCell
@@ -91,6 +120,7 @@ export default function NewAgentStatusSection({ subject, canWrite, personnel = [
             </tbody>
           </table>
         </div>
+        </>
       )}
     </SectionShell>
   )
@@ -98,15 +128,15 @@ export default function NewAgentStatusSection({ subject, canWrite, personnel = [
 
 function ContractingCell({ toProducerDate, complete }) {
   if (complete) {
-    return <span className="text-xs bg-green-500/20 text-green-600 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
+    return <span className="text-xs bg-green-500/20 text-green-800 dark:text-green-300 font-medium px-2 py-0.5 rounded-full">Complete</span>
   }
   if (toProducerDate) {
     return (
-      <span className="text-xs font-medium text-amber-600 dark:text-amber-300">
+      <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
         Sent {fmtDate(toProducerDate)}
       </span>
     )
   }
-  return <span className="text-xs bg-gray-100 text-gray-400 dark:bg-white/10 dark:text-white/40 font-medium px-2 py-0.5 rounded-full">Not Started</span>
+  return <span className="text-xs bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/60 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">Not Started</span>
 }
 

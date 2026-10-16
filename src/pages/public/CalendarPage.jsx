@@ -111,7 +111,7 @@ function BusinessCalendar({ bMonth, today, showTodayHighlight, showLegend }) {
               <div key={d} style={{
                 width: COL_W, flexShrink: 0, height: HEAD_H,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 600, letterSpacing: '0.05em',
+                fontSize: 12, fontWeight: 600, letterSpacing: '0.04em',
                 color: '#005365', textTransform: 'uppercase',
                 borderBottom: '1.5px solid #DDE6E8',
                 background: '#F5F9FA',
@@ -132,7 +132,7 @@ function BusinessCalendar({ bMonth, today, showTodayHighlight, showLegend }) {
                   borderRight: '0.5px solid #DDE6E8',
                 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: isCurrentWeek ? 'rgba(255,255,255,0.55)' : '#7A9499' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: isCurrentWeek ? 'rgba(255,255,255,0.75)' : '#5A767B' }}>
                       WK
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.1, color: isCurrentWeek ? '#fff' : '#005365' }}>
@@ -165,12 +165,12 @@ function BusinessCalendar({ bMonth, today, showTodayHighlight, showLegend }) {
                         {day.getDate()}
                       </span>
                       {day.getDate() === 1 && (
-                        <span style={{ fontSize: 9, color: '#7A9499', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <span style={{ fontSize: 11, color: '#5A767B', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           {MONTHS_SHORT[day.getMonth()]}
                         </span>
                       )}
                       {isToday && (
-                        <span style={{ fontSize: 8, color: '#005365', marginTop: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <span style={{ fontSize: 11, color: '#005365', marginTop: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           Today
                         </span>
                       )}
@@ -187,13 +187,13 @@ function BusinessCalendar({ bMonth, today, showTodayHighlight, showLegend }) {
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 10, height: 10, background: '#003539', borderRadius: 2 }} />
-            <span style={{ fontSize: 11, color: '#4A6568', fontFamily: 'Inter, sans-serif' }}>Current week</span>
+            <span style={{ fontSize: 12, color: '#4A6568', fontFamily: 'Inter, sans-serif' }}>Current week</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 10, height: 10, background: '#EEF6F8', border: '0.5px solid #DDE6E8', borderRadius: 2, position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: '#005365' }} />
             </div>
-            <span style={{ fontSize: 11, color: '#4A6568', fontFamily: 'Inter, sans-serif' }}>Today</span>
+            <span style={{ fontSize: 12, color: '#4A6568', fontFamily: 'Inter, sans-serif' }}>Today</span>
           </div>
         </div>
       )}
@@ -212,11 +212,11 @@ function MaccSchedule() {
   const src = `${MACC_IMAGE_URL}?t=${Math.floor(Date.now() / 60000)}`
   // Sticky only in the two-column layout. When the layout stacks (narrow
   // screens) a pinned panel would let the calendars scroll up over it.
-  const isStacked = useIsMobile(720)
+  const isStacked = useIsMobile(1000)
 
   return (
     <div style={isStacked ? undefined : { position: 'sticky', top: 64 }}>
-      <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
+      <p style={{ fontSize: 12, color: '#5A767B', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', fontFamily: 'Inter, sans-serif' }}>
         This Week
       </p>
       <h2 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 500, color: '#003539', margin: '0 0 12px' }}>
@@ -246,7 +246,7 @@ function MaccSchedule() {
             <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
             <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
           </svg>
-          <span style={{ fontSize: 10, color: '#fff', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>Expand</span>
+          <span style={{ fontSize: 12, color: '#fff', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>Expand</span>
         </div>
         <div style={{
           display: 'none', border: '1.5px dashed #C5D8DC', borderRadius: 8,
@@ -273,7 +273,7 @@ function MaccSchedule() {
         >
           Join the MACC Room →
         </a>
-        <p style={{ fontSize: 12, color: '#7A9499', margin: '6px 0 0', fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
+        <p style={{ fontSize: 12, color: '#5A767B', margin: '6px 0 0', fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
           Meeting ID: 845 3610 3772<br />
           Passcode: grit
         </p>
@@ -316,6 +316,7 @@ function MaccSchedule() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
+  const oneCol = useIsMobile(1000)
   const today = new Date()
   const currentMonth = getBusinessMonth(today)
   const nextMonth    = getNextBusinessMonth(currentMonth)
@@ -326,14 +327,14 @@ export default function CalendarPage() {
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
           {/* Two-column layout — stacks (MACC above calendars) on narrow screens */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'clamp(24px, 4vw, 48px)', alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: oneCol ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) minmax(0, 1fr)', gap: 'clamp(24px, 4vw, 48px)', alignItems: 'start' }}>
 
             {/* Left — MACC dialer schedule */}
             <MaccSchedule />
 
             {/* Right — business calendars + rules */}
             <div>
-              <p style={{ fontSize: 11, color: '#7A9499', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 20px', fontFamily: 'Inter, sans-serif' }}>
+              <p style={{ fontSize: 12, color: '#5A767B', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 20px', fontFamily: 'Inter, sans-serif' }}>
                 Business Months
               </p>
               <BusinessCalendar bMonth={currentMonth} today={today} showTodayHighlight={true}  showLegend={true} />

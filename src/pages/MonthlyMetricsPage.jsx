@@ -8,6 +8,7 @@ import { useTheme } from '../context/ThemeContext'
 import ScopeDropdown from '../components/ScopeDropdown'
 import { getBaseshopIds } from '../../shared/agencyScope'
 import { teamCreditedAmount } from '../../shared/policySplit'
+import { useMinSm } from '../hooks/useMediaQuery'
 
 function parseAmt(v) {
   if (v === null || v === undefined) return 0
@@ -170,7 +171,7 @@ export default function MonthlyMetricsPage() {
   const [masterPersonnel, setMasterPersonnel] = useState([])
   const [loading, setLoading]                 = useState(false)
   const [selectedScope, setSelectedScope]     = useState('master')
-
+  const isSm = useMinSm()
 
   // ── Single init effect — fetches master, detects director, loads data once ──
   useEffect(() => {
@@ -238,7 +239,7 @@ export default function MonthlyMetricsPage() {
     : 1
 
   // ── Chart theme tokens ────────────────────────────────────────────────────
-  const textColor    = theme === 'dark' ? 'rgba(255,255,255,0.4)' : '#9ca3af'
+  const textColor    = theme === 'dark' ? 'rgba(255,255,255,0.6)' : '#6b7280'
   const gridColor    = theme === 'dark' ? 'rgba(255,255,255,0.08)' : '#e5e7eb'
   const cardBg       = theme === 'dark' ? '#002e33' : '#ffffff'   // fill to hide area below issued line
   const tooltipStyle = {
@@ -251,22 +252,22 @@ export default function MonthlyMetricsPage() {
   const legendStyle = { fontSize: '12px', color: theme === 'dark' ? 'rgba(255,255,255,0.6)' : '#374151' }
 
   if (!permissions.metrics.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
-      <p className="text-sm text-red-500">You don't have access to this section.</p>
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
+      <p className="text-sm text-red-600 dark:text-red-400">You don't have access to this section.</p>
     </main>
   )
   if (!activeSubject) return (
     <div className="flex items-center justify-center py-24">
-      <p className="text-gray-400 dark:text-white/30 text-sm">Please sign in to view metrics.</p>
+      <p className="text-gray-500 dark:text-white/50 text-sm">Please sign in to view metrics.</p>
     </div>
   )
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8">
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Monthly Metrics</h1>
+      <div className="flex items-center gap-3 sm:gap-4">
+        <h1 className="text-[22px] sm:text-xl font-bold text-gray-900 dark:text-white min-w-0 truncate">Monthly Metrics</h1>
         {isDirector && (
           <ScopeDropdown
             masterPersonnel={masterPersonnel}
@@ -286,28 +287,28 @@ export default function MonthlyMetricsPage() {
           <div className="h-96 bg-gray-100 dark:bg-white/10 rounded-2xl" />
         </div>
       ) : monthly.length === 0 ? (
-        <p className="text-gray-400 dark:text-white/30 text-sm">No policy data found.</p>
+        <p className="text-gray-500 dark:text-white/50 text-sm">No policy data found.</p>
       ) : (
         <>
           {/* ── Charts ─────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
             {/* APV by Month */}
-            <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-4">APV by Month</h2>
-              <ResponsiveContainer width="100%" height={260}>
+            <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-3 sm:mb-4">APV by Month</h2>
+              <ResponsiveContainer width="100%" height={isSm ? 260 : 230}>
                 <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: textColor, fontSize: 10 }}
+                    tick={{ fill: textColor, fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
                     interval={xInterval}
                   />
                   <YAxis
                     tickFormatter={fmtApvShort}
-                    tick={{ fill: textColor, fontSize: 10 }}
+                    tick={{ fill: textColor, fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
                     width={52}
@@ -331,21 +332,21 @@ export default function MonthlyMetricsPage() {
             </div>
 
             {/* Writers by Month */}
-            <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-4">Writers by Month</h2>
-              <ResponsiveContainer width="100%" height={260}>
+            <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl p-4 sm:p-5">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-white/70 mb-3 sm:mb-4">Writers by Month</h2>
+              <ResponsiveContainer width="100%" height={isSm ? 260 : 230}>
                 <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barGap={2} barCategoryGap="30%">
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: textColor, fontSize: 10 }}
+                    tick={{ fill: textColor, fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
                     interval={xInterval}
                   />
                   <YAxis
                     allowDecimals={false}
-                    tick={{ fill: textColor, fontSize: 10 }}
+                    tick={{ fill: textColor, fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
                     width={28}
@@ -359,10 +360,54 @@ export default function MonthlyMetricsPage() {
             </div>
           </div>
 
-          {/* ── Table ──────────────────────────────────────────────────────── */}
-          <div className="bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
+          {/* ── Phone: one card per month ───────────────────────────────────── */}
+          <ul className="md:hidden space-y-2.5">
+            {tableRows.map(r => {
+              const ratePct = r.close_rate * 100
+              const rateCls = ratePct >= 80
+                ? 'text-green-700 dark:text-green-400'
+                : ratePct >= 60
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-red-700 dark:text-red-400'
+              const isMax = (val, max) => !r.is_current && max > 0 && val === max
+              const maxCls = 'bg-green-500/10 text-green-700 dark:text-green-400'
+              const stats = [
+                ['Submitted APV', fmtApv(r.subm_apv),  isMax(r.subm_apv, maxSubmApv)],
+                ['Issued APV',    fmtApv(r.iss_apv),   isMax(r.iss_apv, maxIssApv)],
+                ['Total writers', r.total_writers,     isMax(r.total_writers, maxTotalWriters)],
+                ['New writers',   r.new_writers,       isMax(r.new_writers, maxNewWriters)],
+              ]
+              return (
+                <li key={r.year_month}
+                    className={`rounded-2xl border px-4 py-3 ${r.is_current ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-white dark:bg-primary/30'}`}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-base font-semibold text-gray-900 dark:text-white">{r.label}</span>
+                      {r.is_current && <span className="ml-2 text-xs font-medium text-gray-600 dark:text-white/60">current</span>}
+                      <span className="ml-2 text-xs text-gray-500 dark:text-white/50">{r.weeks} wks</span>
+                    </div>
+                    <div className="shrink-0 text-sm">
+                      <span className="text-xs text-gray-500 dark:text-white/50 mr-1.5">Close rate</span>
+                      <span className={`font-semibold tabular-nums ${rateCls}`}>{r.subm_apv > 0 ? fmtPct(r.close_rate) : '—'}</span>
+                    </div>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+                    {stats.map(([label, value, hi]) => (
+                      <div key={label}>
+                        <dt className="text-xs text-gray-500 dark:text-white/50">{label}</dt>
+                        <dd className={`mt-0.5 inline-block rounded px-1.5 -mx-1.5 text-base font-semibold tabular-nums ${hi ? maxCls : 'text-gray-900 dark:text-white'}`}>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </li>
+              )
+            })}
+          </ul>
+
+          {/* ── Table (tablet and up) ───────────────────────────────────────── */}
+          <div className="hidden md:block bg-white border border-gray-200 dark:bg-primary/30 dark:border-white/10 rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
+              <table className="w-full text-sm xl:min-w-[700px]">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-white/10">
                     {[
@@ -372,11 +417,11 @@ export default function MonthlyMetricsPage() {
                       { label: 'Close Rate',     cls: 'text-right w-28' },
                       { label: 'Total Writers',  cls: 'text-right w-28' },
                       { label: 'New Writers',    cls: 'text-right w-28' },
-                      { label: 'Weeks',          cls: 'text-right w-20' },
+                      { label: 'Weeks',          cls: 'text-right w-20 hidden xl:table-cell' },
                     ].map(h => (
                       <th
                         key={h.label}
-                        className={`text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 px-5 py-3 first:pl-6 last:pr-6 whitespace-nowrap ${h.cls ?? ''}`}
+                        className={`text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 px-4 xl:px-5 py-3 first:pl-6 last:pr-6 whitespace-nowrap ${h.cls ?? ''}`}
                       >
                         {h.label}
                       </th>
@@ -387,10 +432,10 @@ export default function MonthlyMetricsPage() {
                   {tableRows.map(r => {
                     const ratePct = r.close_rate * 100
                     const rateCls = ratePct >= 80
-                      ? 'text-green-600 dark:text-green-400'
+                      ? 'text-green-700 dark:text-green-400'
                       : ratePct >= 60
-                      ? 'text-amber-600 dark:text-amber-300'
-                      : 'text-red-500 dark:text-red-400'
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-red-700 dark:text-red-400'
                     const rowCls = r.is_current ? 'bg-accent/5' : ''
 
                     // Green highlight helpers — only highlight completed months
@@ -401,42 +446,42 @@ export default function MonthlyMetricsPage() {
                     return (
                       <tr key={r.year_month} className={rowCls}>
                         {/* Month */}
-                        <td className="px-5 pl-6 py-2.5">
+                        <td className="px-4 xl:px-5 pl-6 py-2.5">
                           <span className="text-sm font-medium text-gray-900 dark:text-white">
                             {r.label}
                           </span>
                           {r.is_current && (
-                            <span className="ml-2 text-xs text-accent font-medium">current</span>
+                            <span className="ml-2 text-xs font-medium text-gray-600 dark:text-white/60">current</span>
                           )}
                         </td>
 
                         {/* Submitted APV */}
-                        <td className={`px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.subm_apv, maxSubmApv) ? maxCls : normCls}`}>
+                        <td className={`px-4 xl:px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.subm_apv, maxSubmApv) ? maxCls : normCls}`}>
                           {fmtApv(r.subm_apv)}
                         </td>
 
                         {/* Issued APV */}
-                        <td className={`px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.iss_apv, maxIssApv) ? maxCls : normCls}`}>
+                        <td className={`px-4 xl:px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.iss_apv, maxIssApv) ? maxCls : normCls}`}>
                           {fmtApv(r.iss_apv)}
                         </td>
 
                         {/* Close Rate */}
-                        <td className={`px-5 py-2.5 text-right text-sm tabular-nums font-medium ${rateCls}`}>
+                        <td className={`px-4 xl:px-5 py-2.5 text-right text-sm tabular-nums font-medium ${rateCls}`}>
                           {r.subm_apv > 0 ? fmtPct(r.close_rate) : '—'}
                         </td>
 
                         {/* Total Writers */}
-                        <td className={`px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.total_writers, maxTotalWriters) ? maxCls : normCls}`}>
+                        <td className={`px-4 xl:px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.total_writers, maxTotalWriters) ? maxCls : normCls}`}>
                           {r.total_writers}
                         </td>
 
                         {/* New Writers */}
-                        <td className={`px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.new_writers, maxNewWriters) ? maxCls : normCls}`}>
+                        <td className={`px-4 xl:px-5 py-2.5 text-right text-sm tabular-nums ${isMax(r.new_writers, maxNewWriters) ? maxCls : normCls}`}>
                           {r.new_writers}
                         </td>
 
                         {/* Weeks */}
-                        <td className="px-5 pr-6 py-2.5 text-right text-sm tabular-nums text-gray-500 dark:text-white/50">
+                        <td className="px-4 xl:px-5 pr-6 py-2.5 text-right text-sm tabular-nums text-gray-500 dark:text-white/50 hidden xl:table-cell">
                           {r.weeks}
                         </td>
                       </tr>
