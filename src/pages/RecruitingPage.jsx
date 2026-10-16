@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
 import HireMatchingModal from '../components/HireMatchingModal'
 import MoreMenu from '../components/ui/MoreMenu'
-import { useMinSm, useMinLg, useMinXl } from '../hooks/useMediaQuery'
+import { useMinLg, useMinXl } from '../hooks/useMediaQuery'
+import useElementWidth from '../hooks/useElementWidth'
+import { phoneDigits } from '../utils/format'
+import LeadListCard, { REC_TIER_OF } from '../components/leads/LeadListCard'
+import { REC_SOURCES, REC_SECTIONS } from '../components/leads/leadFields'
 import {
   fmtDateTime,
   isCallbackDue,
   StatusPill,
-  LeadCard,
-  LeadDetail,
   ScriptsTab,
   PipelineTab,
   AddLeadModal,
   AddScriptModal,
 } from './LeadsPage'
+
+// The lead card and its edit screen load on first use, like on the Leads page
+const LeadPanel    = lazy(() => import('../components/leads/LeadPanel'))
+const LeadEditView = lazy(() => import('../components/leads/LeadEditView'))
 
 
 // ─── Recruiting-specific statuses ──────────────────────────────────────────────
@@ -41,18 +47,6 @@ const REC_STATUS_ORDER = [
   'licensed', 'exam_done', 'pre_lic_done', 'pre_lic',
   'interviewed', 'noshow', 'new', 'dead',
 ]
-
-// ─── Recruiting lead sources ────────────────────────────────────────────────────
-
-const REC_SOURCES = [
-  { key: 'calendly',   label: 'Calendly'   },
-  { key: 'stan_store', label: 'Stan Store' },
-  { key: 'referral',   label: 'Referral'   },
-  { key: 'other',      label: 'Other'      },
-]
-
-// Shared Tailwind classes (mirrors LeadsPage)
-const INPUT_CLS = 'w-full text-sm rounded-lg px-3 py-1.5 border bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-200 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors'
 
 const TABS = [
   { key: 'leads',          label: 'Leads'          },
@@ -88,15 +82,22 @@ export default function RecruitingPage() {
   const [selected,     setSelected]     = useState(null)
   const [activity,     setActivity]     = useState([])
   const [actLoading,   setActLoading]   = useState(false)
-  const [noteText,     setNoteText]     = useState('')
-  const [showNoteBox,  setShowNoteBox]  = useState(false)
   const [statusSaving, setStatusSaving] = useState(false)
+  const [attemptError, setAttemptError] = useState('')
+  const [editOpen,     setEditOpen]     = useState(false)   // the Edit lead data screen
 
-  // The list column is ~320–380px wide on a phone, or beside the docked lead pane (iPad landscape)
-  const isMinSm = useMinSm()
+  // The lead opens in a pane on the right: full screen on phones, a 640px docked pane at 1024–1279px
+  // (Edit lead data then opens inside it), 520px from 1280px. The header, search and cards switch to
+  // their compact forms according to the room the page and the list actually have.
   const isMinLg = useMinLg()
   const isMinXl = useMinXl()
-  const compactList = !isMinSm || (isMinLg && !isMinXl && !!selected)
+  const docked  = isMinLg && !isMinXl
+  const [pageEl, setPageEl] = useState(null)
+  const [listEl, setListEl] = useState(null)
+  const pageWidth    = useElementWidth(pageEl)
+  const listWidth    = useElementWidth(listEl)
+  const compactList  = pageWidth > 0 ? pageWidth < 640 : (!isMinLg || (docked && !!selected))
+  const stackedCards = listWidth > 0 && listWidth < 460
 
   // Modals
   const [showAddLead,   setShowAddLead]   = useState(false)
@@ -151,8 +152,8 @@ export default function RecruitingPage() {
 
   async function openLead(lead) {
     setSelected(lead)
-    setShowNoteBox(false)
-    setNoteText('')
+    setEditOpen(false)
+    setAttemptError('')
     setActLoading(true)
     try {
       const res = await fetch(`/api/leads?resource=activity&lead_id=${lead.id}`, { headers: authHeaders() })
@@ -160,7 +161,7 @@ export default function RecruitingPage() {
     } finally { setActLoading(false) }
   }
 
-  function closeDetail() { setSelected(null); setActivity([]) }
+  function closeDetail() { setSelected(null); setActivity([]); setEditOpen(false) }
 
   // ── Lead mutations ─────────────────────────────────────────────────────────
 
@@ -171,62 +172,51 @@ export default function RecruitingPage() {
 
   function prependActivity(entry) { setActivity(prev => [entry, ...prev]) }
 
-  async function logCall() {
-    if (!selected) return
-    const today = new Date().toISOString().slice(0, 10)
-    const body  = `📞 Called ${selected.phone || '—'}`
+  // "Log call" / "Log text": one history entry and +1 on the lead's attempt totals. Dialing and
+  // texting are plain links in the card — they don't log on their own. Status is never changed here.
+  async function logAttempt(type) {
+    if (!selected) return null
+    setAttemptError('')
+    const leadId = selected.id
+    const now    = new Date()
+    const today  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const body   = type === 'call' ? '📞 Call attempt logged' : '💬 Text attempt logged'
     const update = { last_contact: today }
-    if (selected.status === 'new') update.status = 'attempted'
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'call', body, update_lead: update }),
+
+    let res
+    try {
+      res = await fetch('/api/leads?resource=activity', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ lead_id: leadId, sfg_id: sfgId, activity_type: type, body, update_lead: update, count_attempt: true }),
+      })
+    } catch { res = null }
+    if (!res?.ok) { setAttemptError('Couldn’t log that attempt. Check your connection and try again.'); return null }
+
+    const { entry, attempt, last_dispositioned_at, lead_update_error } = await res.json()
+    prependActivity(entry)
+    if (lead_update_error) {
+      setAttemptError('The attempt is in the history, but the counters didn’t update. Make sure the latest database migration has been run.')
+      return entry
+    }
+    patchLeadLocal(leadId, {
+      ...update, ...attempt,
+      last_activity_text: body, last_activity_at: entry.created_at,
+      ...(last_dispositioned_at ? { last_dispositioned_at } : {}),
     })
-    if (res.ok) {
-      const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { ...update, last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    if (selected.phone) {
-      const phone = selected.phone.replace(/[^0-9]/g, '')
-      setTimeout(() => { window.location.href = `tel:+1${phone}` }, 300)
-    }
+    return entry
   }
 
-  async function logText(templateNote) {
-    if (!selected) return
-    const today = new Date().toISOString().slice(0, 10)
-    const body  = `💬 Text sent`
-    const update = { last_contact: today }
-    if (selected.status === 'new' || selected.status === 'attempted') update.status = 'textvm'
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'text', body, note: templateNote || null, update_lead: update }),
-    })
-    if (res.ok) {
+  // Attach (or edit) a note on one call/text attempt in the history
+  async function saveAttemptNote(activityId, note) {
+    try {
+      const res = await fetch(`/api/leads?resource=activity&id=${activityId}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ note }),
+      })
+      if (!res.ok) return false
       const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { ...update, last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    if (selected.phone) {
-      const phone = selected.phone.replace(/[^0-9]/g, '')
-      setTimeout(() => { window.location.href = `sms:+1${phone}` }, 200)
-    }
-  }
-
-  async function saveNote() {
-    if (!selected || !noteText.trim()) return
-    const body = '📝 Note added'
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'note', body, note: noteText.trim() }),
-    })
-    if (res.ok) {
-      const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    setNoteText('')
-    setShowNoteBox(false)
+      setActivity(prev => prev.map(a => a.id === activityId ? entry : a))
+      return true
+    } catch { return false }
   }
 
   async function updateStatus(newStatus) {
@@ -241,18 +231,25 @@ export default function RecruitingPage() {
     if (res.ok) {
       const { entry } = await res.json()
       prependActivity(entry)
-      patchLeadLocal(selected.id, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+      patchLeadLocal(selected.id, { status: newStatus, last_dispositioned_at: entry.created_at, last_activity_text: body, last_activity_at: entry.created_at })
     }
     setStatusSaving(false)
   }
 
+  // Saves one field of the open lead. Resolves true when it was stored. Phone numbers are stored
+  // as bare digits and shown hyphenated.
   async function patchLeadField(field, value) {
-    if (!selected) return
+    if (!selected) return false
+    if (field === 'phone' && value) value = phoneDigits(value)
+    const prev = selected[field]
     patchLeadLocal(selected.id, { [field]: value })
-    await fetch(`/api/leads?id=${selected.id}`, {
-      method: 'PATCH', headers: authHeaders(),
-      body: JSON.stringify({ [field]: value }),
-    })
+    try {
+      const res = await fetch(`/api/leads?id=${selected.id}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ [field]: value }),
+      })
+      if (!res.ok) { patchLeadLocal(selected.id, { [field]: prev }); return false }
+      return true
+    } catch { patchLeadLocal(selected.id, { [field]: prev }); return false }
   }
 
   async function saveCallback(val) {
@@ -282,14 +279,14 @@ export default function RecruitingPage() {
     })
     if (res.ok) {
       const { entry } = await res.json()
-      patchLeadLocal(leadId, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+      patchLeadLocal(leadId, { status: newStatus, last_dispositioned_at: entry.created_at, last_activity_text: body, last_activity_at: entry.created_at })
     }
   }
 
   async function handleAddLead(formData) {
     const res = await fetch('/api/leads', {
       method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ sfg_id: sfgId, category: 'recruiting', ...formData }),
+      body: JSON.stringify({ sfg_id: sfgId, category: 'recruiting', ...formData, ...(formData.phone ? { phone: phoneDigits(formData.phone) } : {}) }),
     })
     if (res.ok) {
       const { lead } = await res.json()
@@ -325,6 +322,7 @@ export default function RecruitingPage() {
       const matchQ = !q
         || l.name.toLowerCase().includes(q)
         || (l.phone || '').includes(q)
+        || (q.replace(/\D/g, '').length >= 3 && phoneDigits(l.phone).includes(q.replace(/\D/g, '')))
         || (l.state || '').toLowerCase() === q
         || (l.email || '').toLowerCase().includes(q)
       if (!matchQ) return false
@@ -369,7 +367,7 @@ export default function RecruitingPage() {
   const paneMr = selected ? 'lg:mr-[640px] xl:mr-[520px]' : ''
 
   return (
-    <div className={`flex flex-col h-full transition-[margin] duration-300 ${paneMr}`}>
+    <div ref={setPageEl} className={`flex flex-col h-full transition-[margin] duration-300 ${paneMr}`}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 shrink-0">
@@ -435,7 +433,7 @@ export default function RecruitingPage() {
                     placeholder="Search name, phone, state…"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="flex-1 min-w-0 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-white/50 outline-none"
+                    className="flex-1 min-w-0 bg-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-white/50 outline-none"
                   />
                   {search && (
                     <button onClick={() => setSearch('')} aria-label="Clear search" className="w-8 h-8 -mr-2 flex items-center justify-center text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70 text-sm leading-none">✕</button>
@@ -450,7 +448,7 @@ export default function RecruitingPage() {
                 <select
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value)}
-                  className={`shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
+                  className={`shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
                     statusFilter !== 'all'
                       ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
                       : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
@@ -464,7 +462,7 @@ export default function RecruitingPage() {
                 <select
                   value={sourceFilter}
                   onChange={e => setSourceFilter(e.target.value)}
-                  className={`shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
+                  className={`shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
                     sourceFilter !== 'all'
                       ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
                       : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
@@ -477,7 +475,7 @@ export default function RecruitingPage() {
                 </select>
                 <button
                   onClick={() => setHideTerminal(h => !h)}
-                  className={`whitespace-nowrap shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
+                  className={`whitespace-nowrap shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
                     hideTerminal
                       ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
                       : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
@@ -496,7 +494,7 @@ export default function RecruitingPage() {
               </div>
 
               {/* Lead count */}
-              <p className="text-xs text-gray-400 dark:text-white/30 mb-3 font-medium">
+              <p className="text-sm text-gray-600 dark:text-white/60 mb-3 font-medium">
                 {displayLeads.length} lead{displayLeads.length !== 1 ? 's' : ''}
                 {(statusFilter !== 'all' || sourceFilter !== 'all' || hideTerminal || search) ? ' (filtered)' : ''}
               </p>
@@ -513,9 +511,9 @@ export default function RecruitingPage() {
                   <p className="text-sm">No recruiting leads found</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div ref={setListEl} className="space-y-3">
                   {displayLeads.map(l => (
-                    <LeadCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} statuses={REC_STATUSES} />
+                    <LeadListCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} statuses={REC_STATUSES} tierOf={REC_TIER_OF} recruiting stacked={stackedCards} />
                   ))}
                 </div>
               )}
@@ -641,27 +639,53 @@ export default function RecruitingPage() {
         )}
         <div className={`fixed top-[var(--header-h)] right-0 bottom-0 z-30 w-full lg:w-[640px] xl:w-[520px] max-lg:pb-[env(safe-area-inset-bottom)] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
           {selected && (
-            <LeadDetail
-              lead={selected}
-              activity={activity}
-              actLoading={actLoading}
-              noteText={noteText}
-              setNoteText={setNoteText}
-              showNoteBox={showNoteBox}
-              setShowNoteBox={setShowNoteBox}
-              statusSaving={statusSaving}
-              onClose={closeDetail}
-              onCall={logCall}
-              onText={logText}
-              onNote={saveNote}
-              onStatusChange={updateStatus}
-              onCallbackChange={saveCallback}
-              onPatch={patchLeadField}
-              statuses={REC_STATUSES}
-              isRecruiting
-            />
+            <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+              <LeadPanel
+                recruiting
+                lead={selected}
+                activity={activity}
+                actLoading={actLoading}
+                statuses={REC_STATUSES}
+                statusSaving={statusSaving}
+                attemptError={attemptError}
+                onClose={closeDetail}
+                onLogAttempt={logAttempt}
+                onAttemptNote={saveAttemptNote}
+                onStatusChange={updateStatus}
+                onCallbackChange={saveCallback}
+                onPatch={patchLeadField}
+                onEdit={() => setEditOpen(true)}
+                overrideBody={docked && editOpen ? (
+                  <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+                    <LeadEditView
+                      pane
+                      key={selected.id}
+                      lead={selected}
+                      sections={REC_SECTIONS}
+                      badge="REC"
+                      onClose={() => setEditOpen(false)}
+                      onPatch={patchLeadField}
+                    />
+                  </Suspense>
+                ) : null}
+              />
+            </Suspense>
           )}
         </div>
+
+        {/* Edit lead data — full screen over the page (inside the lead pane when docked) */}
+        {selected && editOpen && !docked && (
+          <Suspense fallback={<div className="fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-[var(--nav-w,4rem)] xl:left-[var(--nav-w,14rem)] z-40 bg-gray-50 dark:bg-secondary" />}>
+            <LeadEditView
+              key={selected.id}
+              lead={selected}
+              sections={REC_SECTIONS}
+              badge="REC"
+              onClose={() => setEditOpen(false)}
+              onPatch={patchLeadField}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}

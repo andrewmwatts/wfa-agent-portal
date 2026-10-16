@@ -107,14 +107,21 @@ function Block({ b }) {
   }
 }
 
+// Fixed placement classes (whole strings so Tailwind sees them). In Dial Mode the sidebar is gone, so
+// the script pane can sit beside the lead card from 1180px instead of 1440px (420px lead + 400px script).
+const PLACEMENT = 'fixed top-[var(--header-h)] right-0 bottom-0 z-40 min-[1440px]:z-30 w-full md:max-[1439px]:w-auto md:max-[1439px]:left-0 lg:max-[1439px]:left-[var(--nav-w,4rem)] xl:max-[1439px]:left-[var(--nav-w,14rem)] md:max-[1439px]:right-[420px] min-[1440px]:right-[460px] min-[1440px]:w-[440px] min-[1920px]:right-[520px] min-[1920px]:w-[560px]'
+const DIAL_PLACEMENT = 'fixed top-[var(--header-h)] right-0 bottom-0 z-40 min-[1180px]:z-30 w-full md:max-[1179px]:w-auto md:max-[1179px]:left-0 md:max-[1179px]:right-[420px] min-[1180px]:right-[420px] min-[1180px]:w-[400px] min-[1440px]:right-[460px] min-[1440px]:w-[440px] min-[1920px]:right-[520px] min-[1920px]:w-[560px]'
+
 // ─── Pane ──────────────────────────────────────────────────────────────────────
 // Sits against the lead card so a script and the card can be used side by side.
 // personalScripts: the agent's own, [{ id, tab, heading, subtitle?, body }] — listed
 // after the built-in B.E.S.T and R.E.A.L. scripts.
 
 // embedded: sits in the flow (left column of the CQF screen) instead of fixed beside the lead card.
-// pane: fills the docked lead pane (the Scripts tab on iPad landscape).
-export default function ScriptPane({ personalScripts = [], activeId, onSelect, onClose, onManage, context, embedded = false, pane = false }) {
+// Fixed placement, by width: phones — full screen over the card; 768–1439px — fills the space to the
+// left of the lead card, which narrows to 420px so both are on screen (the list is covered); 1440px
+// and up — a 440px pane (560px from 1920px) tucked against the lead card, leaving the list beside them.
+export default function ScriptPane({ personalScripts = [], activeId, onSelect, onClose, onManage, context, embedded = false, dial = false }) {
   const scripts = useMemo(() => [...DEFAULT_SCRIPTS, ...personalScripts], [personalScripts])
   const active  = scripts.find(s => s.id === activeId) ?? scripts[0]
   const blocks = useMemo(() => parseScript(active?.body), [active])
@@ -123,11 +130,9 @@ export default function ScriptPane({ personalScripts = [], activeId, onSelect, o
   const subtitle = [context, active.subtitle].filter(Boolean).join(' · ')
 
   return (
-    <div className={pane
-      ? 'flex-1 min-h-0 w-full bg-white dark:bg-secondary flex flex-col'
-      : embedded
+    <div className={embedded
       ? 'w-full max-lg:max-h-[45%] lg:w-[400px] xl:w-[460px] shrink-0 bg-white dark:bg-secondary border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-white/10 flex flex-col'
-      : 'fixed top-[var(--header-h)] right-0 bottom-0 z-40 xl:z-30 w-full xl:right-[520px] xl:w-[520px] 2xl:w-[600px] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl !mt-0'}>
+      : (dial ? DIAL_PLACEMENT : PLACEMENT) + ' bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl !mt-0'}>
       <div className="px-4 pt-3 pb-2 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-base">{active.icon ?? '📄'}</span>

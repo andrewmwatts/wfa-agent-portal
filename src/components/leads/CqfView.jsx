@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { typeCfg, ageFromDob, getLeadTZ } from './leadHelpers'
+import { fmtPhone, phoneDigits } from '../../utils/format'
 import Icon from './icons'
 import { CONDITIONS, RELATIONSHIPS, EMPTY_PREP, cqfPrefill, mergeCqf, setIn } from './cqfConfig'
 
@@ -113,7 +114,7 @@ export default function CqfView({ lead, onClose, onSave, scriptsNode, scriptsOpe
 
   const tc     = typeCfg(lead.lead_type)
   const tz     = getLeadTZ(lead.state)
-  const digits = (lead.phone || '').replace(/[^0-9]/g, '')
+  const digits = phoneDigits(lead.phone)
   const c      = cqf.client ?? {}
   const sp     = cqf.spouse ?? {}
 
@@ -190,7 +191,7 @@ export default function CqfView({ lead, onClose, onSave, scriptsNode, scriptsOpe
     <PaneCtx.Provider value={pane}>
     <div className={pane
       ? 'flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-secondary'
-      : 'fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-16 xl:left-56 z-40 flex flex-col bg-gray-50 dark:bg-secondary !mt-0'}>
+      : 'fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-[var(--nav-w,4rem)] xl:left-[var(--nav-w,14rem)] z-40 flex flex-col bg-gray-50 dark:bg-secondary !mt-0'}>
 
       {/* Header */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-white/10 bg-white dark:bg-primary/30 shrink-0">
@@ -209,7 +210,7 @@ export default function CqfView({ lead, onClose, onSave, scriptsNode, scriptsOpe
           {saveState === 'error' && <button onClick={flush} className="ml-2 underline font-semibold">Retry</button>}
         </span>
         {digits && (
-          <a href={`tel:+1${digits}`} className="flex items-center gap-2 rounded-xl bg-primary text-white dark:bg-white dark:text-primary hover:opacity-90 px-5 py-2 text-lg font-bold shadow-sm transition-opacity"><Icon name="phone" className="w-5 h-5" />{lead.phone}</a>
+          <a href={`tel:+1${digits}`} className="flex items-center gap-2 rounded-xl bg-primary text-white dark:bg-white dark:text-primary hover:opacity-90 px-5 py-2 text-lg font-bold shadow-sm transition-opacity"><Icon name="phone" className="w-5 h-5" />{fmtPhone(lead.phone)}</a>
         )}
         {onToggleScripts && !pane && (
           <button onClick={onToggleScripts}

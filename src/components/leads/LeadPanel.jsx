@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import CalendarEventModal from '../CalendarEventModal'
-import { fmtDate, fmtDateTime } from '../../utils/format'
-import { LEAD_SECTIONS } from './leadFields'
+import { fmtDate, fmtDateTime, fmtPhone, phoneDigits } from '../../utils/format'
+import { LEAD_SECTIONS, REC_SECTIONS, recSourceLabel } from './leadFields'
 import { typeCfg, getLeadTZ, hasValue, fmtWhen, fmtDay, attemptTotals } from './leadHelpers'
 import Icon from './icons'
+import CqfSummary from './CqfSummary'
+import ContractingStatus from './ContractingStatus'
 
-// The lead card for sales leads (the drawer that opens from the Leads list).
+// The lead card (the drawer that opens from the Leads list). With `recruiting` it is the Recruiting
+// page's card: the same layout, but Call / Text / Log sit in one compact row (it is a place to keep
+// track of conversations, not a dialer), and there is no CQF or script.
 //
-// Read mode shows only the fields that have a value — the card fills itself from the
-// lead as received. "Edit" switches every field to an input. Work actions (call, text,
-// log an attempt, status, callback) and the CQF entry point stay available in both modes.
+// It only reads: it shows the fields that have a value, so the card fills itself from the
+// lead as received. "Edit lead data" opens a separate screen (LeadEditView) for changing them.
+// The work actions — call, text, log an attempt, status, callback, scripts — live in the first
+// card, and the CQF entry point (with whatever has been entered in it) is the second.
 //
 // Styling uses only the agency's primary / secondary / accent. Sections are told apart by
 // weight, not hue: the "work" card is solid primary, everything else is a quiet card,
@@ -18,6 +23,7 @@ import Icon from './icons'
 
 const INPUT = 'w-full text-base rounded-lg px-3 py-2 border bg-white dark:bg-white/5 text-gray-900 dark:text-white border-gray-300 dark:border-white/15 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-colors'
 const INPUT_ON_SOLID = 'w-full text-base rounded-lg px-3 py-2 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/60'
+const LABEL_ON_SOLID = 'block text-xs font-semibold uppercase tracking-wide text-white/70 mb-1'
 const LABEL = 'block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50 mb-1'
 const BTN_OUTLINE = 'border border-primary/30 dark:border-white/25 text-primary dark:text-white hover:bg-primary/5 dark:hover:bg-white/10 transition-colors'
 // Solid primary keeps white text legible whatever the agency's accent is; accent shows as the outline.
@@ -54,7 +60,7 @@ function fieldDisplay(f, v) {
 function ViewField({ f, value }) {
   const text = fieldDisplay(f, value)
   let body = <span className="break-words">{text}</span>
-  if (f.link === 'tel')    body = <a href={`tel:+1${String(value).replace(/[^0-9]/g, '')}`} className={LINK}>{text}</a>
+  if (f.link === 'tel')    body = <a href={`tel:+1${phoneDigits(value)}`} className={LINK}>{text}</a>
   if (f.link === 'mailto') body = <a href={`mailto:${value}`} className={LINK + ' break-all'}>{text}</a>
   return (
     <div className={f.span === 2 ? 'col-span-2' : ''}>
@@ -69,7 +75,7 @@ const ACT_ICON = { call: 'phone', text: 'chat', note: 'pencil', status: 'refresh
 export default function LeadPanel({
   lead: l, activity, actLoading, statuses, statusSaving, scriptsOpen,
   onToggleScripts, onClose, onLogAttempt, onAttemptNote, onStatusChange,
-  onCallbackChange, onPatch, onOpenCqf, attemptError,
+  onCallbackChange, onPatch, onOpenCqf, onEdit, attemptError, recruiting = false,
   // Docked pane (iPad landscape): the pane supplies a Lead / Scripts / CQF tab bar under the
   // header, and swaps the body for the active tab. The lead body stays mounted (hidden) so
   // scroll position, edit mode and half-typed notes survive a tab switch.
@@ -78,40 +84,23 @@ export default function LeadPanel({
   const { userProfile } = useAuth()
   const calConnected = userProfile?.google_calendar_connected ?? false
   const [showCalModal, setShowCalModal] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [form, setForm]       = useState({})
   const [logging, setLogging] = useState(null)         // 'call' | 'text' while a log request is in flight
-  const [pendingNote, setPendingNote] = useState(null) // { id, type, text } — note for the attempt just logged
-  const [noteEdit, setNoteEdit] = useState(null)       // { id, text } — editing an older entry's note
+  const [noteEdit, setNoteEdit] = useState(null)       // { id, text } — adding or editing the note on a call/text entry
+  const [notes, setNotes]       = useState('')         // lead notes draft
 
-  // A different lead was opened: start in read mode with a fresh form
+  // A different lead was opened: fresh notes draft, no note being edited
   useEffect(() => {
-    const init = {}
-    for (const s of LEAD_SECTIONS) for (const f of s.fields) init[f.key] = l[f.key] ?? ''
-    init.name  = l.name  ?? ''
-    init.notes = l.notes ?? ''
-    setForm(init)
-    setEditing(false)
-    setPendingNote(null)
+    setNotes(l.notes ?? '')
     setNoteEdit(null)
   }, [l.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  function commit(f) {
-    let val = form[f.key]
-    val = (val === '' || val == null) ? null : val
-    if (val !== null && f.kind === 'int') val = parseInt(val, 10) || null
-    if (val !== null && f.kind === 'state') val = String(val).toUpperCase().slice(0, 2)
-    const orig = hasValue(l[f.key]) ? l[f.key] : null
-    if (orig !== val) onPatch(f.key, val)
-  }
-
+  const sections = recruiting ? REC_SECTIONS : LEAD_SECTIONS
   const tz     = getLeadTZ(l.state)
   const tc     = typeCfg(l.lead_type)
   const { calls, texts, total } = attemptTotals(l)
   const cbVal  = l.callback_at ? new Date(l.callback_at).toISOString().slice(0, 16) : ''
-  const digits = (l.phone || '').replace(/[^0-9]/g, '')
+  const digits = phoneDigits(l.phone)
+  const phoneText = fmtPhone(l.phone)
 
   // Attempt numbers: oldest call/text entry is #1 (activity arrives newest-first)
   const attemptNo = useMemo(() => {
@@ -137,16 +126,7 @@ export default function LeadPanel({
   async function log(type) {
     if (logging) return
     setLogging(type)
-    try {
-      const entry = await onLogAttempt(type)
-      if (entry) setPendingNote({ id: entry.id, type, text: '' })
-    } finally { setLogging(null) }
-  }
-
-  async function savePendingNote() {
-    if (!pendingNote) return
-    if (pendingNote.text.trim()) await onAttemptNote(pendingNote.id, pendingNote.text)
-    setPendingNote(null)
+    try { await onLogAttempt(type) } finally { setLogging(null) }
   }
 
   async function saveNoteEdit() {
@@ -167,32 +147,24 @@ export default function LeadPanel({
           <button onClick={onClose} aria-label="Close" className={`mt-1 w-11 h-11 sm:w-9 sm:h-9 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-lg text-lg ${BTN_OUTLINE}`}>←</button>
         )}
         <div className="flex-1 min-w-0">
-          {editing ? (
-            <input
-              value={form.name ?? ''}
-              onChange={e => set('name', e.target.value)}
-              onBlur={() => { const v = (form.name ?? '').trim(); if (v && v !== l.name) onPatch('name', v) }}
-              className={INPUT + ' text-xl font-bold'}
-            />
-          ) : (
-            <h2 className="text-2xl font-extrabold leading-tight text-gray-900 dark:text-white break-words">{l.name}</h2>
-          )}
+          <h2 className="text-2xl font-extrabold leading-tight text-gray-900 dark:text-white break-words">{l.name}</h2>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded ${NEUTRAL_BADGE}`}>{tc.label}</span>
-            <span className="text-sm text-gray-500 dark:text-white/55">{l.lead_type}{l.state ? ` · ${l.state}` : ''}</span>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded ${NEUTRAL_BADGE}`}>{recruiting ? 'REC' : tc.label}</span>
+            <span className="text-sm text-gray-500 dark:text-white/55">{recruiting ? (l.source ? recSourceLabel(l.source) : 'Recruiting lead') : l.lead_type}{l.state ? ` · ${l.state}` : ''}</span>
             {tz && (
               <span className={`text-sm font-semibold ${tz.goodTime ? 'text-gray-700 dark:text-white/80' : 'text-red-500 dark:text-red-300'}`}>
                 {tz.label} {tz.timeStr}{tz.goodTime ? ' ✓' : ' ⛔'}
               </span>
             )}
+            {!recruiting && l.known_litigator === true && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-accent/10 text-gray-900 dark:text-white border border-accent/50">Known litigator</span>
+            )}
           </div>
         </div>
         <button
-          onClick={() => setEditing(e => !e)}
-          className={`mt-1 shrink-0 flex items-center gap-1.5 text-sm font-semibold px-3 py-2 min-h-11 touch:min-h-11 rounded-lg border transition-colors ${
-            editing ? BTN_CTA : `border-primary/30 dark:border-white/25 text-primary dark:text-white hover:bg-primary/5 dark:hover:bg-white/10`
-          }`}
-        ><Icon name={editing ? 'check' : 'pencil'} className="w-4 h-4" />{editing ? 'Done' : 'Edit'}</button>
+          onClick={onEdit}
+          className={`mt-1 shrink-0 flex items-center gap-1.5 text-sm font-semibold px-3 py-2 min-h-11 touch:min-h-11 rounded-lg border transition-colors ${BTN_OUTLINE}`}
+        ><Icon name="pencil" className="w-4 h-4" />Edit lead data</button>
       </div>
 
       {tabsNode}
@@ -202,36 +174,64 @@ export default function LeadPanel({
       {/* ── Body ── */}
       <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain bg-gray-50 dark:bg-secondary p-4 space-y-4 ${overrideBody ? 'hidden' : ''}`}>
 
-        {/* Work this lead — the one solid card */}
+        {/* Work this lead — the one solid card: dial, log, status, callback, appointment, scripts */}
         <Card variant="solid" title="Work this lead">
+          {recruiting ? (
+            /* Recruiting: one row of four, half the width of the sales layout */
+            <div className="grid grid-cols-4 gap-2">
+              {digits ? (
+                <>
+                  <a href={`tel:+1${digits}`} className="flex flex-col items-center justify-center gap-0.5 h-14 rounded-xl bg-white text-primary shadow-sm hover:bg-white/90 active:bg-white/80 transition-colors">
+                    <Icon name="phone" className="w-5 h-5" />
+                    <span className="text-sm font-bold leading-tight">Call</span>
+                  </a>
+                  <a href={`sms:+1${digits}`} className="flex flex-col items-center justify-center gap-0.5 h-14 rounded-xl border-2 border-white text-white hover:bg-white/10 active:bg-white/20 transition-colors">
+                    <Icon name="chat" className="w-5 h-5" />
+                    <span className="text-sm font-bold leading-tight">Text</span>
+                  </a>
+                </>
+              ) : (
+                <p className="col-span-2 flex items-center justify-center text-center text-sm leading-tight text-white/80 px-2 h-14 rounded-xl bg-white/10">No phone — add one under Edit lead data</p>
+              )}
+              {[['call', 'Log call', calls], ['text', 'Log text', texts]].map(([type, label, n]) => (
+                <button key={type} onClick={() => log(type)} disabled={!!logging}
+                  className="h-14 flex flex-col items-center justify-center rounded-xl border border-white/35 bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-50 text-white transition-colors">
+                  <span className="flex items-center justify-center gap-1 text-sm font-bold leading-tight whitespace-nowrap">
+                    <Icon name="plus" className="w-3.5 h-3.5 max-sm:hidden" />{logging === type ? 'Logging…' : label}
+                  </span>
+                  <span className="block text-xs font-medium text-white/70 leading-tight">{n} so far</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-3">
             {digits ? (
               <>
-                <a href={`tel:+1${digits}`} className="flex items-center justify-center gap-2 sm:gap-3 rounded-2xl bg-white text-primary py-4 px-2 shadow-sm hover:bg-white/90 active:bg-white/80 transition-colors">
-                  <Icon name="phone" className="w-6 h-6 sm:w-8 sm:h-8 shrink-0" />
+                <a href={`tel:+1${digits}`} className="flex items-center justify-center gap-2 h-16 rounded-xl bg-white text-primary px-2 shadow-sm hover:bg-white/90 active:bg-white/80 transition-colors">
+                  <Icon name="phone" className="w-6 h-6 shrink-0" />
                   <span className="text-left min-w-0">
-                    <span className="block text-2xl font-extrabold leading-none">Call</span>
-                    <span className="block text-xs sm:text-sm font-semibold opacity-75 whitespace-nowrap">{l.phone}</span>
+                    <span className="block text-lg font-extrabold leading-tight">Call</span>
+                    <span className="block text-xs font-semibold opacity-75 whitespace-nowrap">{phoneText}</span>
                   </span>
                 </a>
-                <a href={`sms:+1${digits}`} className="flex items-center justify-center gap-2 sm:gap-3 rounded-2xl border-2 border-white text-white py-4 px-2 hover:bg-white/10 active:bg-white/20 transition-colors">
-                  <Icon name="chat" className="w-6 h-6 sm:w-8 sm:h-8 shrink-0" />
+                <a href={`sms:+1${digits}`} className="flex items-center justify-center gap-2 h-16 rounded-xl border-2 border-white text-white px-2 hover:bg-white/10 active:bg-white/20 transition-colors">
+                  <Icon name="chat" className="w-6 h-6 shrink-0" />
                   <span className="text-left min-w-0">
-                    <span className="block text-2xl font-extrabold leading-none">Text</span>
-                    <span className="block text-xs sm:text-sm font-semibold opacity-75 whitespace-nowrap">{l.phone}</span>
+                    <span className="block text-lg font-extrabold leading-tight">Text</span>
+                    <span className="block text-xs font-semibold opacity-75 whitespace-nowrap">{phoneText}</span>
                   </span>
                 </a>
               </>
             ) : (
-              <p className="col-span-2 text-base text-white/80 py-3 text-center rounded-2xl bg-white/10">No phone number on this lead — add one under Edit.</p>
+              <p className="col-span-2 text-base text-white/80 py-3 text-center rounded-2xl bg-white/10">No phone number on this lead — add one under Edit lead data.</p>
             )}
           </div>
 
-          <p className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-white/65">After you dial or text</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 mt-3">
             {[['call', 'Log call attempt', calls], ['text', 'Log text attempt', texts]].map(([type, label, n]) => (
               <button key={type} onClick={() => log(type)} disabled={!!logging}
-                className="rounded-xl border border-white/35 bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-50 text-white py-3 transition-colors">
+                className="h-16 flex flex-col items-center justify-center rounded-xl border border-white/35 bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-50 text-white transition-colors">
                 <span className="flex items-center justify-center gap-1.5 text-base font-bold">
                   <Icon name="plus" className="w-4 h-4" />{logging === type ? 'Logging…' : label}
                 </span>
@@ -239,6 +239,8 @@ export default function LeadPanel({
               </button>
             ))}
           </div>
+          </>
+          )}
 
           <p className="mt-3 text-base text-white/90">
             {total === 0
@@ -247,79 +249,61 @@ export default function LeadPanel({
           </p>
           {attemptError && <p className="mt-2 text-sm rounded-lg bg-red-500/25 text-red-50 px-3 py-2">{attemptError}</p>}
 
-          {pendingNote && (
-            <div className="mt-3 rounded-xl border border-white/25 bg-white/10 p-3">
-              <p className="text-sm font-semibold text-white mb-1.5">
-                Logged ✓ — add a note about this {pendingNote.type} attempt? <span className="font-normal opacity-70">(optional)</span>
-              </p>
-              <textarea
-                autoFocus rows={2} value={pendingNote.text}
-                onChange={e => setPendingNote(p => ({ ...p, text: e.target.value }))}
-                placeholder={pendingNote.type === 'call' ? 'e.g. Voicemail left, call back after 5' : 'e.g. Sent intro text, no reply yet'}
-                className={INPUT_ON_SOLID + ' resize-none'}
+          {/* Status, callback, appointment, scripts */}
+          <div className="mt-4 pt-4 border-t border-white/15">
+            <label className={LABEL_ON_SOLID}>Status</label>
+            <select
+              value={l.status}
+              onChange={e => onStatusChange(e.target.value)}
+              disabled={statusSaving}
+              className={INPUT_ON_SOLID + ' cursor-pointer font-semibold'}
+            >
+              {statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+            <p className="mt-1.5 text-sm text-white/75">
+              {l.last_dispositioned_at ? <>Status changed <span className="font-semibold text-white">{fmtDay(l.last_dispositioned_at)}</span></> : 'Status not changed yet'}
+            </p>
+
+            <label className={LABEL_ON_SOLID + ' mt-4'}>Callback</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="datetime-local" defaultValue={cbVal} key={cbVal}
+                onBlur={e => onCallbackChange(e.target.value)}
+                className={INPUT_ON_SOLID + ' flex-1 min-w-0'}
               />
-              <div className="flex gap-2 mt-2">
-                <button onClick={savePendingNote} className="text-sm px-4 py-1.5 rounded-lg bg-white text-primary font-semibold hover:bg-white/90 transition-colors">Save note</button>
-                <button onClick={() => setPendingNote(null)} className="text-sm px-3 py-1.5 rounded-lg border border-white/40 text-white hover:bg-white/10 transition-colors">Skip</button>
-              </div>
+              {l.callback_at && (
+                <button onClick={() => onCallbackChange('')} className="text-sm font-semibold px-3 py-2 min-h-11 rounded-lg border border-white/40 text-white hover:bg-white/10 transition-colors">Clear</button>
+              )}
             </div>
-          )}
-        </Card>
 
-        {/* Status, callback, appointment */}
-        <Card title="Status & follow-up">
-          <label className={LABEL}>Status</label>
-          <select
-            value={l.status}
-            onChange={e => onStatusChange(e.target.value)}
-            disabled={statusSaving}
-            className={INPUT + ' cursor-pointer font-semibold'}
-          >
-            {statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-          <p className="mt-1.5 text-sm text-gray-500 dark:text-white/55">
-            {l.last_dispositioned_at ? <>Status changed <span className="font-semibold text-gray-700 dark:text-white/80">{fmtDay(l.last_dispositioned_at)}</span></> : 'Status not changed yet'}
-          </p>
-
-          <label className={LABEL + ' mt-4'}>Callback</label>
-          <div className="flex gap-2 items-center">
-            <input
-              type="datetime-local" defaultValue={cbVal} key={cbVal}
-              onBlur={e => onCallbackChange(e.target.value)}
-              className={INPUT + ' flex-1 dark:[color-scheme:dark]'}
-            />
-            {l.callback_at && (
-              <button onClick={() => onCallbackChange('')} className={`text-sm px-3 py-2 rounded-lg ${BTN_OUTLINE}`}>Clear</button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <button
-              onClick={() => calConnected && setShowCalModal(true)}
-              title={calConnected ? 'Schedule calendar event' : 'Connect Google Calendar in your profile to use this'}
-              className={`flex items-center justify-center gap-2 rounded-xl py-3 text-base font-semibold ${
-                calConnected ? BTN_OUTLINE : 'border border-gray-200 dark:border-white/10 text-gray-400 dark:text-white/25 cursor-not-allowed'
-              }`}
-            ><Icon name="calendar" className="w-5 h-5" />Set appointment</button>
-            {onToggleScripts && (
-              <button onClick={onToggleScripts}
-                className={`flex items-center justify-center gap-2 rounded-xl py-3 text-base font-semibold border transition-colors ${
-                  scriptsOpen ? 'bg-primary text-white border-primary dark:bg-white dark:text-primary dark:border-white' : `border-primary/30 dark:border-white/25 text-primary dark:text-white hover:bg-primary/5 dark:hover:bg-white/10`
+            <div className={`grid ${onToggleScripts ? 'grid-cols-2' : 'grid-cols-1'} gap-3 mt-4`}>
+              <button
+                onClick={() => calConnected && setShowCalModal(true)}
+                title={calConnected ? 'Schedule calendar event' : 'Connect Google Calendar in your profile to use this'}
+                className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 min-h-12 text-base max-sm:text-sm whitespace-nowrap font-semibold border transition-colors ${
+                  calConnected ? 'border-white/40 text-white hover:bg-white/10' : 'border-white/15 text-white/40 cursor-not-allowed'
                 }`}
-              ><Icon name="script" className="w-5 h-5" />{scriptsOpen ? 'Hide scripts' : 'Scripts'}</button>
-            )}
+              ><Icon name="calendar" className="w-5 h-5" />Set appointment</button>
+              {onToggleScripts && (
+                <button onClick={onToggleScripts}
+                  className={`flex items-center justify-center gap-2 rounded-xl py-3 min-h-12 text-base font-semibold border transition-colors ${
+                    scriptsOpen ? 'bg-white text-primary border-white' : 'border-white/40 text-white hover:bg-white/10'
+                  }`}
+                ><Icon name="script" className="w-5 h-5" />{scriptsOpen ? 'Hide scripts' : 'Scripts'}</button>
+              )}
+            </div>
           </div>
         </Card>
 
-        {/* CQF entry — outlined in accent so it reads as the next step */}
+        {/* CQF — outlined in accent so it reads as the next step. Carrier prep stays right under
+            the button; what has been entered in the form follows it. */}
+        {!recruiting && (
         <Card title="Client Qualification Form" emphasis>
-          <p className="text-base text-gray-700 dark:text-white/75">
-            {l.cqf
-              ? <>In progress · updated <span className="font-semibold">{fmtWhen(l.cqf_updated_at) || '—'}</span></>
-              : 'Not started. Date of birth, smoker status and other basics fill in from this card.'}
-          </p>
+          {!l.cqf && (
+            <p className="text-base text-gray-700 dark:text-white/75">Not started. Date of birth, smoker status and other basics fill in from this card.</p>
+          )}
           <button onClick={onOpenCqf}
-            className={`mt-3 w-full flex items-center justify-center gap-2.5 rounded-2xl border-2 py-4 text-xl font-extrabold shadow-sm ${BTN_CTA}`}>
+            className={`${l.cqf ? '' : 'mt-3 '}w-full flex items-center justify-center gap-2.5 rounded-2xl border-2 py-4 text-xl font-extrabold shadow-sm ${BTN_CTA}`}>
             <Icon name="clipboard" className="w-6 h-6 text-accent" />{l.cqf ? 'Continue CQF' : 'Start CQF'}
           </button>
           {hasCarrierPrep && (
@@ -332,75 +316,50 @@ export default function LeadPanel({
               {l.carrier_prep.notes?.trim() && <p className="text-sm text-gray-600 dark:text-white/65 whitespace-pre-wrap mt-1">{l.carrier_prep.notes}</p>}
             </div>
           )}
+          <CqfSummary cqf={l.cqf} lead={l} />
         </Card>
+        )}
 
-        {/* Data sections — read mode: only fields with a value */}
-        {LEAD_SECTIONS.map(sec => {
-          const filled = sec.fields.filter(f => hasValue(l[f.key]))
+        {/* Contracting — a recruiting lead who has been hired */}
+        {recruiting && l.hired_sfg_id && l.contracting && (
+          <Card title="Contracting">
+            <ContractingStatus contracting={l.contracting} isStub={l.is_stub} />
+          </Card>
+        )}
+
+        {/* Data sections — only the fields that have a value */}
+        {sections.map(sec => {
+          const filled  = sec.fields.filter(f => hasValue(l[f.key]))
           const flagsOn = (sec.flags ?? []).filter(fl => l[fl.key] === true)
-          if (!editing && filled.length === 0 && flagsOn.length === 0) return null
-          const fields = editing ? sec.fields : filled
+          if (filled.length === 0 && flagsOn.length === 0) return null
           return (
             <Card key={sec.key} title={sec.title}>
-              {fields.length > 0 && (
+              {filled.length > 0 && (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  {fields.map(f => editing && !f.readOnly ? (
-                    <div key={f.key} className={f.span === 2 ? 'col-span-2' : ''}>
-                      <label className={LABEL}>{f.label}</label>
-                      {f.kind === 'select' ? (
-                        <select value={form[f.key] ?? ''} className={INPUT + ' cursor-pointer'}
-                          onChange={e => { set(f.key, e.target.value); onPatch(f.key, e.target.value || null) }}>
-                          <option value="">—</option>
-                          {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      ) : (
-                        <input
-                          type={f.kind === 'date' ? 'date' : f.kind === 'int' ? 'number' : f.kind === 'email' ? 'email' : f.kind === 'tel' ? 'tel' : 'text'}
-                          value={form[f.key] ?? ''} placeholder="—"
-                          maxLength={f.kind === 'state' ? 2 : undefined}
-                          onChange={e => set(f.key, f.kind === 'state' ? e.target.value.toUpperCase() : e.target.value)}
-                          onBlur={() => commit(f)}
-                          className={INPUT + (f.kind === 'date' ? ' dark:[color-scheme:dark]' : '')}
-                        />
-                      )}
-                    </div>
-                  ) : hasValue(l[f.key]) ? (
-                    <ViewField key={f.key} f={f} value={l[f.key]} />
-                  ) : null)}
+                  {filled.map(f => <ViewField key={f.key} f={f} value={l[f.key]} />)}
                 </div>
               )}
-              {(sec.flags ?? []).length > 0 && (
-                editing ? (
-                  <div className="flex flex-wrap gap-5 mt-4">
-                    {sec.flags.map(fl => (
-                      <label key={fl.key} className="flex items-center gap-2 cursor-pointer select-none">
-                        <input type="checkbox" checked={!!l[fl.key]} onChange={e => onPatch(fl.key, e.target.checked)} className="w-5 h-5 rounded accent-accent" />
-                        <span className="text-base text-gray-800 dark:text-white/85">{fl.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : flagsOn.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {flagsOn.map(fl => (
-                      <span key={fl.key} className={`text-sm font-bold px-3 py-1 rounded-full ${fl.tone === 'warn' ? 'bg-accent/10 text-gray-900 dark:text-white border border-accent/50' : NEUTRAL_BADGE}`}>
-                        {fl.label}
-                      </span>
-                    ))}
-                  </div>
-                )
+              {flagsOn.length > 0 && (
+                <div className={`flex flex-wrap gap-2 ${filled.length > 0 ? 'mt-3' : ''}`}>
+                  {flagsOn.map(fl => (
+                    <span key={fl.key} className={`text-sm font-bold px-3 py-1 rounded-full ${fl.tone === 'warn' ? 'bg-accent/10 text-gray-900 dark:text-white border border-accent/50' : NEUTRAL_BADGE}`}>
+                      {fl.label}
+                    </span>
+                  ))}
+                </div>
               )}
             </Card>
           )
         })}
 
         {/* Notes */}
-        <Card title="Lead notes">
+        <Card title={recruiting ? 'Notes & pre-licensing progress' : 'Lead notes'}>
           <textarea
-            value={form.notes ?? ''}
-            onChange={e => set('notes', e.target.value)}
-            onBlur={() => { const v = (form.notes ?? '').trim() || null; if (v !== (hasValue(l.notes) ? l.notes : null)) onPatch('notes', v) }}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={() => { const v = notes.trim() || null; if (v !== (hasValue(l.notes) ? l.notes : null)) onPatch('notes', v) }}
             rows={4}
-            placeholder="Anything worth remembering about this lead…"
+            placeholder={recruiting ? 'e.g. Enrolled at Kaplan, chapter 5 of 15…' : 'Anything worth remembering about this lead…'}
             className={INPUT + ' resize-y'}
           />
         </Card>

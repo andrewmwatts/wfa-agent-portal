@@ -1,15 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
 import BulkLeadImportModal from '../components/BulkLeadImportModal'
 import LeadListCard from '../components/leads/LeadListCard'
-import { SOURCE_DISPLAY, typeCfg, getLeadTZ } from '../components/leads/leadHelpers'
+import { SOURCE_DISPLAY } from '../components/leads/leadHelpers'
 import CalendarEventModal from '../components/CalendarEventModal'
-import { fmtDate, fmtDateTime } from '../utils/format'
+import { fmtDateTime, fmtPhone, fmtPhoneInput, phoneDigits } from '../utils/format'
 import { useMinSm, useMinLg, useMinXl } from '../hooks/useMediaQuery'
+import useElementWidth from '../hooks/useElementWidth'
 import MoreMenu from '../components/ui/MoreMenu'
 import PaneTabs from '../components/leads/PaneTabs'
+import DialStrip from '../components/leads/DialStrip'
+import Icon from '../components/leads/icons'
 // Re-exported for RecruitingPage, which imports it from this module
 export { fmtDateTime }
 
@@ -20,6 +23,7 @@ const ScriptPane = lazy(() => import('../components/ScriptPane'))
 const CqfView = lazy(() => import('../components/leads/CqfView'))
 // Same for the lead card panel — the list renders without it.
 const LeadPanel = lazy(() => import('../components/leads/LeadPanel'))
+const LeadEditView = lazy(() => import('../components/leads/LeadEditView'))
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 
@@ -113,6 +117,12 @@ export default function LeadsPage() {
   const [statusSaving, setStatusSaving] = useState(false)
   const [attemptError, setAttemptError] = useState('')
   const [cqfOpen,      setCqfOpen]      = useState(false)
+  const [editOpen,     setEditOpen]     = useState(false)   // the Edit lead data screen
+
+  // Dial Mode: the page takes the whole screen — no app header or navigation, no page title,
+  // setup / import / add, or tabs — leaving the list, the lead card and the script, with the
+  // Quick Log counters across the top.
+  const [dialMode, setDialMode] = useState(false)
 
   // Modals
   const [showAddLead,   setShowAddLead]   = useState(false)
@@ -123,16 +133,33 @@ export default function LeadsPage() {
   const [scriptsOpen, setScriptsOpen] = useState(false)
   const [scriptId,    setScriptId]    = useState('default-best')
 
-  // Layout. 1024–1279px (iPad landscape): the lead docks beside a 320px list in a 640px pane
-  // and Scripts / CQF become tabs in it. Below 1024 the lead opens full width over the list;
-  // from 1280 up the script pane sits beside the card (see the drawer below).
+  // Layout. The lead opens in a pane on the right; the script opens as a second pane to its left.
+  //   phone (<768)       the lead is full screen; scripts replace it as a full-screen overlay
+  //   768–1023           the lead is full width over the list; with scripts open it narrows to 420px
+  //                      and the script fills the space to its left
+  //   1024–1279 (iPad    the lead docks beside a 320px list in a 640px pane (Lead / CQF tabs); with
+  //   landscape)         scripts open it narrows to 420px and the script covers the list
+  //   1280–1439          a 520px lead pane; with scripts open it narrows to 420px and the script
+  //                      covers the list (side by side there would leave the list ~150px)
+  //   1440+              scripts open as a 440px pane beside a 460px lead pane, so the list keeps
+  //                      about 300px and the next lead is one tap away (520 / 560 from 1920px)
   const isMinSm = useMinSm()
   const isMinLg = useMinLg()
   const isMinXl = useMinXl()
   const docked      = isMinLg && !isMinXl
-  const compactList = !isMinSm || (docked && !!selected)   // list column is ~320–380px wide
-  const paneTab     = cqfOpen ? 'cqf' : scriptsOpen ? 'scripts' : 'lead'
-  function setPaneTab(t) { setCqfOpen(t === 'cqf'); setScriptsOpen(t === 'scripts') }
+  const paneTab     = cqfOpen ? 'cqf' : 'lead'
+  function setPaneTab(t) { setCqfOpen(t === 'cqf'); setEditOpen(false) }
+
+  // The header, search and filters switch to their compact form, and the cards stack their call /
+  // text / calendar buttons under the details, according to the room the page and the list have —
+  // a phone screen, or panes open beside the list
+  const [pageEl, setPageEl] = useState(null)
+  const [listEl, setListEl] = useState(null)
+  const pageWidth    = useElementWidth(pageEl)
+  const listWidth    = useElementWidth(listEl)
+  // Dial Mode drops the sidebar, so the panes have more room and side-by-side starts sooner
+  const compactList  = pageWidth > 0 ? pageWidth < 640 : (!isMinSm || (docked && !!selected))
+  const stackedCards = listWidth > 0 && listWidth < 460
 
   // ── Load ─────────────────────────────────────────────────────────────────────
 
@@ -172,9 +199,18 @@ export default function LeadsPage() {
     }
   }, [])
 
+  // The page is a fixed layer in Dial Mode; keep the page underneath from scrolling
+  useEffect(() => {
+    if (!dialMode) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [dialMode])
+
   async function openLead(lead) {
     setSelected(lead)
     setCqfOpen(false)
+    setEditOpen(false)
     setAttemptError('')
     setActLoading(true)
     try {
@@ -183,7 +219,7 @@ export default function LeadsPage() {
     } finally { setActLoading(false) }
   }
 
-  function closeDetail() { setSelected(null); setActivity([]); setScriptsOpen(false); setCqfOpen(false) }
+  function closeDetail() { setSelected(null); setActivity([]); setScriptsOpen(false); setCqfOpen(false); setEditOpen(false) }
 
   // ── Lead mutations ────────────────────────────────────────────────────────────
 
@@ -278,14 +314,22 @@ export default function LeadsPage() {
     setStatusSaving(false)
   }
 
+  // Saves one field of the open lead. Resolves true when it was stored. Phone numbers are
+  // stored as bare digits and shown hyphenated.
   async function patchLeadField(field, value) {
-    if (!selected) return
+    if (!selected) return false
+    if (field === 'phone' && value) value = phoneDigits(value)
+    const prev = selected[field]
     patchLeadLocal(selected.id, { [field]: value })
-    await fetch(`/api/leads?id=${selected.id}`, {
-      method: 'PATCH',
-      headers: authHeaders(),
-      body: JSON.stringify({ [field]: value }),
-    })
+    try {
+      const res = await fetch(`/api/leads?id=${selected.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ [field]: value }),
+      })
+      if (!res.ok) { patchLeadLocal(selected.id, { [field]: prev }); return false }
+      return true
+    } catch { patchLeadLocal(selected.id, { [field]: prev }); return false }
   }
 
   async function saveCallback(val) {
@@ -321,7 +365,7 @@ export default function LeadsPage() {
   async function handleAddLead(formData) {
     const res = await fetch('/api/leads', {
       method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ sfg_id: sfgId, ...formData }),
+      body: JSON.stringify({ sfg_id: sfgId, ...formData, ...(formData.phone ? { phone: phoneDigits(formData.phone) } : {}) }),
     })
     if (res.ok) {
       const { lead } = await res.json()
@@ -353,11 +397,13 @@ export default function LeadsPage() {
 
   const displayLeads = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const qDigits = q.replace(/\D/g, '')
     let list = leads.filter(l => {
       if (l.lead_type === 'Recruiting' || l.category === 'recruiting') return false
       const matchQ = !q
         || l.name.toLowerCase().includes(q)
         || (l.phone || '').includes(q)
+        || (qDigits.length >= 3 && phoneDigits(l.phone).includes(qDigits))
         || (l.state || '').toLowerCase() === q
         || (l.email || '').toLowerCase().includes(q)
       if (!matchQ) return false
@@ -412,13 +458,28 @@ export default function LeadsPage() {
     )
   }
 
-  // Room kept for the lead pane so the header, tabs and list are never hidden under it
-  const paneMr = selected && scriptsOpen ? 'lg:mr-[640px] xl:mr-[1040px] 2xl:mr-[1120px]' : selected ? 'lg:mr-[640px] xl:mr-[520px]' : ''
+  // Room kept for the panes so the header, tabs and list are never hidden under them. With scripts
+  // open below 1280px the script pane covers the list instead, so no room is kept for it.
+  // In Dial Mode the sidebar is gone, so side by side starts at 1180px (420px lead + 400px script).
+  const paneMr = selected && scriptsOpen
+    ? (dialMode ? 'min-[1180px]:mr-[820px] min-[1440px]:mr-[900px] min-[1920px]:mr-[1080px]' : 'min-[1440px]:mr-[900px] min-[1920px]:mr-[1080px]')
+    : selected ? 'lg:mr-[640px] xl:mr-[520px]' : ''
 
   return (
-    <div className={`flex flex-col h-full transition-[margin] duration-300 ${paneMr}`}>
+    <div
+      style={dialMode ? { '--nav-w': '0px' } : undefined}
+      className={`flex flex-col h-full ${dialMode ? 'fixed inset-0 z-[60] bg-gray-50 dark:bg-secondary' : ''}`}
+    >
+
+      {dialMode && (
+        <DialStrip sfgId={sfgId} canLog={!!permissions.activity?.write} onExit={() => setDialMode(false)} />
+      )}
+
+      {/* Everything below the strip makes room for the panes (the strip itself stays full width) */}
+      <div ref={setPageEl} className={`flex flex-col flex-1 min-h-0 transition-[margin] duration-300 ${paneMr}`}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {!dialMode && (<>
       <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 shrink-0">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1">Leads</h1>
         {compactList ? (
@@ -442,6 +503,12 @@ export default function LeadsPage() {
             </button>
           </>
         )}
+        <button
+          onClick={() => { setTab('leads'); setDialMode(true) }}
+          className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 h-11 sm:h-auto touch:sm:h-11 rounded-xl sm:rounded-lg border border-primary/30 dark:border-white/25 text-primary dark:text-white hover:bg-primary/5 dark:hover:bg-white/10 transition-colors whitespace-nowrap"
+        >
+          <Icon name="phone" className="w-4 h-4" />{compactList ? 'Dial' : 'Dial Mode'}
+        </button>
         <button
           onClick={() => setShowAddLead(true)}
           className="flex items-center gap-1.5 text-sm px-4 py-1.5 h-11 sm:h-auto touch:sm:h-11 rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 transition-colors whitespace-nowrap"
@@ -471,6 +538,7 @@ export default function LeadsPage() {
           </button>
         ))}
       </div>
+      </>)}
 
       {/* ── Tab body ───────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-hidden flex">
@@ -597,9 +665,9 @@ export default function LeadsPage() {
                   <p className="text-sm">No leads found</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div ref={setListEl} className="space-y-3">
                   {displayLeads.map(l => (
-                    <LeadListCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} statuses={STATUSES} stacked={docked && !!selected} />
+                    <LeadListCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} statuses={STATUSES} stacked={stackedCards} />
                   ))}
                 </div>
               )}
@@ -677,13 +745,15 @@ export default function LeadsPage() {
         {/* Backdrop (below 1024px, where the lead covers the list) */}
         {selected && (
           <div
-            className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
+            className={`fixed inset-x-0 bottom-0 ${dialMode ? 'top-[var(--header-h)]' : 'top-0'} z-30 bg-black/40 backdrop-blur-sm lg:hidden`}
             onClick={closeDetail}
           />
         )}
 
-        {/* Drawer — full width below 1024, a docked 640px pane at 1024–1279, 520px from 1280 */}
-        <div className={`fixed top-[var(--header-h)] right-0 bottom-0 z-30 w-full lg:w-[640px] xl:w-[520px] max-lg:pb-[env(safe-area-inset-bottom)] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
+        {/* Lead pane — full width below 768, a 640px docked pane at 1024–1279, 520px from 1280. With
+            scripts open it narrows to 420px (about a phone's width) so the script pane can sit to its
+            left: 460px from 1440, 520px from 1920. */}
+        <div className={`fixed top-[var(--header-h)] right-0 bottom-0 z-30 w-full ${scriptsOpen ? 'md:w-[420px] min-[1440px]:w-[460px] min-[1920px]:w-[520px]' : 'lg:w-[640px] xl:w-[520px]'} max-lg:pb-[env(safe-area-inset-bottom)] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
           {selected && (
             <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
               <LeadPanel
@@ -700,23 +770,20 @@ export default function LeadsPage() {
                 onCallbackChange={saveCallback}
                 onPatch={patchLeadField}
                 onOpenCqf={() => setCqfOpen(true)}
+                onEdit={() => setEditOpen(true)}
                 scriptsOpen={scriptsOpen}
                 onToggleScripts={() => setScriptsOpen(o => !o)}
                 hideClose={docked}
-                tabsNode={docked ? <PaneTabs value={paneTab} onChange={setPaneTab} onClose={closeDetail} /> : null}
-                overrideBody={docked && paneTab === 'scripts' ? (
-                  <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
-                    <ScriptPane
-                      pane
-                      personalScripts={personalPaneScripts}
-                      activeId={scriptId}
-                      onSelect={setScriptId}
-                      onClose={() => setPaneTab('lead')}
-                      onManage={() => { closeDetail(); setTab('scripts') }}
-                      context={selected.lead_type}
-                    />
-                  </Suspense>
-                ) : docked && paneTab === 'cqf' ? (
+                tabsNode={docked ? (
+                  <PaneTabs
+                    value={paneTab}
+                    onChange={setPaneTab}
+                    onClose={closeDetail}
+                    scriptsOpen={scriptsOpen}
+                    onToggleScripts={() => setScriptsOpen(o => !o)}
+                  />
+                ) : null}
+                overrideBody={docked && cqfOpen ? (
                   <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
                     <CqfView
                       pane
@@ -726,22 +793,34 @@ export default function LeadsPage() {
                       onSave={saveLeadFields}
                     />
                   </Suspense>
+                ) : docked && editOpen ? (
+                  <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+                    <LeadEditView
+                      pane
+                      key={selected.id}
+                      lead={selected}
+                      onClose={() => setEditOpen(false)}
+                      onPatch={patchLeadField}
+                    />
+                  </Suspense>
                 ) : null}
               />
             </Suspense>
           )}
         </div>
 
-        {/* Script pane — to the left of the card, so both can be used at once (1280px and up,
-            and as a full-width overlay below 1024) */}
-        {selected && scriptsOpen && !cqfOpen && !docked && (
+        {/* Script pane — to the left of the lead card, so both can be used at once (768px and up;
+            full-screen overlay on phones). While the CQF is full screen below 1024px or from 1280px
+            up, the script sits in the CQF's own left column instead. */}
+        {selected && scriptsOpen && (docked || !cqfOpen) && !(editOpen && !docked) && (
           <Suspense fallback={null}>
             <ScriptPane
+              dial={dialMode}
               personalScripts={personalPaneScripts}
               activeId={scriptId}
               onSelect={setScriptId}
               onClose={() => setScriptsOpen(false)}
-              onManage={() => { closeDetail(); setTab('scripts') }}
+              onManage={() => { closeDetail(); setDialMode(false); setTab('scripts') }}
               context={selected.lead_type}
             />
           </Suspense>
@@ -749,7 +828,7 @@ export default function LeadsPage() {
 
         {/* CQF — full-screen over the page, with the script pane in its left column */}
         {selected && cqfOpen && !docked && (
-          <Suspense fallback={<div className="fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-16 xl:left-56 z-40 bg-gray-50 dark:bg-secondary" />}>
+          <Suspense fallback={<div className="fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-[var(--nav-w,4rem)] xl:left-[var(--nav-w,14rem)] z-40 bg-gray-50 dark:bg-secondary" />}>
             <CqfView
               key={selected.id}
               lead={selected}
@@ -765,7 +844,7 @@ export default function LeadsPage() {
                     activeId={scriptId}
                     onSelect={setScriptId}
                     onClose={() => setScriptsOpen(false)}
-                    onManage={() => { closeDetail(); setTab('scripts') }}
+                    onManage={() => { closeDetail(); setDialMode(false); setTab('scripts') }}
                     context={selected.lead_type}
                   />
                 </Suspense>
@@ -773,6 +852,19 @@ export default function LeadsPage() {
             />
           </Suspense>
         )}
+
+        {/* Edit lead data — full screen over the page, like the CQF (inside the lead pane when docked) */}
+        {selected && editOpen && !docked && (
+          <Suspense fallback={<div className="fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-[var(--nav-w,4rem)] xl:left-[var(--nav-w,14rem)] z-40 bg-gray-50 dark:bg-secondary" />}>
+            <LeadEditView
+              key={selected.id}
+              lead={selected}
+              onClose={() => setEditOpen(false)}
+              onPatch={patchLeadField}
+            />
+          </Suspense>
+        )}
+      </div>
       </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
@@ -798,647 +890,6 @@ export default function LeadsPage() {
         />
       )}
     </div>
-  )
-}
-
-// ─── Lead Card ─────────────────────────────────────────────────────────────────
-
-export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
-  const { userProfile } = useAuth()
-  const calConnected = userProfile?.google_calendar_connected ?? false
-  const [showCalModal, setShowCalModal] = useState(false)
-
-  const sMap = Object.fromEntries(statuses.map(s => [s.key, s]))
-  const s    = sMap[l.status] ?? statuses[0]
-  const tc  = typeCfg(l.lead_type)
-  const tz  = getLeadTZ(l.state)
-  const now = new Date()
-  const cb  = l.callback_at ? new Date(l.callback_at) : null
-  const cbOverdue = cb && cb < now
-  const cbToday   = cb && !cbOverdue && cb <= new Date(now.setHours(23, 59, 59))
-
-  return (
-    <>
-      {showCalModal && (
-        <CalendarEventModal lead={l} onClose={() => setShowCalModal(false)} />
-      )}
-      <div
-        onClick={() => onClick(l)}
-        className={`relative bg-white dark:bg-primary/30 border rounded-xl cursor-pointer transition-all overflow-hidden ${
-          selected
-            ? 'border-accent/50 shadow-sm shadow-accent/10'
-            : 'border-primary/15 dark:border-white/10 hover:border-accent/30'
-        }`}
-      >
-        {/* Left accent bar */}
-        <div className={`absolute left-0 top-0 bottom-0 w-1 ${s.bar}`} />
-
-        <div className="pl-3 pr-4 py-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-gray-900 dark:text-white">{l.name}</span>
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${tc.cls}`}>{tc.label}</span>
-                {l.medical && <span className="text-xs font-bold text-orange-600 dark:text-orange-400">⚠️ Med Hx</span>}
-                {l.smoker  && <span className="text-xs text-gray-400 dark:text-white/30">🚬</span>}
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                {l.phone && <span className="text-xs text-gray-500 dark:text-white/50">{l.phone}</span>}
-                {l.state && <span className="text-xs text-gray-500 dark:text-white/50">📍 {l.state}</span>}
-                {l.age   && <span className="text-xs text-gray-500 dark:text-white/50">Age {l.age}</span>}
-                {tz && (
-                  <span className={`text-xs font-semibold ${tz.goodTime ? tz.color : 'text-red-500 dark:text-red-400'}`}>
-                    {tz.label} {tz.timeStr}{!tz.goodTime ? ' ⛔' : ''}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Quick call / text / calendar */}
-            <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-              {l.phone && (
-                <a
-                  href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400 font-bold hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors"
-                >📞</a>
-              )}
-              {l.phone && (
-                <a
-                  href={`sms:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
-                >💬</a>
-              )}
-              {calConnected && (
-                <button
-                  onClick={() => setShowCalModal(true)}
-                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
-                >📅</button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between mt-2 gap-2">
-            <StatusPill status={l.status} statuses={statuses} />
-            {cb && (
-              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md border ${
-                cbOverdue ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
-                : cbToday ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
-                : 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20'
-              }`}>
-                📅 {cbOverdue ? 'Overdue' : cbToday ? 'Today' : fmtDateTime(l.callback_at)}
-              </span>
-            )}
-          </div>
-
-          {/* Contracting status — shown on recruiting leads linked to a hire */}
-          {l.hired_sfg_id && l.contracting && (
-            <ContractingStatus contracting={l.contracting} isStub={l.is_stub} />
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
-
-// ─── Contracting Status Card ────────────────────────────────────────────────────
-
-function ContractingStatus({ contracting: c, isStub }) {
-  const hasIssue    = !!c.profile_issues
-  const isComplete  = !!c.contracting_complete
-  const hasContracts = c.contract_count > 0
-  const wasSent     = !!c.contracting_to_producer
-  const eandoOk     = !c.no_eando  // no_eando=true means E&O is missing
-
-  const { status, statusCls } = hasIssue
-    ? { status: `⚠ ${c.profile_issues}`, statusCls: 'text-red-600 dark:text-red-400' }
-    : isComplete
-    ? { status: 'Contracting complete', statusCls: 'text-green-700 dark:text-green-400' }
-    : hasContracts
-    ? { status: `${c.contract_count} of ${c.total_carriers}`, statusCls: 'text-amber-700 dark:text-amber-400' }
-    : wasSent
-    ? { status: `Sent ${fmtDate(c.contracting_to_producer)}`, statusCls: 'text-orange-600 dark:text-orange-400' }
-    : { status: 'Not started', statusCls: 'text-gray-400 dark:text-white/30' }
-
-  const borderCls = hasIssue
-    ? 'border-red-200 dark:border-red-500/20'
-    : isComplete
-    ? 'border-green-200 dark:border-green-500/20'
-    : hasContracts || wasSent
-    ? 'border-amber-200 dark:border-amber-500/20'
-    : 'border-gray-200 dark:border-white/10'
-
-  return (
-    <div className={`mt-2 rounded-lg border text-xs overflow-hidden ${borderCls}`}>
-      <div className="flex items-center justify-between gap-2 px-2 py-1 bg-white/60 dark:bg-primary/20">
-        <span className="font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40 shrink-0">Contracting</span>
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`shrink-0 ${eandoOk ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-            {eandoOk ? '✓ E&O' : '✕ E&O'}
-          </span>
-          <span className={`font-semibold truncate ${statusCls}`}>{status}</span>
-        </div>
-      </div>
-      {isStub && (
-        <div className="px-2 py-0.5 text-gray-400 dark:text-white/25 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
-          Auto-generated record
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Lead Detail ───────────────────────────────────────────────────────────────
-
-export function LeadDetail({
-  lead: l, activity, actLoading,
-  noteText, setNoteText, showNoteBox, setShowNoteBox,
-  statusSaving, onClose, onCall, onText, onNote, onStatusChange, onCallbackChange, onPatch,
-  statuses = STATUSES, isRecruiting = false,
-  scriptsOpen = false, onToggleScripts,
-}) {
-  const { userProfile } = useAuth()
-  const calConnected = userProfile?.google_calendar_connected ?? false
-  const [showCalModal, setShowCalModal] = useState(false)
-  const [form, setForm] = useState({})
-
-  // Reset local form when a different lead is opened
-  useEffect(() => {
-    setForm({
-      name:                   l.name                   || '',
-      preferred_name:         l.preferred_name         || '',
-      spouse_name:            l.spouse_name            || '',
-      phone:                  l.phone                  || '',
-      email:                  l.email                  || '',
-      state:                  l.state                  || '',
-      zip:                    l.zip                    || '',
-      city:                   l.city                   || '',
-      county:                 l.county                 || '',
-      gender:                 l.gender                 || '',
-      age:                    l.age                    ?? '',
-      dob:                    l.dob                    || '',
-      marital_status:         l.marital_status         || '',
-      household_size:         l.household_size         || '',
-      has_children:           l.has_children           || '',
-      children_age_range:     l.children_age_range     || '',
-      length_of_residence:    l.length_of_residence    || '',
-      homeowner:              l.homeowner              || '',
-      lead_type:              l.lead_type              || 'Life Insurance - Standard',
-      coverage:               l.coverage               || '',
-      employment:             l.employment             || '',
-      income:                 l.income                 || '',
-      beneficiary:            l.beneficiary            || '',
-      smoker:                 l.smoker                 ?? false,
-      medical:                l.medical                ?? false,
-      motivation:             l.motivation             || '',
-      hobby:                  l.hobby                  || '',
-      source:                 l.source                 || '',
-      notes:                  l.notes                  || '',
-      vendor_lead_id:         l.vendor_lead_id         || '',
-      reachability_score:     l.reachability_score     || '',
-      phone_activity_score:   l.phone_activity_score   ?? '',
-      known_litigator:        l.known_litigator        ?? false,
-      phone_line_type:        l.phone_line_type        || '',
-      phone_status:           l.phone_status           || '',
-      assigned_date:          l.assigned_date          || '',
-      parse_source:           l.parse_source           || '',
-      raw_subject:            l.raw_subject            || '',
-    })
-  }, [l.id])
-
-  function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
-
-  function save(k, transform) {
-    const raw = form[k]
-    const val = transform ? transform(raw) : (raw === '' ? null : raw)
-    const orig = l[k] ?? null
-    // Normalise for comparison
-    const normVal  = val  === '' ? null : val
-    const normOrig = orig === '' ? null : orig
-    if (normVal !== normOrig) onPatch(k, normVal)
-  }
-
-  const tz    = getLeadTZ(form.state || l.state)
-  const cbVal = l.callback_at ? new Date(l.callback_at).toISOString().slice(0, 16) : ''
-
-  const ACT_ICON = { call: '📞', text: '💬', note: '📝', status: '🔄', callback: '📅' }
-
-  const groupedActivity = useMemo(() => {
-    const groups = {}
-    for (const a of activity) {
-      const day = new Date(a.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-      if (!groups[day]) groups[day] = []
-      groups[day].push(a)
-    }
-    return groups
-  }, [activity])
-
-  // Small shared input style for the detail pane
-  const F = 'w-full text-xs rounded-md px-2 py-1 max-sm:py-2.5 touch:py-2 border bg-transparent hover:bg-gray-50 dark:hover:bg-white/5 text-gray-800 dark:text-white/80 border-transparent hover:border-gray-200 dark:hover:border-white/15 focus:bg-white dark:focus:bg-white/5 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors'
-  const FL = 'text-xs text-gray-500 dark:text-white/50 mb-0.5'
-
-  return (
-    <>
-      {showCalModal && (
-        <CalendarEventModal lead={l} onClose={() => setShowCalModal(false)} />
-      )}
-
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-white/10 shrink-0">
-        <button onClick={onClose} aria-label="Close" className="w-11 h-11 sm:w-9 sm:h-9 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-base">←</button>
-        <div className="flex-1 min-w-0">
-          <input
-            value={form.name ?? ''}
-            onChange={e => set('name', e.target.value)}
-            onBlur={() => save('name')}
-            className="text-sm font-bold text-gray-900 dark:text-white bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-white/20 focus:border-accent/50 focus:outline-none w-full truncate transition-colors"
-          />
-          <p className="text-xs text-gray-400 dark:text-white/40">{l.lead_type} · {l.state || '—'}
-            {tz && <span className={` · ${tz.color} font-semibold`}> {tz.label} {tz.timeStr}{!tz.goodTime ? ' ⛔' : ' ✓'}</span>}
-          </p>
-        </div>
-        <StatusPill status={l.status} statuses={statuses} />
-      </div>
-
-      {/* Action bar */}
-      <div className="flex gap-2 px-4 py-3 border-b border-gray-100 dark:border-white/5 shrink-0">
-        {[
-          { label: 'Call', icon: '📞', cls: 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400',  onClick: onCall },
-          { label: 'Text', icon: '💬', cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',      onClick: () => onText('') },
-          { label: 'Note', icon: '📝', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',  onClick: () => setShowNoteBox(n => !n) },
-          ...(onToggleScripts ? [{
-            label: 'Scripts', icon: '📜',
-            cls: scriptsOpen
-              ? 'bg-accent/15 text-accent ring-1 ring-accent/40'
-              : 'bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-white/70',
-            onClick: onToggleScripts,
-          }] : []),
-        ].map(btn => (
-          <button key={btn.label} onClick={btn.onClick}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-xs font-semibold ${btn.cls} transition-colors hover:opacity-80`}>
-            <span className="text-base">{btn.icon}</span>{btn.label}
-          </button>
-        ))}
-        <button
-          onClick={() => calConnected ? setShowCalModal(true) : undefined}
-          title={calConnected ? 'Schedule calendar event' : 'Connect Google Calendar in your profile to use this'}
-          className={`flex flex-col items-center gap-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors ${
-            calConnected
-              ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 hover:opacity-80 cursor-pointer'
-              : 'bg-gray-50 text-gray-300 dark:bg-white/[0.03] dark:text-white/20 cursor-not-allowed'
-          }`}
-        >
-          <span className="text-base">📅</span>
-          <span>Appt</span>
-        </button>
-        <select
-          value={l.status}
-          onChange={e => onStatusChange(e.target.value)}
-          disabled={statusSaving}
-          className="flex-1 text-xs font-semibold rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-white/70 px-2 py-1 min-h-11 touch:min-h-11 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
-        >
-          {statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-      </div>
-
-      {/* Inline note box */}
-      {showNoteBox && (
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02] shrink-0">
-          <textarea
-            value={noteText}
-            onChange={e => setNoteText(e.target.value)}
-            placeholder="Add a note…"
-            rows={3}
-            className={INPUT_CLS + ' resize-none'}
-            autoFocus
-          />
-          <div className="flex gap-2 mt-2">
-            <button onClick={onNote} disabled={!noteText.trim()} className="text-xs px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors">Save</button>
-            <button onClick={() => { setShowNoteBox(false); setNoteText('') }} className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 text-gray-500 dark:text-white/50 transition-colors">Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto">
-
-        {/* Callback scheduler */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <label className="block text-xs font-semibold text-gray-400 dark:text-white/40 uppercase tracking-wide mb-2">📅 Schedule Callback</label>
-          <div className="flex gap-2 items-center">
-            <input
-              type="datetime-local"
-              defaultValue={cbVal}
-              key={cbVal}
-              onBlur={e => onCallbackChange(e.target.value)}
-              className={INPUT_CLS + ' flex-1 dark:[color-scheme:dark] text-xs'}
-            />
-            {l.callback_at && (
-              <button onClick={() => onCallbackChange('')} className="text-xs px-3 py-1 min-h-11 touch:min-h-11 rounded-lg border border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap">Clear</button>
-            )}
-          </div>
-        </div>
-
-        {/* Contact info */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <SectionLabel>Contact Info</SectionLabel>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <div>
-              <p className={FL}>Phone</p>
-              <input type="tel" value={form.phone ?? ''} onChange={e => set('phone', e.target.value)} onBlur={() => save('phone')} className={F} placeholder="—" />
-            </div>
-            <div className="grid grid-cols-2 gap-1">
-              <div>
-                <p className={FL}>State</p>
-                <input value={form.state ?? ''} onChange={e => set('state', e.target.value.toUpperCase().slice(0,2))} onBlur={() => save('state')} className={F} placeholder="—" maxLength={2} />
-              </div>
-              <div>
-                <p className={FL}>ZIP</p>
-                <input value={form.zip ?? ''} onChange={e => set('zip', e.target.value)} onBlur={() => save('zip')} className={F} placeholder="—" />
-              </div>
-            </div>
-            <div>
-              <p className={FL}>City</p>
-              <input value={form.city ?? ''} onChange={e => set('city', e.target.value)} onBlur={() => save('city')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>County</p>
-              <input value={form.county ?? ''} onChange={e => set('county', e.target.value)} onBlur={() => save('county')} className={F} placeholder="—" />
-            </div>
-            <div className="col-span-2">
-              <p className={FL}>Email</p>
-              <input type="email" value={form.email ?? ''} onChange={e => set('email', e.target.value)} onBlur={() => save('email')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Preferred Name</p>
-              <input value={form.preferred_name ?? ''} onChange={e => set('preferred_name', e.target.value)} onBlur={() => save('preferred_name')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Spouse Name</p>
-              <input value={form.spouse_name ?? ''} onChange={e => set('spouse_name', e.target.value)} onBlur={() => save('spouse_name')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Source</p>
-              <select value={form.source ?? ''} onChange={e => set('source', e.target.value)} onBlur={() => save('source')} className={F + ' cursor-pointer'}>
-                <option value="">—</option>
-                {Object.entries(SOURCE_DISPLAY).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <p className={FL}>Assigned Date</p>
-              <input type="date" value={form.assigned_date ?? ''} onChange={e => set('assigned_date', e.target.value)} onBlur={() => save('assigned_date')} className={F + ' dark:[color-scheme:dark]'} />
-            </div>
-            <div>
-              <p className={FL}>Added</p>
-              <p className="text-xs font-semibold text-gray-800 dark:text-white/80 px-2 py-1">{fmtDate(l.added)}</p>
-            </div>
-          </div>
-        </div>
-
-        {isRecruiting ? (
-          /* ── Recruiting: Status section ── */
-          <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-            <SectionLabel>Status</SectionLabel>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              <div className="col-span-2">
-                <p className={FL}>Source</p>
-                <select value={form.source ?? ''} onChange={e => { set('source', e.target.value); onPatch('source', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                  <option value="">—</option>
-                  {Object.entries(SOURCE_DISPLAY).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <p className={FL}>Interview Date</p>
-                <input type="date" value={form.assigned_date ?? ''} onChange={e => set('assigned_date', e.target.value)} onBlur={() => save('assigned_date')} className={F + ' dark:[color-scheme:dark]'} />
-              </div>
-              <div>
-                <p className={FL}>Added</p>
-                <p className="text-xs font-semibold text-gray-800 dark:text-white/80 px-2 py-1">{fmtDate(l.added)}</p>
-              </div>
-              <div className="col-span-2">
-                <p className={FL}>Pre-Licensing Progress</p>
-                <textarea
-                  value={form.notes ?? ''}
-                  onChange={e => set('notes', e.target.value)}
-                  onBlur={() => save('notes')}
-                  rows={3}
-                  placeholder="e.g. Enrolled at Kaplan, chapter 5 of 15…"
-                  className={F + ' resize-y w-full'}
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Lead details */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-              <SectionLabel>Lead Details</SectionLabel>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                <div className="col-span-2">
-                  <p className={FL}>Campaign</p>
-                  <select value={form.lead_type ?? ''} onChange={e => { set('lead_type', e.target.value); onPatch('lead_type', e.target.value) }} className={F + ' cursor-pointer'}>
-                    <option value="Life Insurance - Standard">Life Insurance - Standard</option>
-                    <option value="Life Insurance - Premium">Life Insurance - Premium</option>
-                    <option value="Mortgage Protection">Mortgage Protection</option>
-                  </select>
-                </div>
-                <div>
-                  <p className={FL}>Gender</p>
-                  <select value={form.gender ?? ''} onChange={e => { set('gender', e.target.value); onPatch('gender', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                    <option value="">—</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <p className={FL}>Age</p>
-                  <input type="number" min="0" max="120" value={form.age ?? ''} onChange={e => set('age', e.target.value)} onBlur={() => save('age', v => v === '' ? null : parseInt(v) || null)} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Date of Birth</p>
-                  <input type="date" value={form.dob ?? ''} onChange={e => set('dob', e.target.value)} onBlur={() => save('dob')} className={F + ' dark:[color-scheme:dark]'} />
-                </div>
-                <div>
-                  <p className={FL}>Marital Status</p>
-                  <select value={form.marital_status ?? ''} onChange={e => { set('marital_status', e.target.value); onPatch('marital_status', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                    <option value="">—</option>
-                    <option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option>
-                  </select>
-                </div>
-                <div>
-                  <p className={FL}>Coverage</p>
-                  <input value={form.coverage ?? ''} onChange={e => set('coverage', e.target.value)} onBlur={() => save('coverage')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Beneficiary</p>
-                  <input value={form.beneficiary ?? ''} onChange={e => set('beneficiary', e.target.value)} onBlur={() => save('beneficiary')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Employment</p>
-                  <input value={form.employment ?? ''} onChange={e => set('employment', e.target.value)} onBlur={() => save('employment')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Income</p>
-                  <input value={form.income ?? ''} onChange={e => set('income', e.target.value)} onBlur={() => save('income')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Motivation</p>
-                  <input value={form.motivation ?? ''} onChange={e => set('motivation', e.target.value)} onBlur={() => save('motivation')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Hobby / Security Word</p>
-                  <input value={form.hobby ?? ''} onChange={e => set('hobby', e.target.value)} onBlur={() => save('hobby')} className={F} placeholder="—" />
-                </div>
-              </div>
-
-              {/* Toggles */}
-              <div className="flex gap-4 mt-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!form.smoker} onChange={e => { set('smoker', e.target.checked); onPatch('smoker', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
-                  <span className="text-xs text-gray-600 dark:text-white/60">🚬 Smoker</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!form.medical} onChange={e => { set('medical', e.target.checked); onPatch('medical', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
-                  <span className="text-xs text-gray-600 dark:text-white/60">⚠️ Major Med History</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Household */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-              <SectionLabel>Household</SectionLabel>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                <div>
-                  <p className={FL}>Household Size</p>
-                  <input value={form.household_size ?? ''} onChange={e => set('household_size', e.target.value)} onBlur={() => save('household_size')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Has Children</p>
-                  <select value={form.has_children ?? ''} onChange={e => { set('has_children', e.target.value); onPatch('has_children', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                    <option value="">—</option>
-                    <option>Yes</option><option>No</option>
-                  </select>
-                </div>
-                <div>
-                  <p className={FL}>Children Age Range</p>
-                  <input value={form.children_age_range ?? ''} onChange={e => set('children_age_range', e.target.value)} onBlur={() => save('children_age_range')} className={F} placeholder="—" />
-                </div>
-                <div>
-                  <p className={FL}>Homeowner</p>
-                  <select value={form.homeowner ?? ''} onChange={e => { set('homeowner', e.target.value); onPatch('homeowner', e.target.value || null) }} className={F + ' cursor-pointer'}>
-                    <option value="">—</option>
-                    <option>Yes</option><option>No</option>
-                  </select>
-                </div>
-                <div>
-                  <p className={FL}>Length of Residence</p>
-                  <input value={form.length_of_residence ?? ''} onChange={e => set('length_of_residence', e.target.value)} onBlur={() => save('length_of_residence')} className={F} placeholder="—" />
-                </div>
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-              <SectionLabel>Notes</SectionLabel>
-              <textarea
-                value={form.notes ?? ''}
-                onChange={e => set('notes', e.target.value)}
-                onBlur={() => save('notes')}
-                rows={3}
-                placeholder="General notes about this lead…"
-                className={F + ' resize-y w-full'}
-              />
-            </div>
-          </>
-        )}
-
-        {/* Lead Metadata */}
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-          <SectionLabel>Lead Metadata</SectionLabel>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <div>
-              <p className={FL}>Vendor Lead ID</p>
-              <input value={form.vendor_lead_id ?? ''} onChange={e => set('vendor_lead_id', e.target.value)} onBlur={() => save('vendor_lead_id')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Reachability Score</p>
-              <input value={form.reachability_score ?? ''} onChange={e => set('reachability_score', e.target.value)} onBlur={() => save('reachability_score')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Phone Activity Score</p>
-              <input type="number" value={form.phone_activity_score ?? ''} onChange={e => set('phone_activity_score', e.target.value)} onBlur={() => save('phone_activity_score', v => v === '' ? null : parseInt(v) || null)} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Phone Line Type</p>
-              <input value={form.phone_line_type ?? ''} onChange={e => set('phone_line_type', e.target.value)} onBlur={() => save('phone_line_type')} className={F} placeholder="—" />
-            </div>
-            <div>
-              <p className={FL}>Phone Status</p>
-              <input value={form.phone_status ?? ''} onChange={e => set('phone_status', e.target.value)} onBlur={() => save('phone_status')} className={F} placeholder="—" />
-            </div>
-            <div className="flex items-center gap-2 pt-3">
-              <input type="checkbox" checked={!!form.known_litigator} onChange={e => { set('known_litigator', e.target.checked); onPatch('known_litigator', e.target.checked) }} className="w-3.5 h-3.5 rounded accent-accent" />
-              <span className="text-xs text-gray-600 dark:text-white/60">⚠️ Known Litigator</span>
-            </div>
-            <div className="col-span-2">
-              <p className={FL}>Parse Source</p>
-              <input value={form.parse_source ?? ''} onChange={e => set('parse_source', e.target.value)} onBlur={() => save('parse_source')} className={F} placeholder="—" />
-            </div>
-            <div className="col-span-2">
-              <p className={FL}>Raw Subject</p>
-              <input value={form.raw_subject ?? ''} onChange={e => set('raw_subject', e.target.value)} onBlur={() => save('raw_subject')} className={F} placeholder="—" />
-            </div>
-          </div>
-        </div>
-
-        {/* Activity history */}
-        <div className="px-4 py-3">
-          <SectionLabel>
-            Contact History
-            <span className="ml-2 text-gray-400 dark:text-white/30 font-normal lowercase tracking-normal">
-              {activity.filter(a => a.activity_type === 'call' || a.activity_type === 'text').length} contacts
-            </span>
-          </SectionLabel>
-          {actLoading ? (
-            <div className="space-y-2 animate-pulse">
-              {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-100 dark:bg-white/5 rounded-lg" />)}
-            </div>
-          ) : activity.length === 0 ? (
-            <p className="text-xs text-gray-400 dark:text-white/30">No activity yet. Log a call, text, or note to get started.</p>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(groupedActivity).map(([day, entries]) => (
-                <div key={day}>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-white/30 mb-2">{day}</p>
-                  <div className="space-y-2">
-                    {entries.map(a => (
-                      <div key={a.id} className="flex gap-2.5">
-                        <span className="text-sm mt-0.5 w-5 text-center shrink-0">{ACT_ICON[a.activity_type] || '📋'}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-700 dark:text-white/70">{a.body}</p>
-                          <p className="text-xs text-gray-400 dark:text-white/30">{fmtDateTime(a.created_at)}</p>
-                          {a.note && (
-                            <div className="mt-1.5 bg-amber-50 dark:bg-amber-500/5 border-l-2 border-amber-400/60 rounded-r-lg px-2.5 py-1.5">
-                              <p className="text-xs text-gray-600 dark:text-white/60 whitespace-pre-wrap">{a.note}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="h-8" />
-      </div>
-    </>
   )
 }
 
@@ -1646,11 +1097,11 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
                       )}
                       {l.phone && (
                         <a
-                          href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
+                          href={`tel:+1${phoneDigits(l.phone)}`}
                           onClick={e => e.stopPropagation()}
                           className="text-xs text-gray-400 dark:text-white/30 hover:text-green-600 dark:hover:text-green-400 block mt-0.5"
                         >
-                          {l.phone}
+                          {fmtPhone(l.phone)}
                         </a>
                       )}
                     </div>
@@ -1907,7 +1358,7 @@ export function AddLeadModal({ onClose, onSave }) {
               <LF label="First / Full Name *" span={2}><input type="text" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Jane Smith" className={INPUT_CLS} /></LF>
               <LF label="Preferred Name"><input type="text" value={form.preferred_name} onChange={e => set('preferred_name', e.target.value)} placeholder="Jane" className={INPUT_CLS} /></LF>
               <LF label="Spouse Name"><input type="text" value={form.spouse_name} onChange={e => set('spouse_name', e.target.value)} placeholder="John Smith" className={INPUT_CLS} /></LF>
-              <LF label="Phone"><input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="555-555-5555" className={INPUT_CLS} /></LF>
+              <LF label="Phone"><input type="tel" inputMode="tel" value={form.phone} onChange={e => set('phone', fmtPhoneInput(e.target.value))} placeholder="555-555-5555" className={INPUT_CLS} /></LF>
               <LF label="Email"><input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={INPUT_CLS} /></LF>
               <LF label="State"><input type="text" value={form.state} onChange={e => set('state', e.target.value)} placeholder="IN" maxLength={2} className={INPUT_CLS + ' uppercase'} /></LF>
               <LF label="Zip"><input type="text" value={form.zip} onChange={e => set('zip', e.target.value)} placeholder="46000" maxLength={5} className={INPUT_CLS} /></LF>
