@@ -6,6 +6,9 @@ import { computeChargebackExempt } from '../../shared/chargebackExempt'
 import { validateIssuedDateConsistency, validateIssuedPolicyNumber } from '../../shared/policyValidation'
 import { toInputDate, fmtDate, fmtCurrency as fmtAmt } from '../utils/format'
 import { getPolicyStatusClass } from '../utils/status'
+import MoreMenu from './ui/MoreMenu'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { useMinSm } from '../hooks/useMediaQuery'
 
 // ─── Days-to-lapse helpers (used by the "lapse" view's header pill) ──────────
 
@@ -61,8 +64,11 @@ export const POLICY_COL_MAP = {
 export const POLICY_NUMERIC_KEYS = new Set(['subm_apv', 'issued_apv', 'face_amt', 'cb_apv'])
 export const POLICY_BOOLEAN_KEYS = new Set(['not_in_opt', 'split_reset', 'chargeback_exempt'])
 
-export const INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
-export const INPUT_ERR_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-red-400 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-400/40'
+export const INPUT_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:py-3 max-sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/60'
+export const INPUT_ERR_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-red-400 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:py-3 max-sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400/40'
+
+// Field label above an input: a little larger and darker on phones, where it is read at arm's length.
+const LABEL_CLS = 'text-xs max-sm:text-[13px] max-sm:font-medium text-gray-500 dark:text-white/60 mb-0.5 max-sm:mb-1'
 
 export const STATUS_OPTIONS = ['Pending', 'Incomplete', 'Issued', 'Declined', 'Withdrawn', 'Not taken']
 
@@ -93,10 +99,10 @@ const EMPTY_DRAFT = {
 
 // ─── Helper sub-components ────────────────────────────────────────────────────
 
-export function EditField({ label, value, onChange, type = 'text', error }) {
+export function EditField({ label, value, onChange, type = 'text', error, className = '' }) {
   return (
-    <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
+    <div className={className}>
+      <p className={LABEL_CLS}>{label}</p>
       <input
         type={type}
         value={value ?? ''}
@@ -110,29 +116,71 @@ export function EditField({ label, value, onChange, type = 'text', error }) {
 
 export function CheckEditField({ label, checked, onChange }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer">
+    <label className="flex items-center gap-2 max-sm:gap-3 cursor-pointer max-sm:min-h-[44px]">
       <input
         type="checkbox"
         checked={checked}
         onChange={e => onChange(e.target.checked)}
-        className="w-4 h-4 accent-accent rounded cursor-pointer"
+        className="w-4 h-4 max-sm:w-6 max-sm:h-6 accent-accent rounded cursor-pointer"
       />
-      <span className="text-sm text-gray-700 dark:text-white/80">{label}</span>
+      <span className="text-sm max-sm:text-base text-gray-700 dark:text-white/80">{label}</span>
     </label>
   )
 }
 
-export function ModalSection({ title, children }) {
+// Wrapper for the lower-traffic sections. On a phone they sit in one rounded card
+// as folded rows (see ModalSection `collapsible`); from sm up it is plain spacing.
+export const SECTION_GROUP_CLS =
+  'sm:space-y-6 max-sm:rounded-2xl max-sm:border max-sm:border-gray-200 dark:max-sm:border-white/10 max-sm:bg-white dark:max-sm:bg-primary/30 max-sm:divide-y max-sm:divide-gray-200 dark:max-sm:divide-white/10 max-sm:overflow-hidden'
+
+/**
+ * A titled block of the policy dialog.
+ *
+ * `collapsible` sections fold into a tappable row on phones (title on the left, a
+ * one-word `summary` and a chevron on the right) and stay fully open from sm up, so
+ * the desktop dialog is unchanged. `defaultOpen` is re-evaluated on every render
+ * until the user taps the row, so a section opens by itself when it gains content
+ * or when the dialog switches to edit mode.
+ */
+export function ModalSection({ title, children, collapsible = false, summary = null, defaultOpen = false }) {
+  const isPhone = !useMinSm()
+  const [userOpen, setUserOpen] = useState(null)
+
+  if (collapsible && isPhone) {
+    const open = userOpen ?? defaultOpen
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setUserOpen(!open)}
+          aria-expanded={open}
+          className="w-full flex items-center justify-between gap-3 min-h-[56px] px-4 text-left"
+        >
+          <span className="text-base font-semibold text-gray-900 dark:text-white">{title}</span>
+          <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-white/70 min-w-0">
+            {summary != null && <span className="truncate">{summary}</span>}
+            <svg className={`w-4 h-4 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </span>
+        </button>
+        {open && <div className="px-4 pb-4">{children}</div>}
+      </div>
+    )
+  }
+
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30 mb-3">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/50 mb-3 max-sm:mb-2">{title}</p>
       {children}
     </div>
   )
 }
 
+// Two columns from sm up; on a phone a single column of label/value rows
+// (see DetailItem), so long values like Carrier use the whole width.
 export function DetailGrid({ children }) {
-  return <div className="grid grid-cols-2 gap-x-8 gap-y-3">{children}</div>
+  return <div className="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-8 sm:gap-y-3">{children}</div>
 }
 
 /**
@@ -155,15 +203,15 @@ export function SplitBreakdown({ splits, submApv, issuedApv, showSubmitted, prim
   return (
     <div className="mt-4 rounded-xl border border-gray-200 dark:border-white/15 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">Shared Credit</span>
-        <span className="text-[11px] text-gray-400 dark:text-white/35">{ordered.length} agents</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-white/50">Shared Credit</span>
+        <span className="text-xs text-gray-500 dark:text-white/50">{ordered.length} {ordered.length === 1 ? 'agent' : 'agents'}</span>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-[11px] uppercase tracking-wider text-gray-400 dark:text-white/35">
+          <tr className="text-xs uppercase tracking-wider text-gray-500 dark:text-white/50">
             <th className="text-left  font-semibold px-3 py-1.5">Agent</th>
             <th className="text-right font-semibold px-3 py-1.5">Share</th>
-            {showSubmitted && <th className="text-right font-semibold px-3 py-1.5">Submitted</th>}
+            {showSubmitted && <th className="text-right font-semibold px-3 py-1.5 max-sm:hidden">Submitted</th>}
             <th className="text-right font-semibold px-3 py-1.5">Issued</th>
           </tr>
         </thead>
@@ -175,16 +223,16 @@ export function SplitBreakdown({ splits, submApv, issuedApv, showSubmitted, prim
                 <td className="px-3 py-2 text-gray-900 dark:text-white">
                   {s.agent || s.sfg_id}
                   {norm(s.sfg_id) === norm(primarySfgId) && (
-                    <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-white/50">
+                    <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white/60">
                       Primary
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold text-accent">
+                <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900 dark:text-white">
                   {Math.round(pct * 1000) / 10}%
                 </td>
                 {showSubmitted && (
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-white/80">{fmtAmt(sub * pct)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-white/80 max-sm:hidden">{fmtAmt(sub * pct)}</td>
                 )}
                 <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-white/80">{fmtAmt(issued * pct)}</td>
               </tr>
@@ -192,7 +240,7 @@ export function SplitBreakdown({ splits, submApv, issuedApv, showSubmitted, prim
           })}
         </tbody>
       </table>
-      <p className="px-3 py-2 text-[11px] text-gray-400 dark:text-white/35 border-t border-gray-100 dark:border-white/10">
+      <p className="px-3 py-2 text-xs text-gray-500 dark:text-white/50 border-t border-gray-100 dark:border-white/10">
         The application itself counts for the primary agent only.
       </p>
     </div>
@@ -202,9 +250,9 @@ export function SplitBreakdown({ splits, submApv, issuedApv, showSubmitted, prim
 export function DetailItem({ label, value, accent }) {
   if (!value) return null
   return (
-    <div>
-      <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">{label}</p>
-      <p className={`text-sm font-medium ${accent ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-white/80'}`}>{value}</p>
+    <div className="max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-4 max-sm:py-2.5 max-sm:border-b max-sm:border-gray-100 dark:max-sm:border-white/10 max-sm:last:border-b-0">
+      <p className="text-xs max-sm:text-sm text-gray-500 dark:text-white/60 mb-0.5 max-sm:mb-0 max-sm:shrink-0">{label}</p>
+      <p className={`text-sm max-sm:text-base max-sm:text-right min-w-0 break-words font-medium ${accent ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-white/80'}`}>{value}</p>
     </div>
   )
 }
@@ -214,7 +262,7 @@ export function CheckItem({ label, value }) {
     ? value
     : !!value && !['false', '0', 'no', 'n', ''].includes(String(value).trim().toLowerCase())
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 max-sm:min-h-[36px]">
       <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
         ${checked ? 'bg-accent/20 border-accent/50' : 'bg-gray-50 dark:bg-white/5 border-gray-300 dark:border-white/20'}`}>
         {checked && (
@@ -223,7 +271,7 @@ export function CheckItem({ label, value }) {
           </svg>
         )}
       </div>
-      <span className={`text-sm ${checked ? 'text-gray-700 dark:text-white/80' : 'text-gray-400 dark:text-white/35'}`}>{label}</span>
+      <span className={`text-sm max-sm:text-base ${checked ? 'text-gray-700 dark:text-white/80' : 'text-gray-500 dark:text-white/50'}`}>{label}</span>
     </div>
   )
 }
@@ -267,7 +315,7 @@ function SuggestInput({ value, onChange, suggestions, placeholder, error }) {
                 type="button"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => { onChange(s); setOpen(false) }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 text-gray-900 dark:text-white transition-colors"
+                className="w-full text-left px-3 py-2 max-sm:py-3 text-sm max-sm:text-base hover:bg-accent/10 text-gray-900 dark:text-white transition-colors"
               >
                 {s}
               </button>
@@ -347,6 +395,16 @@ export default function PolicyModal({
   const [splitOpen,       setSplitOpen]       = useState(false)
   const [removing,        setRemoving]        = useState(false)
   const [crosswalk,       setCrosswalk]       = useState([])
+  const scrollRef     = useRef(null)
+  const baseDraftRef  = useRef(isCreate ? JSON.stringify(EMPTY_DRAFT) : null) // for "discard changes?"
+
+  useBodyScrollLock(true)
+
+  // Banners (errors, delete confirmations) render at the top of the scrolling
+  // area; bring them into view when they appear, e.g. after tapping the pinned Save.
+  useEffect(() => {
+    if (saveError || confirmDelete || confirmNotInOpt) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [saveError, confirmDelete, confirmNotInOpt])
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -402,12 +460,15 @@ export default function PolicyModal({
       )
       if (exempt !== null) initialDraft.chargeback_exempt = exempt
     }
+    baseDraftRef.current = JSON.stringify(initialDraft)
     setDraft(initialDraft)
     setEditing(true)
     setSaveError(null)
   }
 
   function cancelEdit() {
+    const dirty = draft && baseDraftRef.current != null && JSON.stringify(draft) !== baseDraftRef.current
+    if (dirty && !window.confirm('Discard your changes?')) return
     if (isCreate) { onClose(); return }
     setEditing(false)
     setDraft(null)
@@ -592,19 +653,101 @@ export default function PolicyModal({
 
   if (!display) return null
 
+  // ── Derived header state (shared by the phone top bar and the sm+ header) ──
+  const statusLower  = p?.status?.toLowerCase()?.trim() ?? ''
+  const notAgentView = !!(viewerSfgId && p?.sfg_id && viewerSfgId.toLowerCase() !== p.sfg_id.toLowerCase())
+  const canTextAgent = !!agentPhone && notAgentView && (isLapse || ['', 'pending', 'incomplete'].includes(statusLower))
+  const subtitle = isCreate
+    ? 'New policy'
+    : isLapse
+      ? (display.agent || '—')
+      : `${display.policy_type || 'Policy'} · ${normalizeCarrier(display.carrier) || '—'}`
+  const hasSplits = (p?.splits?.length ?? 0) > 0
+  const flagCount = (display.not_in_opt ? 1 : 0) + (display.split_reset ? 1 : 0)
+  const flagsSummary = flagCount === 0 ? 'None set'
+    : flagCount === 2 ? '2 set'
+    : display.not_in_opt ? 'Not in Opt' : 'Split / Reset'
+  const hasConservation = !!(display.conservation_status || display.conservation_date)
+
+  // Phone: Split / Text agent / Delete / Remove conservation live behind "⋯".
+  const moreItems = editing
+    ? [{ label: 'Delete policy', danger: true, hidden: isCreate, onClick: () => setConfirmDelete(true) }]
+    : [
+        { label: hasSplits ? 'Edit split' : 'Split policy', hidden: !(canWrite && allowSplit), onClick: () => setSplitOpen(true) },
+        { label: 'Text agent', hidden: !canTextAgent, onClick: () => { window.location.href = `sms:${agentPhone}` } },
+        { label: removing ? 'Removing…' : 'Remove conservation', danger: true,
+          hidden: !(canWrite && isLapse && display.conservation_status), onClick: handleRemoveConservation },
+      ]
+
+  const spinner = (
+    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>
+  )
+
+  const smsIcon = (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+    </svg>
+  )
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center sm:p-4 bg-black/60 sm:backdrop-blur-sm !mt-0"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-gray-50 dark:bg-secondary border border-gray-200 dark:border-white/15 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between p-6 border-b border-gray-200 dark:border-white/10">
+      {/* Full-screen sheet below 640px, centred dialog from sm up */}
+      <div className="flex flex-col w-full sm:max-w-2xl h-dvh sm:h-auto sm:max-h-[90vh] bg-gray-50 dark:bg-secondary sm:border border-gray-200 dark:border-white/15 sm:rounded-2xl shadow-2xl overflow-hidden">
+
+        {/* ── Phone top bar ───────────────────────────────────────────────── */}
+        <div className="sm:hidden relative z-20 shrink-0 pt-[env(safe-area-inset-top)] bg-white dark:bg-primary border-b border-gray-200 dark:border-white/10">
+          <div className="flex items-center h-14 pl-1 pr-2">
+            {editing ? (
+              <>
+                <button type="button" onClick={cancelEdit} className="h-11 w-24 px-3 text-left text-base font-semibold text-gray-900 dark:text-white">
+                  Cancel
+                </button>
+                <h2 className="flex-1 min-w-0 text-center text-base font-bold text-gray-900 dark:text-white truncate">
+                  {isCreate ? 'Add policy' : 'Edit policy'}
+                </h2>
+                <div className="w-24 flex justify-end"><MoreMenu items={moreItems} /></div>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onBack ?? onClose}
+                  aria-label={onBack ? 'Back to search' : 'Close'}
+                  className="w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="m15 5-7 7 7 7" /></svg>
+                </button>
+                <h2 className="flex-1 min-w-0 ml-1 text-base font-bold text-gray-900 dark:text-white truncate">
+                  {isLapse ? 'Lapse tracking' : 'Policy'}
+                </h2>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="h-10 px-4 mr-1.5 rounded-xl border border-accent text-sm font-semibold text-gray-900 dark:text-white hover:bg-accent/10"
+                  >
+                    Edit
+                  </button>
+                )}
+                <MoreMenu items={moreItems} />
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Header (tablet / desktop dialog) ────────────────────────────── */}
+        <div className="hidden sm:flex shrink-0 items-start justify-between p-6 border-b border-gray-200 dark:border-white/10">
           <div className="flex-1 min-w-0">
             {onBack && (
               <button
                 onClick={onBack}
-                className="flex items-center gap-1 text-xs text-gray-400 dark:text-white/40 hover:text-accent transition-colors mb-2"
+                className="flex items-center gap-1 text-xs text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors mb-2 touch:min-h-[44px]"
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -615,13 +758,7 @@ export default function PolicyModal({
             <h2 className="text-base font-bold text-gray-900 dark:text-white">
               {isCreate ? 'Add Policy' : (display.applicant || 'Unnamed Client')}
             </h2>
-            <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">
-              {isCreate
-                ? 'New policy'
-                : isLapse
-                  ? (display.agent || '—')
-                  : `${display.policy_type || 'Policy'} · ${normalizeCarrier(display.carrier) || '—'}`}
-            </p>
+            <p className="text-sm text-gray-500 dark:text-white/50 mt-0.5">{subtitle}</p>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
             {isLapse && lapseDaysLabel && (
@@ -629,35 +766,15 @@ export default function PolicyModal({
                 {lapseDaysLabel}
               </span>
             )}
-            {!editing && !isLapse && (() => {
-              const sl = p.status?.toLowerCase()?.trim() ?? ''
-              const notAgent = viewerSfgId && p.sfg_id && viewerSfgId.toLowerCase() !== p.sfg_id.toLowerCase()
-              if (notAgent && agentPhone && ['', 'pending', 'incomplete'].includes(sl)) {
-                return (
-                  <a
-                    href={`sms:${agentPhone}`}
-                    onClick={e => e.stopPropagation()}
-                    title="Text agent"
-                    className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  </a>
-                )
-              }
-              return null
-            })()}
-            {isLapse && agentPhone && viewerSfgId && p.sfg_id && viewerSfgId.toLowerCase() !== p.sfg_id.toLowerCase() && (
+            {canTextAgent && (isLapse || !editing) && (
               <a
                 href={`sms:${agentPhone}`}
                 onClick={e => e.stopPropagation()}
                 title="Text agent"
-                className="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 dark:text-white/40 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
+                aria-label="Text agent"
+                className="flex items-center justify-center w-7 h-7 touch:w-11 touch:h-11 rounded-full text-gray-500 dark:text-white/50 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 transition-colors flex-shrink-0"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
+                {smsIcon}
               </a>
             )}
             {!editing && !isLapse && <StatusBadge status={display.status} />}
@@ -665,7 +782,7 @@ export default function PolicyModal({
               <button
                 onClick={handleRemoveConservation}
                 disabled={removing}
-                className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {removing ? 'Removing…' : 'Remove Conservation'}
               </button>
@@ -673,15 +790,15 @@ export default function PolicyModal({
             {canWrite && !editing && allowSplit && (
               <button
                 onClick={() => setSplitOpen(true)}
-                className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-800 dark:hover:text-white transition-colors px-2 py-1 rounded-lg border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5"
+                className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-800 dark:hover:text-white transition-colors px-2 py-1 touch:min-h-[44px] touch:px-3 rounded-lg border border-gray-200 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-white/5"
               >
-                {p?.splits?.length ? 'Edit Split' : 'Split'}
+                {hasSplits ? 'Edit Split' : 'Split'}
               </button>
             )}
             {canWrite && !editing && (
               <button
                 onClick={startEdit}
-                className="text-xs font-medium text-accent hover:text-accent/80 transition-colors px-2 py-1 rounded-lg hover:bg-accent/10"
+                className="text-xs font-medium text-gray-900 dark:text-white border border-accent transition-colors px-2.5 py-1 touch:min-h-[44px] touch:px-4 rounded-lg hover:bg-accent/10"
               >
                 Edit
               </button>
@@ -691,33 +808,32 @@ export default function PolicyModal({
                 {!isCreate && (
                   <button
                     onClick={() => setConfirmDelete(true)}
-                    className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                    className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
                   >
                     Delete
                   </button>
                 )}
                 <button
                   onClick={cancelEdit}
-                  className="text-xs font-medium text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
+                  className="text-xs font-medium text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white transition-colors px-2 py-1 touch:min-h-[44px] rounded-lg hover:bg-gray-100 dark:hover:bg-white/10"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="text-xs font-semibold border border-accent bg-primary text-white dark:bg-white dark:text-primary px-3 py-1.5 touch:min-h-[44px] touch:px-5 rounded-lg hover:bg-primary/85 dark:hover:bg-white/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  {saving && (
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                  )}
+                  {saving && spinner}
                   {saving ? 'Saving…' : isCreate ? 'Add Policy' : 'Save'}
                 </button>
               </>
             )}
-            <button onClick={onClose} className="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white transition-colors p-1">
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors p-1 touch:p-2.5"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -725,28 +841,31 @@ export default function PolicyModal({
           </div>
         </div>
 
+        {/* ── Scrolling content ───────────────────────────────────────────── */}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+
         {saveError && (
-          <div className="mx-6 mt-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-500 dark:text-red-300">
+          <div className="mx-4 sm:mx-6 mt-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-600 dark:text-red-300">
             {saveError}
           </div>
         )}
 
         {confirmDelete && (
-          <div className="mx-6 mt-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg flex items-center justify-between gap-4">
+          <div className="mx-4 sm:mx-6 mt-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <p className="text-sm text-red-700 dark:text-red-300">
               Permanently delete this policy? This cannot be undone.
             </p>
             <div className="flex gap-2 flex-shrink-0">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                className="max-sm:flex-1 text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 touch:min-h-[44px] rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+                className="max-sm:flex-1 text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 touch:min-h-[44px] rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
               >
                 {deleting ? 'Deleting…' : 'Yes, delete'}
               </button>
@@ -755,21 +874,21 @@ export default function PolicyModal({
         )}
 
         {confirmNotInOpt && (
-          <div className="mx-6 mt-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg flex items-center justify-between gap-4">
+          <div className="mx-4 sm:mx-6 mt-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <p className="text-sm text-amber-800 dark:text-amber-300">
               This policy is not in Opt. Would you like to delete it?
             </p>
             <div className="flex gap-2 flex-shrink-0">
               <button
                 onClick={() => { setConfirmNotInOpt(false); doSave() }}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                className="max-sm:flex-1 text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 touch:min-h-[44px] rounded-lg border border-gray-300 dark:border-white/20 text-gray-600 dark:text-white/60 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
               >
                 No, keep it
               </button>
               <button
                 onClick={() => { setConfirmNotInOpt(false); handleDelete() }}
                 disabled={deleting}
-                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+                className="max-sm:flex-1 text-xs max-sm:text-sm px-3 py-1.5 max-sm:h-11 touch:min-h-[44px] rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
               >
                 {deleting ? 'Deleting…' : 'Yes, delete'}
               </button>
@@ -777,15 +896,44 @@ export default function PolicyModal({
           </div>
         )}
 
+        {/* Phone summary: name, status, and the two APV figures lead */}
+        {!editing && (
+          <div className="sm:hidden px-4 pt-4">
+            <h1 className="text-2xl font-bold leading-tight text-gray-900 dark:text-white break-words">
+              {display.applicant || 'Unnamed Client'}
+            </h1>
+            <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1.5 mt-2">
+              {isLapse
+                ? (lapseDaysLabel && <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${lapseDaysCls}`}>{lapseDaysLabel}</span>)
+                : <StatusBadge status={display.status} />}
+              <span className="text-sm text-gray-600 dark:text-white/70">{subtitle}</span>
+            </div>
+            {!limitedFields && (
+              <div className={`grid gap-3 mt-4 ${isLapse ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {!isLapse && (
+                  <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-primary/30 px-4 py-3">
+                    <p className="text-xs text-gray-500 dark:text-white/60">Submitted APV</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{fmtAmt(display.subm_apv)}</p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-primary/30 px-4 py-3">
+                  <p className="text-xs text-gray-500 dark:text-white/60">Issued APV</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{fmtAmt(display.issued_apv)}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Body */}
-        <div className="p-6 space-y-6">
+        <div className="px-4 py-4 sm:p-6 space-y-5 sm:space-y-6">
 
           {!isLapse && (
             <ModalSection title="Application">
               {editing ? (
-                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 sm:gap-y-3">
                   <div>
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Agent{isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
+                    <p className={LABEL_CLS}>Agent{isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
                     <AgentLookup
                       personnel={personnel}
                       value={draft.sfg_id ?? ''}
@@ -799,8 +947,8 @@ export default function PolicyModal({
                     />
                   </div>
                   <EditField label={isCreate ? 'Client *' : 'Client'} value={draft.applicant} onChange={v => setField('applicant', v)} />
-                  <div className="col-span-2">
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Status{isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
+                  <div className="sm:col-span-2">
+                    <p className={LABEL_CLS}>Status{isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
                     <select
                       value={draft.status ?? ''}
                       onChange={e => setField('status', e.target.value)}
@@ -810,15 +958,18 @@ export default function PolicyModal({
                       {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
-                  {!limitedFields && (
-                    <EditField
-                      label={isCreate ? 'Submit Date *' : 'Submit Date'}
-                      value={toInputDate(draft.submit_date)}
-                      onChange={v => setField('submit_date', v)}
-                      type="date"
-                    />
-                  )}
-                  <EditField label="Issue Date" value={toInputDate(draft.issue_date)} onChange={v => setField('issue_date', v)} type="date" />
+                  {/* The two dates share a row on a phone; from sm up they flow into the parent grid */}
+                  <div className="grid grid-cols-2 gap-3 sm:contents max-sm:[&>:only-child]:col-span-2">
+                    {!limitedFields && (
+                      <EditField
+                        label={isCreate ? 'Submit Date *' : 'Submit Date'}
+                        value={toInputDate(draft.submit_date)}
+                        onChange={v => setField('submit_date', v)}
+                        type="date"
+                      />
+                    )}
+                    <EditField label="Issue Date" value={toInputDate(draft.issue_date)} onChange={v => setField('issue_date', v)} type="date" />
+                  </div>
                   {!isCreate && (
                     <EditField label="Last Update" value={toInputDate(draft.last_update)} onChange={v => setField('last_update', v)} type="date" />
                   )}
@@ -837,13 +988,13 @@ export default function PolicyModal({
 
           <ModalSection title="Policy Details">
             {editing ? (
-              <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 sm:gap-y-3">
                 <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Carrier {isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
+                  <p className={LABEL_CLS}>Carrier {isCreate && <span className="text-red-400 ml-0.5">*</span>}</p>
                   <SuggestInput value={draft.carrier} onChange={v => setField('carrier', v)} suggestions={carrierSuggestions} placeholder="Banner, Foresters…" />
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Policy Type</p>
+                  <p className={LABEL_CLS}>Policy Type</p>
                   <SuggestInput value={draft.policy_type} onChange={v => setField('policy_type', v)} suggestions={policyTypeSuggestions} placeholder="Term 20, WL…" />
                 </div>
                 <EditField label="Policy No." value={draft.policy_no} onChange={v => setField('policy_no', v)} />
@@ -862,9 +1013,16 @@ export default function PolicyModal({
             )}
           </ModalSection>
 
-          <ModalSection title="Financials">
+          <div className={SECTION_GROUP_CLS}>
+
+          <ModalSection
+            title="Financials"
+            collapsible
+            summary={hasSplits ? `Split · ${p.splits.length} ${p.splits.length === 1 ? 'agent' : 'agents'}` : 'Not split'}
+            defaultOpen={editing || hasSplits}
+          >
             {editing ? (
-              <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <div className="grid grid-cols-2 gap-x-3 sm:gap-x-8 gap-y-3">
                 {!limitedFields && !isLapse && <EditField label="Submitted APV" value={draft.subm_apv ?? ''} onChange={v => setField('subm_apv', v)} type="number" />}
                 <EditField label="Issued APV" value={draft.issued_apv ?? ''} onChange={v => setField('issued_apv', v)} type="number" />
               </div>
@@ -886,14 +1044,14 @@ export default function PolicyModal({
             )}
           </ModalSection>
 
-          <ModalSection title="Flags">
+          <ModalSection title="Flags" collapsible summary={flagsSummary} defaultOpen={editing}>
             {editing && !isLapse ? (
-              <div className="flex gap-6">
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
                 <CheckEditField label="Not in Opt"   checked={!!draft.not_in_opt}  onChange={v => setField('not_in_opt',  v)} />
                 <CheckEditField label="Split / Reset" checked={!!draft.split_reset} onChange={v => setField('split_reset', v)} />
               </div>
             ) : (
-              <div className="flex gap-6">
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
                 <CheckItem label="Not in Opt"   value={display.not_in_opt} />
                 <CheckItem label="Split / Reset" value={display.split_reset} />
               </div>
@@ -901,10 +1059,15 @@ export default function PolicyModal({
           </ModalSection>
 
           {!isLapse && (
-            <ModalSection title="Open Requirements">
+            <ModalSection
+              title="Open Requirements"
+              collapsible
+              summary={display.application_notes ? 'Has notes' : 'None'}
+              defaultOpen={editing || !!display.application_notes}
+            >
               {editing ? (
                 <div>
-                  <p className="text-xs text-gray-400 dark:text-white/40 mb-1">Application Notes</p>
+                  <p className={LABEL_CLS}>Application Notes</p>
                   <textarea
                     value={draft.application_notes ?? ''}
                     onChange={e => setField('application_notes', e.target.value)}
@@ -913,14 +1076,14 @@ export default function PolicyModal({
                   />
                 </div>
               ) : display.application_notes ? (
-                <p className="text-sm text-amber-300/90 leading-relaxed">{display.application_notes}</p>
+                <p className="text-sm max-sm:text-base text-amber-700 dark:text-amber-300/90 leading-relaxed">{display.application_notes}</p>
               ) : (
                 <p className="text-sm text-gray-400 dark:text-white/30">—</p>
               )}
             </ModalSection>
           )}
 
-          <ModalSection title="Policy Notes">
+          <ModalSection title="Policy Notes" collapsible summary={display.policy_notes ? 'Has notes' : 'None'} defaultOpen={editing}>
             {editing ? (
               <div>
                 <textarea
@@ -931,18 +1094,23 @@ export default function PolicyModal({
                 />
               </div>
             ) : display.policy_notes ? (
-              <p className="text-sm text-gray-700 dark:text-white/80 leading-relaxed">{display.policy_notes}</p>
+              <p className="text-sm max-sm:text-base text-gray-700 dark:text-white/80 leading-relaxed">{display.policy_notes}</p>
             ) : (
               <p className="text-sm text-gray-400 dark:text-white/30">—</p>
             )}
           </ModalSection>
 
           {!isCreate && (
-            <ModalSection title="Conservation">
+            <ModalSection
+              title="Conservation"
+              collapsible
+              summary={display.conservation_status || 'None'}
+              defaultOpen={editing || isLapse || hasConservation}
+            >
               {editing ? (
-                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 sm:gap-y-3">
                   <div>
-                    <p className="text-xs text-gray-400 dark:text-white/40 mb-0.5">Conservation Status</p>
+                    <p className={LABEL_CLS}>Conservation Status</p>
                     <select
                       value={draft.conservation_status ?? ''}
                       onChange={e => setConservationField('conservation_status', e.target.value)}
@@ -955,7 +1123,7 @@ export default function PolicyModal({
                   <EditField label="Expected Date" value={toInputDate(draft.conservation_date)} onChange={v => setConservationField('conservation_date', v)} type="date" />
                   <EditField label="Snapshot Chargeback Month" value={draft.cb_month ?? ''} onChange={v => setField('cb_month', v)} />
                   <EditField label="Snapshot Chargeback APV" value={draft.cb_apv ?? ''} onChange={v => setField('cb_apv', v)} />
-                  <div className="col-span-2 pt-1">
+                  <div className="sm:col-span-2 pt-1">
                     <CheckEditField
                       label="Chargeback Exempt"
                       checked={draft.chargeback_exempt === true}
@@ -979,13 +1147,31 @@ export default function PolicyModal({
             </ModalSection>
           )}
 
+          </div>
+
           {isCreate && !isLapse && (
-            <p className="text-xs text-gray-400 dark:text-white/30">
+            <p className="text-xs text-gray-500 dark:text-white/50">
               Conservation tracking becomes available once this policy is saved.
             </p>
           )}
 
         </div>
+        </div>
+
+        {/* ── Phone: Save stays pinned above the home indicator ─────────────── */}
+        {editing && (
+          <div className="sm:hidden shrink-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white dark:bg-primary border-t border-gray-200 dark:border-white/10">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full h-[52px] rounded-xl text-base font-semibold border border-accent bg-primary text-white dark:bg-white dark:text-primary disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {saving && spinner}
+              {saving ? 'Saving…' : isCreate ? 'Add policy' : 'Save changes'}
+            </button>
+          </div>
+        )}
       </div>
 
       {allowSplit && splitOpen && (

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { SHEET_OVERLAY, SHEET_PANEL, SHEET_HEAD_PAD, SHEET_FOOT_PAD } from './ui/sheetClasses'
 
 const EMPTY = {
   sfg_id:         '',
@@ -21,6 +23,7 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
   const [errors,   setErrors]   = useState({})
   const [saving,   setSaving]   = useState(false)
   const [apiError, setApiError] = useState('')
+  useBodyScrollLock(true)
 
   const existingSfgIds = new Set(
     existingPersonnel.map(p => p.sfg_id?.toLowerCase()).filter(Boolean)
@@ -103,17 +106,18 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-primary rounded-2xl shadow-2xl w-full max-w-xl flex flex-col">
+    <div className={SHEET_OVERLAY}>
+      <div className={`${SHEET_PANEL} bg-white dark:bg-primary sm:max-w-xl sm:max-h-[92vh]`}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 shrink-0">
+        <div className={`flex items-center justify-between max-sm:pl-4 max-sm:pr-2 max-sm:py-2 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-white/10 shrink-0 ${SHEET_HEAD_PAD}`}>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">Add Agent</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="Close"
+            className="w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-xl leading-none">✕</button>
         </div>
 
         {/* Form */}
-        <div className="overflow-y-auto px-6 py-5 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-5 space-y-5">
 
           {/* Identity */}
           <Section label="Identity">
@@ -152,11 +156,11 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
               </Field>
             </Row>
             <Row>
-              <Field label="Hire Date">
+              <Field label="Hire Date" half>
                 <input type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)}
                   className={inputCls()} />
               </Field>
-              <Field label="Birth Date">
+              <Field label="Birth Date" half>
                 <input type="date" value={form.birth_date} onChange={e => set('birth_date', e.target.value)}
                   className={inputCls()} />
               </Field>
@@ -186,11 +190,11 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
                 <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
                   className={inputCls()} />
               </Field>
-              <Field label="State">
+              <Field label="State" half>
                 <input type="text" value={form.state} onChange={e => set('state', e.target.value)}
                   placeholder="TX" className={inputCls()} />
               </Field>
-              <Field label="Zip">
+              <Field label="Zip" half>
                 <input type="text" value={form.zip} onChange={e => set('zip', e.target.value)}
                   className={inputCls()} />
               </Field>
@@ -201,13 +205,13 @@ export default function AddAgentModal({ existingPersonnel, onClose, onAgentAdded
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-white/10 flex justify-end gap-3 shrink-0">
+        <div className={`px-4 sm:px-6 pt-3 sm:py-4 border-t border-gray-200 dark:border-white/10 flex flex-wrap sm:flex-nowrap sm:justify-end gap-2 sm:gap-3 shrink-0 ${SHEET_FOOT_PAD}`}>
           <button onClick={onClose}
-            className="text-sm px-4 py-2 rounded-lg border border-gray-200 dark:border-white/20 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+            className="max-sm:basis-full max-sm:h-11 text-sm px-4 py-2 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-gray-300 dark:border-white/20 text-gray-700 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
             Cancel
           </button>
           <button onClick={handleSave} disabled={saving}
-            className="text-sm px-5 py-2 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            className="max-sm:order-first max-sm:basis-full max-sm:h-12 max-sm:text-base text-sm px-5 py-2 touch:sm:min-h-[44px] rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             {saving ? 'Saving…' : 'Add Agent'}
           </button>
         </div>
@@ -285,12 +289,13 @@ function UplineLookup({ personnel, value, onChange, error }) {
 
       {/* Right-side indicators */}
       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-        {selected && <span className="text-green-500 text-xs font-bold">✓</span>}
+        {selected && <span className="text-green-600 dark:text-green-400 text-xs font-bold">✓</span>}
         {query && (
           <button
             type="button"
             onClick={handleClear}
-            className="text-gray-300 hover:text-gray-500 dark:text-white/30 dark:hover:text-white/60 text-xs leading-none transition-colors"
+            aria-label="Clear upline"
+            className="text-gray-500 hover:text-gray-700 dark:text-white/50 dark:hover:text-white/80 text-xs leading-none transition-colors max-sm:w-9 max-sm:h-9"
             tabIndex={-1}
           >✕</button>
         )}
@@ -298,7 +303,7 @@ function UplineLookup({ personnel, value, onChange, error }) {
 
       {/* Selected SFG ID hint */}
       {selected && (
-        <p className="text-xs text-gray-400 dark:text-white/30 mt-0.5 font-mono">{selected.sfg_id}</p>
+        <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5 font-mono">{selected.sfg_id}</p>
       )}
 
       {/* Dropdown */}
@@ -310,12 +315,12 @@ function UplineLookup({ personnel, value, onChange, error }) {
                 type="button"
                 onMouseDown={e => e.preventDefault()} // prevent input blur before click
                 onClick={() => handleSelect(p)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 flex items-center justify-between gap-3 transition-colors"
+                className="w-full text-left px-3 py-2 max-sm:py-3 touch:min-h-[44px] text-sm hover:bg-accent/10 flex items-center justify-between gap-3 transition-colors"
               >
                 <span className="text-gray-900 dark:text-white truncate">
                   {p.name || p.preferred_name || p.full_name}
                 </span>
-                <span className="text-xs text-gray-400 dark:text-white/40 shrink-0 font-mono">
+                <span className="text-xs text-gray-500 dark:text-white/50 shrink-0 font-mono">
                   {p.sfg_id}
                 </span>
               </button>
@@ -326,7 +331,7 @@ function UplineLookup({ personnel, value, onChange, error }) {
 
       {/* No results hint */}
       {open && query.trim().length > 0 && results.length === 0 && (
-        <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-400 dark:text-white/40">
+        <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-[#002b2e] border border-gray-200 dark:border-white/15 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-500 dark:text-white/50">
           No matches found
         </div>
       )}
@@ -339,7 +344,7 @@ function UplineLookup({ personnel, value, onChange, error }) {
 function Section({ label, children }) {
   return (
     <div>
-      <p className="text-xs font-semibold text-gray-400 dark:text-white/40 uppercase tracking-wider mb-3">{label}</p>
+      <p className="text-xs font-semibold text-gray-500 dark:text-white/50 uppercase tracking-wider mb-3">{label}</p>
       <div className="space-y-3">{children}</div>
     </div>
   )
@@ -349,10 +354,12 @@ function Row({ children }) {
   return <div className="flex gap-3 flex-wrap">{children}</div>
 }
 
-function Field({ label, required, error, children }) {
+// On a phone every field takes the full row except those marked `half` (dates, state, zip),
+// which pair up two to a row.
+function Field({ label, required, error, half, children }) {
   return (
-    <div className="flex-1 min-w-32">
-      <label className="block text-xs text-gray-500 dark:text-white/50 mb-1">
+    <div className={`${half ? 'max-sm:basis-[calc(50%-0.375rem)]' : 'max-sm:basis-full'} flex-1 min-w-32`}>
+      <label className="block text-xs text-gray-600 dark:text-white/60 mb-1">
         {label}{required && <span className="text-red-400 ml-0.5">*</span>}
       </label>
       {children}
@@ -362,7 +369,7 @@ function Field({ label, required, error, children }) {
 }
 
 function inputCls(error) {
-  const base = 'w-full text-sm rounded-lg px-3 py-1.5 border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white'
+  const base = 'w-full text-sm rounded-lg max-sm:rounded-xl px-3 py-1.5 max-sm:py-3 touch:sm:min-h-[44px] border focus:outline-none focus:ring-2 transition-colors bg-white dark:bg-white/5 text-gray-900 dark:text-white'
   return error
     ? `${base} border-red-400 focus:ring-red-400/30 focus:border-red-400`
     : `${base} border-gray-200 dark:border-white/15 focus:ring-accent/30 focus:border-accent/60`

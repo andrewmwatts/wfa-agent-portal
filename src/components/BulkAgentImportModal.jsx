@@ -2,6 +2,8 @@ import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import HireMatchingModal from './HireMatchingModal'
 import { fmtDate as fmtDateUtil } from '../utils/format'
+import useBodyScrollLock from '../hooks/useBodyScrollLock'
+import { SHEET_OVERLAY, SHEET_PANEL, SHEET_HEAD_PAD, SHEET_FOOT_PAD } from './ui/sheetClasses'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -245,6 +247,7 @@ function PreviewRow({ row, onUpdate, idx }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function BulkAgentImportModal({ onClose, existingPersonnel = [], onImportDone, authHeaders }) {
+  useBodyScrollLock(true)
   const [phase,          setPhase]          = useState('upload')  // upload | preview | confirm | importing | result
   const [updateMode,     setUpdateMode]     = useState('add_new') // 'add_new' | 'full_update'
   const [rows,           setRows]           = useState([])
@@ -357,17 +360,17 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className={SHEET_OVERLAY}>
+      <div className={`${SHEET_PANEL} bg-white sm:max-w-4xl sm:max-h-[90vh]`}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
+        <div className={`flex items-center justify-between max-sm:pl-4 max-sm:pr-2 max-sm:py-2 sm:px-6 sm:py-4 border-b shrink-0 ${SHEET_HEAD_PAD}`}>
           <h2 className="text-lg font-semibold text-gray-800">Bulk Agent Import</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          <button onClick={onClose} aria-label="Close" className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl text-gray-500 hover:text-gray-800 hover:bg-gray-100 text-2xl leading-none">&times;</button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4">
 
           {/* ── Upload ── */}
           {phase === 'upload' && (
@@ -375,10 +378,10 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
               {/* Mode selector */}
               <div>
                 <p className="text-xs font-medium text-gray-500 uppercase mb-2">Import mode</p>
-                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm w-fit">
+                <div className="flex max-sm:flex-col rounded-lg border border-gray-200 overflow-hidden text-sm sm:w-fit">
                   <button
                     onClick={() => setUpdateMode('add_new')}
-                    className={`px-4 py-2 font-medium transition-colors ${
+                    className={`px-4 py-2 max-sm:py-3 touch:sm:min-h-[44px] font-medium transition-colors ${
                       updateMode === 'add_new'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -388,7 +391,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
                   </button>
                   <button
                     onClick={() => setUpdateMode('full_update')}
-                    className={`px-4 py-2 font-medium transition-colors border-l border-gray-200 ${
+                    className={`px-4 py-2 max-sm:py-3 touch:sm:min-h-[44px] font-medium transition-colors sm:border-l max-sm:border-t border-gray-200 ${
                       updateMode === 'full_update'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -405,7 +408,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
               </div>
               <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-600 space-y-1">
                 <p className="font-medium text-gray-700">Recognized column names:</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs mt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 sm:gap-y-0.5 text-xs mt-1">
                   <span><span className="font-mono bg-gray-100 px-1 rounded">AgentCode</span> → SFG ID <span className="text-red-500">*</span></span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">FirstName</span> + <span className="font-mono bg-gray-100 px-1 rounded">LastName</span> → Name</span>
                   <span><span className="font-mono bg-gray-100 px-1 rounded">AgentName</span> → Opt Name</span>
@@ -422,7 +425,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
               </div>
 
               <div
-                className="border-2 border-dashed border-gray-300 rounded-lg p-16 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 sm:p-16 text-center cursor-pointer hover:border-blue-400 transition-colors"
                 onDragOver={e => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => fileRef.current?.click()}
@@ -477,7 +480,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
               </div>
 
               {/* Column headers */}
-              <div className="flex gap-2 text-xs font-semibold text-gray-500 uppercase px-3 pb-1 border-b">
+              <div className="hidden sm:flex gap-2 text-xs font-semibold text-gray-500 uppercase px-3 pb-1 border-b">
                 <span className="w-16">Status</span>
                 <span className="w-24">SFG ID</span>
                 <span className="w-44">Name</span>
@@ -598,7 +601,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+        <div className={`flex flex-wrap items-center sm:justify-end gap-2 sm:gap-3 px-4 sm:px-6 pt-3 sm:py-4 border-t bg-gray-50 shrink-0 [&_button]:max-sm:h-11 [&_button]:max-sm:flex-1 [&_button]:touch:sm:min-h-[44px] ${SHEET_FOOT_PAD}`}>
           {phase === 'upload' && (
             <button
               onClick={onClose}
@@ -645,7 +648,7 @@ export default function BulkAgentImportModal({ onClose, existingPersonnel = [], 
           )}
 
           {phase === 'result' && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 max-sm:w-full max-sm:flex-wrap">
               {insertedAgents.length > 0 && authHeaders && (
                 <button
                   onClick={() => setShowMatching(true)}

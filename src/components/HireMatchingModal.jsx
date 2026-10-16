@@ -305,13 +305,13 @@ export default function HireMatchingModal({ newHires, onClose, authHeaders }) {
                         {c.state  && <span className="text-xs text-gray-400 dark:text-white/40">📍 {c.state}</span>}
                       </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${conf.cls}`}>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${conf.cls}`}>
                       {conf.label}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {c._signals.map(sig => (
-                      <span key={sig} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent dark:bg-accent/15">
+                      <span key={sig} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent dark:bg-accent/15">
                         {sig}
                       </span>
                     ))}

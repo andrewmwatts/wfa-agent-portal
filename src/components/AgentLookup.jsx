@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 // Kept as local literals rather than importing from PolicyEditModal.jsx to
 // avoid a circular import (PolicyEditModal imports this component).
-const INPUT_CLS     = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/60'
-const INPUT_ERR_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-red-400 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-400/40'
+const INPUT_CLS     = 'w-full bg-gray-100 dark:bg-primary/60 border border-gray-200 dark:border-white/15 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:py-3 max-sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/60'
+const INPUT_ERR_CLS = 'w-full bg-gray-100 dark:bg-primary/60 border border-red-400 text-gray-900 dark:text-white text-sm rounded-lg px-3 py-1.5 max-sm:py-3 max-sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400/40'
 
 // Agent name-lookup typeahead — shared by every policy create/edit surface
 // (PolicyEditModal's Agent field, and SplitPolicyModal's new-agent picker).
@@ -59,6 +59,8 @@ export default function AgentLookup({ personnel, value, onSelect, onClear, error
 
   return (
     <div className="relative" ref={containerRef}>
+      {/* Own relative box so the ✓ / ✕ centre on the input, not on the input plus the ID caption below it */}
+      <div className="relative">
       <input
         type="text"
         value={query}
@@ -73,14 +75,15 @@ export default function AgentLookup({ personnel, value, onSelect, onClear, error
         {selected && <span className="text-green-500 text-xs font-bold">✓</span>}
         {query && (
           <button type="button" onClick={handleClear} tabIndex={-1}
-            className="text-gray-300 hover:text-gray-500 dark:text-white/30 dark:hover:text-white/60 text-xs leading-none transition-colors">
+            aria-label="Clear agent" className="text-gray-400 hover:text-gray-600 dark:text-white/50 dark:hover:text-white/70 text-xs leading-none transition-colors max-sm:w-9 max-sm:h-9 max-sm:-mr-2 max-sm:flex max-sm:items-center max-sm:justify-center">
             ✕
           </button>
         )}
       </div>
+      </div>
 
       {selected && (
-        <p className="text-xs text-gray-400 dark:text-white/30 mt-0.5 font-mono">{selected.sfg_id}</p>
+        <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5 font-mono">{selected.sfg_id}</p>
       )}
 
       {open && results.length > 0 && (
@@ -91,12 +94,12 @@ export default function AgentLookup({ personnel, value, onSelect, onClear, error
                 type="button"
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => handleSelect(p)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 flex items-center justify-between gap-3 transition-colors"
+                className="w-full text-left px-3 py-2 max-sm:py-3 text-sm max-sm:text-base hover:bg-accent/10 flex items-center justify-between gap-3 transition-colors"
               >
                 <span className="text-gray-900 dark:text-white truncate">
                   {p.name || p.preferred_name || p.full_name}
                 </span>
-                <span className="text-xs text-gray-400 dark:text-white/40 shrink-0 font-mono">{p.sfg_id}</span>
+                <span className="text-xs text-gray-500 dark:text-white/50 shrink-0 font-mono">{p.sfg_id}</span>
               </button>
             </li>
           ))}
