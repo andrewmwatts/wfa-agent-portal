@@ -80,3 +80,29 @@ export function fmtCurrency(value, { empty = '—' } = {}) {
   const abs = Math.round(Math.abs(n))
   return (n < 0 ? '-$' : '$') + abs.toLocaleString('en-US')
 }
+
+// ─── Phone numbers ─────────────────────────────────────────────────────────────
+// Stored as ten bare digits ("6027746793"); shown as "602-774-6793".
+
+// Ten bare digits for storage and tel:/sms: links. A leading US country code is dropped.
+// Anything that is not a ten-digit number is returned with only its digits kept.
+export function phoneDigits(value) {
+  const d = String(value ?? '').replace(/\D/g, '')
+  return d.length === 11 && d[0] === '1' ? d.slice(1) : d
+}
+
+// Display form: ###-###-####. Values that are not ten digits are shown as they were entered.
+export function fmtPhone(value, { empty = '' } = {}) {
+  if (value === null || value === undefined || String(value).trim() === '') return empty
+  const d = phoneDigits(value)
+  if (d.length !== 10) return String(value)
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`
+}
+
+// For a controlled <input>: hyphenates as the person types, so the field always reads ###-###-####.
+export function fmtPhoneInput(value) {
+  const d = phoneDigits(value).slice(0, 10)
+  if (d.length <= 3) return d
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`
+}

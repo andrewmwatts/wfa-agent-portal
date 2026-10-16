@@ -71,6 +71,15 @@ async function authorizeLeadSubject(req, res, sfgId) {
   return true
 }
 
+// Phone numbers are stored as ten bare digits ("6027746793") and displayed as 602-774-6793.
+// A leading US country code is dropped; null / empty stays null.
+function normalizePhone(value) {
+  if (value === null || value === undefined) return value
+  const d = String(value).replace(/\D/g, '')
+  if (d === '') return null
+  return d.length === 11 && d[0] === '1' ? d.slice(1) : d
+}
+
 export default async function handler(req, res) {
   const { resource } = req.query
 
@@ -376,18 +385,20 @@ export default async function handler(req, res) {
       .from('leads')
       .select('phone')
       .eq('sfg_id', sfgId)
-    const existingPhones = new Set((existing ?? []).map(r => r.phone))
+    const existingPhones = new Set((existing ?? []).map(r => normalizePhone(r.phone)))
 
     const toInsert = []
     let skipped = 0
 
-    for (const lead of leads) {
-      if (!lead.name || !lead.phone) { skipped++; continue }
-      if (existingPhones.has(lead.phone)) { skipped++; continue }
-      existingPhones.add(lead.phone) // prevent dupes within this batch
+    for (const raw of leads) {
+      const phone = normalizePhone(raw.phone)
+      if (!raw.name || !phone) { skipped++; continue }
+      if (existingPhones.has(phone)) { skipped++; continue }
+      existingPhones.add(phone) // prevent dupes within this batch
       const now = new Date().toISOString()
       toInsert.push({
-        ...lead,
+        ...raw,
+        phone,
         sfg_id:     sfgId,
         created_at: now,
         updated_at: now,
@@ -511,6 +522,7 @@ export default async function handler(req, res) {
 
     const { name, sfg_id: _sfg, preferred_name: _pn, ...fields } = body
     if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+    if ('phone' in fields) fields.phone = normalizePhone(fields.phone)
 
     const { data, error } = await sb
       .from('leads')
@@ -539,6 +551,7 @@ export default async function handler(req, res) {
     delete patch.sfg_id
     delete patch.created_at
     delete patch.preferred_name
+    if ('phone' in patch) patch.phone = normalizePhone(patch.phone)
     patch.updated_at = new Date().toISOString()
     // Server-owned timestamps / counters: only the activity endpoint changes these.
     delete patch.call_attempts

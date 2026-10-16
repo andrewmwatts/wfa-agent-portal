@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
+import { fmtPhone, fmtPhoneInput, phoneDigits } from '../utils/format'
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ function EntryFields({ form, setForm, nameRef, autoFocusName }) {
           placeholder="Full name" className={INPUT + ' sm:min-w-[140px]'} autoFocus={autoFocusName} />
       </Field>
       <Field label="Phone" ord="max-sm:order-2">
-        <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
+        <input type="tel" inputMode="tel" value={form.phone} onChange={e => set('phone', fmtPhoneInput(e.target.value))}
           placeholder="555-555-5555" className={INPUT + ' sm:w-32'} />
       </Field>
       <Field label="Email" span ord="max-sm:order-4">
@@ -181,7 +182,7 @@ export default function Project100Page() {
     try {
       const res = await fetch('/api/project-100', {
         method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ sfg_id: sfgId, ...addForm }),
+        body: JSON.stringify({ sfg_id: sfgId, ...addForm, phone: phoneDigits(addForm.phone) }),
       })
       if (res.ok) {
         const { entry } = await res.json()
@@ -200,7 +201,7 @@ export default function Project100Page() {
   function startEdit(entry) {
     setEditId(entry.id)
     setEditForm({
-      name: entry.name || '', phone: entry.phone || '', email: entry.email || '',
+      name: entry.name || '', phone: fmtPhoneInput(entry.phone), email: entry.email || '',
       social_handle: entry.social_handle || '', life_fit: entry.life_fit || 'high',
       relationship: entry.relationship || 'high', status: entry.status || 'new',
       referral_given: !!entry.referral_given,
@@ -209,7 +210,7 @@ export default function Project100Page() {
 
   async function saveEdit(id) {
     const res = await fetch(`/api/project-100?id=${id}`, {
-      method: 'PATCH', headers: authHeaders(), body: JSON.stringify(editForm),
+      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ ...editForm, phone: phoneDigits(editForm.phone) }),
     })
     if (res.ok) {
       const { entry } = await res.json()
@@ -483,12 +484,12 @@ export default function Project100Page() {
                   <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-0 lg:gap-y-1 min-w-0 order-4 lg:order-none max-md:basis-full">
                     {entry.phone ? (
                       <span className="flex items-center gap-1.5">
-                        <a href={`tel:+1${entry.phone.replace(/[^0-9]/g, '')}`}
+                        <a href={`tel:+1${phoneDigits(entry.phone)}`}
                           onClick={e => e.stopPropagation()}
                           className="text-xs text-gray-600 dark:text-white/60 hover:text-green-700 dark:hover:text-green-400 transition-colors whitespace-nowrap max-lg:inline-flex max-lg:items-center max-lg:min-h-11 touch:min-h-11">
-                          📞 {entry.phone}
+                          📞 {fmtPhone(entry.phone)}
                         </a>
-                        <a href={`sms:+1${entry.phone.replace(/[^0-9]/g, '')}`}
+                        <a href={`sms:+1${phoneDigits(entry.phone)}`}
                           onClick={e => e.stopPropagation()}
                           aria-label="Text"
                           className="text-xs text-gray-500 dark:text-white/50 hover:text-blue-700 dark:hover:text-blue-400 transition-colors max-lg:inline-flex max-lg:items-center max-lg:justify-center max-lg:min-h-11 max-lg:min-w-11 touch:min-h-11 touch:min-w-11">

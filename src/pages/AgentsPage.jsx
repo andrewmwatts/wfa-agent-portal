@@ -9,7 +9,7 @@ import HireMatchingModal from '../components/HireMatchingModal'
 import StatusFilterBar from '../components/agents/StatusFilterBar'
 import AgentBirthdays from '../components/agents/AgentBirthdays'
 import { STATUSES, NO_STATUS, statusOf } from '../components/agents/agentStatus'
-import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil } from '../utils/format'
+import { parseDateLocal, toInputDate, fmtDate as fmtDateUtil, fmtPhone } from '../utils/format'
 import { makeAuthHeaders } from '../utils/authHeaders'
 import useBodyScrollLock from '../hooks/useBodyScrollLock'
 import { SHEET_OVERLAY, SHEET_PANEL, SHEET_HEAD_PAD, SHEET_FOOT_PAD } from '../components/ui/sheetClasses'
@@ -751,7 +751,7 @@ function AgentModal({ agent: p, onClose, canWrite, onUpdate }) {
                 <InfoField label="NPN"        value={p.npn} />
                 <InfoField label="Hire Date"  value={fmtDate(p.hire_date)} />
                 <InfoField label="Birth Date" value={fmtDate(p.birth_date)} />
-                {p.phone && <InfoField label="Phone" value={p.phone} />}
+                {p.phone && <InfoField label="Phone" value={fmtPhone(p.phone)} />}
                 {(p.address || p.city || p.state || p.zip) && (
                   <div>
                     <p className="text-xs text-gray-500 dark:text-white/50 mb-0.5">Address</p>
