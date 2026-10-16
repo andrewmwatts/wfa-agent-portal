@@ -21,7 +21,8 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *
  * Lead Activity  (?resource=activity)
  *   GET    /api/leads?resource=activity&lead_id=X
- *   POST   /api/leads?resource=activity
+ *   POST   /api/leads?resource=activity        (count_attempt:true on a call/text bumps the attempt totals)
+ *   PATCH  /api/leads?resource=activity&id=X   → set/clear the note on one entry
  *
  * Lead Scripts  (?resource=scripts)
  *   GET    /api/leads?resource=scripts&sfg_id=X
@@ -100,8 +101,40 @@ export default async function handler(req, res) {
       return res.status(200).json({ activity: data ?? [] })
     }
 
+    // PATCH /api/leads?resource=activity&id=X — attach or edit the note on one
+    // activity entry (e.g. what happened on a specific call attempt). Never touches
+    // the lead's last-activity fields, so annotating history doesn't look like new activity.
+    if (req.method === 'PATCH') {
+      const { id } = req.query
+      if (!id) return res.status(400).json({ error: 'id required' })
+      const note = typeof req.body?.note === 'string' ? req.body.note.trim() : null
+      if (note === null) return res.status(400).json({ error: 'note (string) required' })
+
+      const { data: existing } = await sb.from('lead_activity').select('id, lead_id').eq('id', id).single()
+      if (!existing) return res.status(404).json({ error: 'Activity not found' })
+
+      const bypass = process.env.VITE_BYPASS_AUTH === 'true'
+      if (!bypass) {
+        const caller = await getCaller(req)
+        if (!caller?.sfg_id) return res.status(401).json({ error: 'Unauthorized' })
+        if (caller.role !== 'super_admin') {
+          const { data: lead } = await sb.from('leads').select('sfg_id').eq('id', existing.lead_id).single()
+          if (!lead || lead.sfg_id !== caller.sfg_id) return res.status(403).json({ error: 'Forbidden' })
+        }
+      }
+
+      const { data: entry, error } = await sb
+        .from('lead_activity')
+        .update({ note: note || null })
+        .eq('id', id)
+        .select()
+        .single()
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ entry })
+    }
+
     if (req.method === 'POST') {
-      const { lead_id, sfg_id, activity_type, body, note, update_lead } = req.body ?? {}
+      const { lead_id, sfg_id, activity_type, body, note, update_lead, count_attempt } = req.body ?? {}
       if (!lead_id || !activity_type || !body) {
         return res.status(400).json({ error: 'lead_id, activity_type, and body are required' })
       }
@@ -131,13 +164,34 @@ export default async function handler(req, res) {
         updated_at:         new Date().toISOString(),
       }
 
-      if (update_lead && Object.keys(update_lead).length) {
-        await sb.from('leads').update({ ...update_lead, ...activityPatch }).eq('id', lead_id)
-      } else {
-        await sb.from('leads').update(activityPatch).eq('id', lead_id)
+      const leadPatch = { ...(update_lead ?? {}), ...activityPatch }
+
+      // A status change is a disposition — stamp when it happened.
+      if (update_lead?.status) leadPatch.last_dispositioned_at = entry.created_at
+
+      // "Log call / text attempt": bump the running totals and the last-attempt time.
+      // Only when the caller opts in, so other activity (notes, status, callbacks, and
+      // the recruiting page's call/text logging) never changes the attempt counts.
+      let attempt = null
+      if (count_attempt && (activity_type === 'call' || activity_type === 'text')) {
+        const { data: cur } = await sb.from('leads').select('call_attempts, text_attempts').eq('id', lead_id).single()
+        const calls = (cur?.call_attempts ?? 0) + (activity_type === 'call' ? 1 : 0)
+        const texts = (cur?.text_attempts ?? 0) + (activity_type === 'text' ? 1 : 0)
+        leadPatch.call_attempts     = calls
+        leadPatch.text_attempts     = texts
+        leadPatch.last_attempt_at   = entry.created_at
+        leadPatch.last_attempt_type = activity_type
+        attempt = { call_attempts: calls, text_attempts: texts, last_attempt_at: entry.created_at, last_attempt_type: activity_type }
       }
 
-      return res.status(201).json({ entry })
+      const { error: leadErr } = await sb.from('leads').update(leadPatch).eq('id', lead_id)
+      if (leadErr) {
+        // The entry is saved; surface the failure so the client doesn't show counters that weren't stored.
+        console.error('[leads activity] lead update failed:', leadErr.message)
+        return res.status(201).json({ entry, lead_update_error: leadErr.message })
+      }
+
+      return res.status(201).json({ entry, attempt, last_dispositioned_at: leadPatch.last_dispositioned_at ?? null })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
@@ -486,6 +540,14 @@ export default async function handler(req, res) {
     delete patch.created_at
     delete patch.preferred_name
     patch.updated_at = new Date().toISOString()
+    // Server-owned timestamps / counters: only the activity endpoint changes these.
+    delete patch.call_attempts
+    delete patch.text_attempts
+    delete patch.last_attempt_at
+    delete patch.last_attempt_type
+    delete patch.last_dispositioned_at
+    if (patch.status) patch.last_dispositioned_at = patch.updated_at
+    if (patch.cqf !== undefined) patch.cqf_updated_at = patch.updated_at
 
     if (!bypass) {
       const caller = await getCaller(req)

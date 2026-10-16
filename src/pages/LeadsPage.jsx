@@ -3,14 +3,23 @@ import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
 import BulkLeadImportModal from '../components/BulkLeadImportModal'
+import LeadListCard from '../components/leads/LeadListCard'
+import { SOURCE_DISPLAY, typeCfg, getLeadTZ } from '../components/leads/leadHelpers'
 import CalendarEventModal from '../components/CalendarEventModal'
 import { fmtDate, fmtDateTime } from '../utils/format'
+import { useMinSm, useMinLg, useMinXl } from '../hooks/useMediaQuery'
+import MoreMenu from '../components/ui/MoreMenu'
+import PaneTabs from '../components/leads/PaneTabs'
 // Re-exported for RecruitingPage, which imports it from this module
 export { fmtDateTime }
 
 // The pane carries the full script text, so it loads on first open rather than
 // riding in the main bundle (which sits close to the PWA precache size limit).
 const ScriptPane = lazy(() => import('../components/ScriptPane'))
+// The CQF screen (form + config) is only needed once an agent opens it, so it loads on demand too.
+const CqfView = lazy(() => import('../components/leads/CqfView'))
+// Same for the lead card panel — the list renders without it.
+const LeadPanel = lazy(() => import('../components/leads/LeadPanel'))
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 
@@ -39,64 +48,6 @@ const STATUS_GROUP_FILTERS = [
   { key: 'sold',      label: 'Policy Sold',       statuses: new Set(['sold']) },
   { key: 'dead',      label: 'Dead Lead',         statuses: new Set(['notint', 'dnc', 'bad']) },
 ]
-
-// ─── Campaign badge ────────────────────────────────────────────────────────────
-
-const TYPE_CFG = {
-  'Life Insurance - Standard': { label: 'STD',  cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'       },
-  'Life Insurance - Premium':  { label: 'PREM', cls: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300' },
-  'Mortgage Protection':       { label: 'MP',   cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'    },
-  'Final Expense':             { label: 'FE',   cls: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300' },
-  'Advanced':                  { label: 'ADV',  cls: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300'        },
-  'Recruiting':                { label: 'REC',  cls: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300' },
-}
-function typeCfg(type) { return TYPE_CFG[type] ?? { label: 'LEAD', cls: 'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-white/60' } }
-
-// ─── Source display map ────────────────────────────────────────────────────────
-
-const SOURCE_DISPLAY = {
-  razor_ridge: 'Razor Ridge',
-  lighthouse:  'Lighthouse',
-  level_up:    'Level Up',
-  reset:       'FIF Reset',
-  symmetry:    'Symmetry',
-  external:    'External',
-  referral:    'Referral',
-  other:       'Other',
-}
-function fmtSource(src) { return SOURCE_DISPLAY[src] || src || '—' }
-
-// ─── Timezone helpers ──────────────────────────────────────────────────────────
-
-const STATE_TZ = {
-  AL:'CT',AK:'AK',AZ:'MT',AR:'CT',CA:'PT',CO:'MT',CT:'ET',DE:'ET',FL:'ET',GA:'ET',
-  HI:'HT',ID:'MT',IL:'CT',IN:'ET',IA:'CT',KS:'CT',KY:'ET',LA:'CT',ME:'ET',MD:'ET',
-  MA:'ET',MI:'ET',MN:'CT',MS:'CT',MO:'CT',MT:'MT',NE:'CT',NV:'PT',NH:'ET',NJ:'ET',
-  NM:'MT',NY:'ET',NC:'ET',ND:'CT',OH:'ET',OK:'CT',OR:'PT',PA:'ET',RI:'ET',SC:'ET',
-  SD:'CT',TN:'CT',TX:'CT',UT:'MT',VT:'ET',VA:'ET',WA:'PT',WV:'ET',WI:'CT',WY:'MT',DC:'ET',
-}
-const TZ_OFFSET = { ET:0, CT:-1, MT:-2, PT:-3, AK:-4, HT:-5 }
-const TZ_LABEL  = { ET:'EST', CT:'CST', MT:'MST', PT:'PST', AK:'AKST', HT:'HST' }
-const TZ_COLOR  = { ET:'text-blue-600 dark:text-blue-400', CT:'text-amber-600 dark:text-amber-400', MT:'text-orange-600 dark:text-orange-400', PT:'text-green-600 dark:text-green-400', AK:'text-violet-600 dark:text-violet-400', HT:'text-pink-600 dark:text-pink-400' }
-
-function getLeadTZ(state) {
-  const tz = STATE_TZ[state?.toUpperCase()]
-  if (!tz) return null
-  const off = TZ_OFFSET[tz]
-  const now = new Date()
-  const estH = parseInt(now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }))
-  const lh   = ((estH + off) % 24 + 24) % 24
-  const lm   = now.getMinutes()
-  const ampm = lh >= 12 ? 'PM' : 'AM'
-  const h12  = lh % 12 || 12
-  return {
-    label:    TZ_LABEL[tz],
-    timeStr:  `${h12}:${lm.toString().padStart(2, '0')} ${ampm}`,
-    goodTime: lh >= 9 && lh < 20,
-    color:    TZ_COLOR[tz],
-    offset:   off,
-  }
-}
 
 // ─── Misc helpers ──────────────────────────────────────────────────────────────
 
@@ -150,6 +101,7 @@ export default function LeadsPage() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [typeFilter,     setTypeFilter]     = useState('all')
   const [statusFilter,   setStatusFilter]   = useState('all')
+  const [sortKey,    setSortKey]    = useState('added')   // added | last_attempt | status_changed
   const [sortDesc,   setSortDesc]   = useState(true)
   const [showSetup,     setShowSetup]     = useState(false)
   const [subjectOptName, setSubjectOptName] = useState('')
@@ -158,9 +110,9 @@ export default function LeadsPage() {
   const [selected,     setSelected]     = useState(null)   // lead object
   const [activity,     setActivity]     = useState([])
   const [actLoading,   setActLoading]   = useState(false)
-  const [noteText,     setNoteText]     = useState('')
-  const [showNoteBox,  setShowNoteBox]  = useState(false)
   const [statusSaving, setStatusSaving] = useState(false)
+  const [attemptError, setAttemptError] = useState('')
+  const [cqfOpen,      setCqfOpen]      = useState(false)
 
   // Modals
   const [showAddLead,   setShowAddLead]   = useState(false)
@@ -170,6 +122,17 @@ export default function LeadsPage() {
   // Script pane — opens beside the lead card so a call can be worked from both
   const [scriptsOpen, setScriptsOpen] = useState(false)
   const [scriptId,    setScriptId]    = useState('default-best')
+
+  // Layout. 1024–1279px (iPad landscape): the lead docks beside a 320px list in a 640px pane
+  // and Scripts / CQF become tabs in it. Below 1024 the lead opens full width over the list;
+  // from 1280 up the script pane sits beside the card (see the drawer below).
+  const isMinSm = useMinSm()
+  const isMinLg = useMinLg()
+  const isMinXl = useMinXl()
+  const docked      = isMinLg && !isMinXl
+  const compactList = !isMinSm || (docked && !!selected)   // list column is ~320–380px wide
+  const paneTab     = cqfOpen ? 'cqf' : scriptsOpen ? 'scripts' : 'lead'
+  function setPaneTab(t) { setCqfOpen(t === 'cqf'); setScriptsOpen(t === 'scripts') }
 
   // ── Load ─────────────────────────────────────────────────────────────────────
 
@@ -211,8 +174,8 @@ export default function LeadsPage() {
 
   async function openLead(lead) {
     setSelected(lead)
-    setShowNoteBox(false)
-    setNoteText('')
+    setCqfOpen(false)
+    setAttemptError('')
     setActLoading(true)
     try {
       const res = await fetch(`/api/leads?resource=activity&lead_id=${lead.id}`, { headers: authHeaders() })
@@ -220,7 +183,7 @@ export default function LeadsPage() {
     } finally { setActLoading(false) }
   }
 
-  function closeDetail() { setSelected(null); setActivity([]); setScriptsOpen(false) }
+  function closeDetail() { setSelected(null); setActivity([]); setScriptsOpen(false); setCqfOpen(false) }
 
   // ── Lead mutations ────────────────────────────────────────────────────────────
 
@@ -233,64 +196,68 @@ export default function LeadsPage() {
     setActivity(prev => [entry, ...prev])
   }
 
-  async function logCall() {
-    if (!selected) return
-    const today = new Date().toISOString().slice(0, 10)
-    const body  = `📞 Called ${selected.phone || '—'}`
+  // "Log call attempt" / "Log text attempt": one history entry, +1 on the lead's attempt
+  // totals, and the last-attempt time. A brand-new lead moves to Attempted Contact.
+  // Dialing and texting are plain links in the panel — they don't log on their own.
+  async function logAttempt(type) {
+    if (!selected) return null
+    setAttemptError('')
+    const leadId = selected.id
+    const now    = new Date()
+    const today  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const body   = type === 'call' ? '📞 Call attempt logged' : '💬 Text attempt logged'
     const update = { last_contact: today }
     if (selected.status === 'new') update.status = 'attempted'
 
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'call', body, update_lead: update }),
+    let res
+    try {
+      res = await fetch('/api/leads?resource=activity', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ lead_id: leadId, sfg_id: sfgId, activity_type: type, body, update_lead: update, count_attempt: true }),
+      })
+    } catch { res = null }
+    if (!res?.ok) { setAttemptError('Couldn’t log that attempt. Check your connection and try again.'); return null }
+
+    const { entry, attempt, last_dispositioned_at, lead_update_error } = await res.json()
+    prependActivity(entry)
+    if (lead_update_error) {
+      setAttemptError('The attempt is in the history, but the counters didn’t update. Make sure the latest database migration has been run.')
+      return entry
+    }
+    patchLeadLocal(leadId, {
+      ...update, ...attempt,
+      last_activity_text: body, last_activity_at: entry.created_at,
+      ...(last_dispositioned_at ? { last_dispositioned_at } : {}),
     })
-    if (res.ok) {
-      const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { ...update, last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    if (selected.phone) {
-      const phone = selected.phone.replace(/[^0-9]/g, '')
-      setTimeout(() => { window.location.href = `tel:+1${phone}` }, 300)
-    }
+    return entry
   }
 
-  async function logText(templateNote) {
-    if (!selected) return
-    const today = new Date().toISOString().slice(0, 10)
-    const body  = `💬 Text sent`
-    const update = { last_contact: today }
-    if (selected.status === 'new' || selected.status === 'attempted') update.status = 'textvm'
-
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'text', body, note: templateNote || null, update_lead: update }),
-    })
-    if (res.ok) {
+  // Attach (or edit) a note on one call/text attempt in the history
+  async function saveAttemptNote(activityId, note) {
+    try {
+      const res = await fetch(`/api/leads?resource=activity&id=${activityId}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ note }),
+      })
+      if (!res.ok) return false
       const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { ...update, last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    if (selected.phone) {
-      const phone = selected.phone.replace(/[^0-9]/g, '')
-      setTimeout(() => { window.location.href = `sms:+1${phone}` }, 200)
-    }
+      setActivity(prev => prev.map(a => a.id === activityId ? entry : a))
+      return true
+    } catch { return false }
   }
 
-  async function saveNote() {
-    if (!selected || !noteText.trim()) return
-    const body = '📝 Note added'
-    const res = await fetch('/api/leads?resource=activity', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ lead_id: selected.id, sfg_id: sfgId, activity_type: 'note', body, note: noteText.trim() }),
-    })
-    if (res.ok) {
-      const { entry } = await res.json()
-      prependActivity(entry)
-      patchLeadLocal(selected.id, { last_activity_text: body, last_activity_at: entry.created_at })
-    }
-    setNoteText('')
-    setShowNoteBox(false)
+  // Autosave target for the CQF screen — takes an explicit lead id so a save that fires
+  // as the form closes still lands on the right lead.
+  async function saveLeadFields(leadId, fields) {
+    patchLeadLocal(leadId, fields)
+    try {
+      const res = await fetch(`/api/leads?id=${leadId}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify(fields),
+      })
+      if (!res.ok) return false
+      const { lead } = await res.json()
+      if (lead?.cqf_updated_at) patchLeadLocal(leadId, { cqf_updated_at: lead.cqf_updated_at })
+      return true
+    } catch { return false }
   }
 
   async function updateStatus(newStatus) {
@@ -306,7 +273,7 @@ export default function LeadsPage() {
     if (actRes.ok) {
       const { entry } = await actRes.json()
       prependActivity(entry)
-      patchLeadLocal(selected.id, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+      patchLeadLocal(selected.id, { status: newStatus, last_dispositioned_at: entry.created_at, last_activity_text: body, last_activity_at: entry.created_at })
     }
     setStatusSaving(false)
   }
@@ -347,7 +314,7 @@ export default function LeadsPage() {
     })
     if (res.ok) {
       const { entry } = await res.json()
-      patchLeadLocal(leadId, { status: newStatus, last_activity_text: body, last_activity_at: entry.created_at })
+      patchLeadLocal(leadId, { status: newStatus, last_dispositioned_at: entry.created_at, last_activity_text: body, last_activity_at: entry.created_at })
     }
   }
 
@@ -405,12 +372,18 @@ export default function LeadsPage() {
       }
       return true
     })
+    // Leads with no timestamp yet (never attempted / never re-dispositioned) count as oldest:
+    // last in "most recent first", first in "oldest first" — i.e. the ones still needing work.
+    const ts = v => v ? new Date(v).getTime() : 0
     list.sort((a, b) => {
-      const cmp = (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
+      let cmp = 0
+      if (sortKey === 'last_attempt')   cmp = ts(b.last_attempt_at) - ts(a.last_attempt_at)
+      if (sortKey === 'status_changed') cmp = ts(b.last_dispositioned_at) - ts(a.last_dispositioned_at)
+      cmp = cmp || (b.added || '').localeCompare(a.added || '') || (b.id - a.id)
       return sortDesc ? cmp : -cmp
     })
     return list
-  }, [leads, search, categoryFilter, typeFilter, statusFilter, sortDesc])
+  }, [leads, search, categoryFilter, typeFilter, statusFilter, sortKey, sortDesc])
 
   // The agent's own scripts, in the shape the pane lists after the built-ins
   const personalPaneScripts = useMemo(
@@ -427,7 +400,7 @@ export default function LeadsPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   if (!permissions.leads.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <p className="text-sm text-red-500">You don't have access to this section.</p>
     </main>
   )
@@ -439,47 +412,59 @@ export default function LeadsPage() {
     )
   }
 
+  // Room kept for the lead pane so the header, tabs and list are never hidden under it
+  const paneMr = selected && scriptsOpen ? 'lg:mr-[640px] xl:mr-[1040px] 2xl:mr-[1120px]' : selected ? 'lg:mr-[640px] xl:mr-[520px]' : ''
+
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex flex-col h-full transition-[margin] duration-300 ${paneMr}`}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-6 pt-6 pb-3 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 shrink-0">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1">Leads</h1>
-        <button
-          onClick={() => setShowSetup(true)}
-          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-        >
-          ⚙️ Setup
-        </button>
-        <button
-          onClick={() => setShowImport(true)}
-          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-        >
-          ↑ Import
-        </button>
+        {compactList ? (
+          <MoreMenu items={[
+            { label: '⚙️ Setup',  onClick: () => setShowSetup(true) },
+            { label: '↑ Import', onClick: () => setShowImport(true) },
+          ]} />
+        ) : (
+          <>
+            <button
+              onClick={() => setShowSetup(true)}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 touch:min-h-11 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            >
+              ⚙️ Setup
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 touch:min-h-11 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            >
+              ↑ Import
+            </button>
+          </>
+        )}
         <button
           onClick={() => setShowAddLead(true)}
-          className="flex items-center gap-1.5 text-sm px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors"
+          className="flex items-center gap-1.5 text-sm px-4 py-1.5 h-11 sm:h-auto touch:sm:h-11 rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 transition-colors whitespace-nowrap"
         >
-          <span className="text-base leading-none">+</span> Add Lead
+          <span className="text-base leading-none">+</span> {compactList ? 'Add' : 'Add Lead'}
         </button>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
-      <div className="flex border-b border-gray-200 dark:border-white/10 px-6 shrink-0 overflow-x-auto">
+      <div className="flex border-b border-gray-200 dark:border-white/10 px-4 sm:px-6 shrink-0 overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 min-h-11 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/60'
+                ? 'border-accent text-gray-900 dark:text-white'
+                : 'border-transparent text-gray-500 dark:text-white/60 hover:text-gray-700 dark:hover:text-white/80'
             }`}
           >
             {t.label}
             {t.key === 'callbacks' && callbackLeads.length > 0 && (
-              <span className="ml-1.5 text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold">
+              <span className="ml-1.5 text-xs border border-accent bg-primary text-white dark:bg-white dark:text-primary rounded-full px-1.5 py-0.5 font-bold">
                 {callbackLeads.filter(l => isCallbackDue(l)).length || ''}
               </span>
             )}
@@ -491,18 +476,16 @@ export default function LeadsPage() {
       <div className="flex-1 overflow-hidden flex">
 
         {/* List / content area */}
-        <div className={`flex-1 overflow-y-auto transition-all duration-300 ${
-          selected && scriptsOpen ? 'lg:mr-[920px] xl:mr-[1040px] 2xl:mr-[1120px]' : selected ? 'lg:mr-[520px]' : ''
-        }`}>
+        <div className="flex-1 overflow-y-auto">
 
           {/* ── Leads tab ───────────────────────────────────────────────── */}
           {tab === 'leads' && (
             <div className="px-4 sm:px-6 py-4">
 
               {/* Search + sort */}
-              <div className="flex gap-2 mb-3">
-                <div className="flex-1 flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/15 rounded-lg px-3 py-1.5">
-                  <svg className="w-3.5 h-3.5 text-gray-400 dark:text-white/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <div className={`flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/15 px-3 ${compactList ? 'basis-full w-full min-w-0 h-12 rounded-xl' : 'flex-1 min-w-[12rem] py-1.5 rounded-lg touch:h-11'}`}>
+                  <svg className="w-3.5 h-3.5 text-gray-500 dark:text-white/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="M21 21l-4.35-4.35" />
                   </svg>
                   <input
@@ -510,64 +493,76 @@ export default function LeadsPage() {
                     placeholder="Search name, phone, state…"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/30 outline-none"
+                    className="flex-1 min-w-0 bg-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-white/50 outline-none"
                   />
                   {search && (
-                    <button onClick={() => setSearch('')} className="text-gray-300 dark:text-white/20 hover:text-gray-500 dark:hover:text-white/50 text-xs leading-none">✕</button>
+                    <button onClick={() => setSearch('')} aria-label="Clear search" className="w-8 h-8 -mr-2 flex items-center justify-center text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70 text-sm leading-none">✕</button>
                   )}
                 </div>
+                <select
+                  value={sortKey}
+                  onChange={e => setSortKey(e.target.value)}
+                  aria-label="Sort leads by"
+                  className={`text-sm px-3 border border-gray-200 dark:border-white/15 bg-white dark:bg-white/5 text-gray-700 dark:text-white/70 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 ${compactList ? 'flex-1 min-w-0 h-11 rounded-xl' : 'py-1.5 rounded-lg touch:h-11'}`}
+                >
+                  <option value="added">Sort: Date added</option>
+                  <option value="last_attempt">Sort: Last attempt</option>
+                  <option value="status_changed">Sort: Status changed</option>
+                </select>
                 <button
                   onClick={() => setSortDesc(d => !d)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-500 dark:text-white/50 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
+                  className={`text-sm px-3 border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap ${compactList ? 'h-11 rounded-xl' : 'py-1.5 rounded-lg touch:h-11'}`}
                 >
-                  {sortDesc ? '↓ Newest' : '↑ Oldest'}
+                  {sortDesc ? '↓ Most recent' : '↑ Oldest'}
                 </button>
               </div>
 
               {/* Filters */}
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+              <div className={compactList
+                ? 'flex flex-nowrap items-center gap-x-2 overflow-x-auto -mx-4 px-4 pb-1 mb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+                : 'flex flex-wrap items-center gap-x-3 gap-y-2 mb-4'}>
 
                 {/* Category group */}
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   {CATEGORY_FILTERS.map(f => (
                     <button key={f.key}
                       onClick={() => setCategoryFilter(v => v === f.key ? 'all' : f.key)}
-                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                      className={`whitespace-nowrap shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
                         categoryFilter === f.key
-                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                          ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/20'
                       }`}
                     >{f.label}</button>
                   ))}
                 </div>
 
-                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0" />
+                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0 max-sm:hidden" />
 
                 {/* Type group */}
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   {TYPE_FILTERS.map(f => (
                     <button key={f.key}
                       onClick={() => setTypeFilter(v => v === f.key ? 'all' : f.key)}
-                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                      className={`whitespace-nowrap shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
                         typeFilter === f.key
-                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                          ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/20'
                       }`}
                     >{f.label}</button>
                   ))}
                 </div>
 
-                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0" />
+                <div className="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0 max-sm:hidden" />
 
                 {/* Status group filters */}
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   {STATUS_GROUP_FILTERS.map(f => (
                     <button key={f.key}
                       onClick={() => setStatusFilter(v => v === f.key ? 'all' : f.key)}
-                      className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                      className={`whitespace-nowrap shrink-0 text-sm font-semibold px-3.5 py-1.5 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
                         statusFilter === f.key
-                          ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                          : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 hover:border-gray-300 dark:hover:border-white/20'
+                          ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                          : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/20'
                       }`}
                     >{f.label}</button>
                   ))}
@@ -577,7 +572,7 @@ export default function LeadsPage() {
                 {(categoryFilter !== 'all' || typeFilter !== 'all' || statusFilter !== 'all') && (
                   <button
                     onClick={() => { setCategoryFilter('all'); setTypeFilter('all'); setStatusFilter('all') }}
-                    className="whitespace-nowrap text-xs font-medium px-3 py-1 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 dark:text-white/30 hover:text-gray-600 dark:hover:text-white/60 hover:border-gray-300 dark:hover:border-white/20 transition-colors"
+                    className="whitespace-nowrap shrink-0 text-xs font-medium px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:text-gray-800 dark:hover:text-white/80 hover:border-gray-300 dark:hover:border-white/20 transition-colors"
                   >
                     Show All ✕
                   </button>
@@ -585,7 +580,7 @@ export default function LeadsPage() {
               </div>
 
               {/* Lead count */}
-              <p className="text-xs text-gray-400 dark:text-white/30 mb-3 font-medium">
+              <p className="text-sm text-gray-600 dark:text-white/60 mb-3 font-medium">
                 {displayLeads.length} lead{displayLeads.length !== 1 ? 's' : ''}
                 {(categoryFilter !== 'all' || typeFilter !== 'all' || statusFilter !== 'all' || search) ? ' (filtered)' : ''}
               </p>
@@ -602,9 +597,9 @@ export default function LeadsPage() {
                   <p className="text-sm">No leads found</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {displayLeads.map(l => (
-                    <LeadCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} />
+                    <LeadListCard key={l.id} lead={l} onClick={openLead} selected={selected?.id === l.id} statuses={STATUSES} stacked={docked && !!selected} />
                   ))}
                 </div>
               )}
@@ -679,7 +674,7 @@ export default function LeadsPage() {
         </div>
 
         {/* ── Lead detail drawer ───────────────────────────────────────── */}
-        {/* Backdrop (mobile only) */}
+        {/* Backdrop (below 1024px, where the lead covers the list) */}
         {selected && (
           <div
             className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
@@ -687,33 +682,59 @@ export default function LeadsPage() {
           />
         )}
 
-        {/* Drawer */}
-        <div className={`fixed top-14 right-0 bottom-0 z-30 w-full lg:w-[520px] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
+        {/* Drawer — full width below 1024, a docked 640px pane at 1024–1279, 520px from 1280 */}
+        <div className={`fixed top-[var(--header-h)] right-0 bottom-0 z-30 w-full lg:w-[640px] xl:w-[520px] max-lg:pb-[env(safe-area-inset-bottom)] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
           {selected && (
-            <LeadDetail
-              lead={selected}
-              activity={activity}
-              actLoading={actLoading}
-              noteText={noteText}
-              setNoteText={setNoteText}
-              showNoteBox={showNoteBox}
-              setShowNoteBox={setShowNoteBox}
-              statusSaving={statusSaving}
-              onClose={closeDetail}
-              onCall={logCall}
-              onText={logText}
-              onNote={saveNote}
-              onStatusChange={updateStatus}
-              onCallbackChange={saveCallback}
-              onPatch={patchLeadField}
-              scriptsOpen={scriptsOpen}
-              onToggleScripts={() => setScriptsOpen(o => !o)}
-            />
+            <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+              <LeadPanel
+                lead={selected}
+                activity={activity}
+                actLoading={actLoading}
+                statuses={STATUSES}
+                statusSaving={statusSaving}
+                attemptError={attemptError}
+                onClose={closeDetail}
+                onLogAttempt={logAttempt}
+                onAttemptNote={saveAttemptNote}
+                onStatusChange={updateStatus}
+                onCallbackChange={saveCallback}
+                onPatch={patchLeadField}
+                onOpenCqf={() => setCqfOpen(true)}
+                scriptsOpen={scriptsOpen}
+                onToggleScripts={() => setScriptsOpen(o => !o)}
+                hideClose={docked}
+                tabsNode={docked ? <PaneTabs value={paneTab} onChange={setPaneTab} onClose={closeDetail} /> : null}
+                overrideBody={docked && paneTab === 'scripts' ? (
+                  <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+                    <ScriptPane
+                      pane
+                      personalScripts={personalPaneScripts}
+                      activeId={scriptId}
+                      onSelect={setScriptId}
+                      onClose={() => setPaneTab('lead')}
+                      onManage={() => { closeDetail(); setTab('scripts') }}
+                      context={selected.lead_type}
+                    />
+                  </Suspense>
+                ) : docked && paneTab === 'cqf' ? (
+                  <Suspense fallback={<div className="flex-1 animate-pulse bg-gray-50 dark:bg-black/20" />}>
+                    <CqfView
+                      pane
+                      key={selected.id}
+                      lead={selected}
+                      onClose={() => setPaneTab('lead')}
+                      onSave={saveLeadFields}
+                    />
+                  </Suspense>
+                ) : null}
+              />
+            </Suspense>
           )}
         </div>
 
-        {/* Script pane — to the left of the card, so both can be used at once */}
-        {selected && scriptsOpen && (
+        {/* Script pane — to the left of the card, so both can be used at once (1280px and up,
+            and as a full-width overlay below 1024) */}
+        {selected && scriptsOpen && !cqfOpen && !docked && (
           <Suspense fallback={null}>
             <ScriptPane
               personalScripts={personalPaneScripts}
@@ -722,6 +743,33 @@ export default function LeadsPage() {
               onClose={() => setScriptsOpen(false)}
               onManage={() => { closeDetail(); setTab('scripts') }}
               context={selected.lead_type}
+            />
+          </Suspense>
+        )}
+
+        {/* CQF — full-screen over the page, with the script pane in its left column */}
+        {selected && cqfOpen && !docked && (
+          <Suspense fallback={<div className="fixed top-[var(--header-h)] right-0 bottom-0 left-0 lg:left-16 xl:left-56 z-40 bg-gray-50 dark:bg-secondary" />}>
+            <CqfView
+              key={selected.id}
+              lead={selected}
+              onClose={() => setCqfOpen(false)}
+              onSave={saveLeadFields}
+              scriptsOpen={scriptsOpen}
+              onToggleScripts={() => setScriptsOpen(o => !o)}
+              scriptsNode={(
+                <Suspense fallback={null}>
+                  <ScriptPane
+                    embedded
+                    personalScripts={personalPaneScripts}
+                    activeId={scriptId}
+                    onSelect={setScriptId}
+                    onClose={() => setScriptsOpen(false)}
+                    onManage={() => { closeDetail(); setTab('scripts') }}
+                    context={selected.lead_type}
+                  />
+                </Suspense>
+              )}
             />
           </Suspense>
         )}
@@ -790,9 +838,9 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{l.name}</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tc.cls}`}>{tc.label}</span>
-                {l.medical && <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">⚠️ Med Hx</span>}
-                {l.smoker  && <span className="text-[10px] text-gray-400 dark:text-white/30">🚬</span>}
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${tc.cls}`}>{tc.label}</span>
+                {l.medical && <span className="text-xs font-bold text-orange-600 dark:text-orange-400">⚠️ Med Hx</span>}
+                {l.smoker  && <span className="text-xs text-gray-400 dark:text-white/30">🚬</span>}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                 {l.phone && <span className="text-xs text-gray-500 dark:text-white/50">{l.phone}</span>}
@@ -811,19 +859,19 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
               {l.phone && (
                 <a
                   href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                  className="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400 font-bold hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors"
+                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400 font-bold hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors"
                 >📞</a>
               )}
               {l.phone && (
                 <a
                   href={`sms:+1${l.phone.replace(/[^0-9]/g, '')}`}
-                  className="text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
+                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
                 >💬</a>
               )}
               {calConnected && (
                 <button
                   onClick={() => setShowCalModal(true)}
-                  className="text-xs px-2 py-1 rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
+                  className="text-sm px-2 py-1 touch:min-h-11 touch:min-w-11 max-sm:min-h-11 max-sm:min-w-11 inline-flex items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
                 >📅</button>
               )}
             </div>
@@ -832,7 +880,7 @@ export function LeadCard({ lead: l, onClick, selected, statuses = STATUSES }) {
           <div className="flex items-center justify-between mt-2 gap-2">
             <StatusPill status={l.status} statuses={statuses} />
             {cb && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md border ${
                 cbOverdue ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
                 : cbToday ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
                 : 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20'
@@ -880,7 +928,7 @@ function ContractingStatus({ contracting: c, isStub }) {
     : 'border-gray-200 dark:border-white/10'
 
   return (
-    <div className={`mt-2 rounded-lg border text-[10px] overflow-hidden ${borderCls}`}>
+    <div className={`mt-2 rounded-lg border text-xs overflow-hidden ${borderCls}`}>
       <div className="flex items-center justify-between gap-2 px-2 py-1 bg-white/60 dark:bg-primary/20">
         <span className="font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40 shrink-0">Contracting</span>
         <div className="flex items-center gap-2 min-w-0">
@@ -985,8 +1033,8 @@ export function LeadDetail({
   }, [activity])
 
   // Small shared input style for the detail pane
-  const F = 'w-full text-xs rounded-md px-2 py-1 border bg-transparent hover:bg-gray-50 dark:hover:bg-white/5 text-gray-800 dark:text-white/80 border-transparent hover:border-gray-200 dark:hover:border-white/15 focus:bg-white dark:focus:bg-white/5 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors'
-  const FL = 'text-[10px] text-gray-400 dark:text-white/30 mb-0.5'
+  const F = 'w-full text-xs rounded-md px-2 py-1 max-sm:py-2.5 touch:py-2 border bg-transparent hover:bg-gray-50 dark:hover:bg-white/5 text-gray-800 dark:text-white/80 border-transparent hover:border-gray-200 dark:hover:border-white/15 focus:bg-white dark:focus:bg-white/5 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors'
+  const FL = 'text-xs text-gray-500 dark:text-white/50 mb-0.5'
 
   return (
     <>
@@ -996,7 +1044,7 @@ export function LeadDetail({
 
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-white/10 shrink-0">
-        <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-sm">←</button>
+        <button onClick={onClose} aria-label="Close" className="w-11 h-11 sm:w-9 sm:h-9 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-base">←</button>
         <div className="flex-1 min-w-0">
           <input
             value={form.name ?? ''}
@@ -1046,7 +1094,7 @@ export function LeadDetail({
           value={l.status}
           onChange={e => onStatusChange(e.target.value)}
           disabled={statusSaving}
-          className="flex-1 text-xs font-semibold rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-white/70 px-2 py-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
+          className="flex-1 text-xs font-semibold rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-white/70 px-2 py-1 min-h-11 touch:min-h-11 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
         >
           {statuses.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
@@ -1085,7 +1133,7 @@ export function LeadDetail({
               className={INPUT_CLS + ' flex-1 dark:[color-scheme:dark] text-xs'}
             />
             {l.callback_at && (
-              <button onClick={() => onCallbackChange('')} className="text-xs px-2 py-1 rounded-lg border border-gray-200 dark:border-white/10 text-gray-400 dark:text-white/30 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap">Clear</button>
+              <button onClick={() => onCallbackChange('')} className="text-xs px-3 py-1 min-h-11 touch:min-h-11 rounded-lg border border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors whitespace-nowrap">Clear</button>
             )}
           </div>
         </div>
@@ -1365,14 +1413,14 @@ export function LeadDetail({
             <div className="space-y-4">
               {Object.entries(groupedActivity).map(([day, entries]) => (
                 <div key={day}>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-white/30 mb-2">{day}</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-white/30 mb-2">{day}</p>
                   <div className="space-y-2">
                     {entries.map(a => (
                       <div key={a.id} className="flex gap-2.5">
                         <span className="text-sm mt-0.5 w-5 text-center shrink-0">{ACT_ICON[a.activity_type] || '📋'}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-gray-700 dark:text-white/70">{a.body}</p>
-                          <p className="text-[10px] text-gray-400 dark:text-white/30">{fmtDateTime(a.created_at)}</p>
+                          <p className="text-xs text-gray-400 dark:text-white/30">{fmtDateTime(a.created_at)}</p>
                           {a.note && (
                             <div className="mt-1.5 bg-amber-50 dark:bg-amber-500/5 border-l-2 border-amber-400/60 rounded-r-lg px-2.5 py-1.5">
                               <p className="text-xs text-gray-600 dark:text-white/60 whitespace-pre-wrap">{a.note}</p>
@@ -1479,7 +1527,7 @@ export function ScriptsTab({ scripts, onAdd, onDelete, defaultScripts = [], addL
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white">{s.title}</p>
-                          {s.tag && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-accent/10 text-accent">{s.tag}</span>}
+                          {s.tag && <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-accent/10 text-accent">{s.tag}</span>}
                         </div>
                         <p className="text-xs text-gray-500 dark:text-white/40 line-clamp-2 leading-relaxed">{s.body}</p>
                       </div>
@@ -1568,7 +1616,7 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
                     : 'bg-white dark:bg-primary/30 border-gray-200 dark:border-white/10 text-gray-700 dark:text-white/70'
                 }`}>
                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.bar}`} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider flex-1 truncate">{s.label}</span>
+                  <span className="text-xs font-bold uppercase tracking-wider flex-1 truncate">{s.label}</span>
                   <span className="text-xs font-extrabold tabular-nums">{colLeads.length}</span>
                 </div>
 
@@ -1579,7 +1627,7 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
                     : 'bg-gray-50 dark:bg-white/[0.02] border-gray-200 dark:border-white/10'
                 }`}>
                   {colLeads.length === 0 && !isOver && (
-                    <p className="text-center text-[10px] text-gray-300 dark:text-white/15 pt-5 select-none">Drop here</p>
+                    <p className="text-center text-xs text-gray-300 dark:text-white/15 pt-5 select-none">Drop here</p>
                   )}
                   {colLeads.map(l => (
                     <div
@@ -1594,13 +1642,13 @@ export function PipelineTab({ leads, statuses = STATUSES, onOpenLead, onStatusCh
                     >
                       <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{l.name}</p>
                       {l.state && (
-                        <p className="text-[10px] text-gray-400 dark:text-white/30 mt-0.5">📍 {l.state}</p>
+                        <p className="text-xs text-gray-400 dark:text-white/30 mt-0.5">📍 {l.state}</p>
                       )}
                       {l.phone && (
                         <a
                           href={`tel:+1${l.phone.replace(/[^0-9]/g, '')}`}
                           onClick={e => e.stopPropagation()}
-                          className="text-[10px] text-gray-400 dark:text-white/30 hover:text-green-600 dark:hover:text-green-400 block mt-0.5"
+                          className="text-xs text-gray-400 dark:text-white/30 hover:text-green-600 dark:hover:text-green-400 block mt-0.5"
                         >
                           {l.phone}
                         </a>
@@ -2015,7 +2063,7 @@ export function AddScriptModal({ onClose, onSave, showFormatHint = false }) {
           <LF label="Body *">
             <textarea value={form.body} onChange={e => set('body', e.target.value)} rows={7} placeholder="Script / template text…" className={INPUT_CLS + ' resize-y'} />
             {showFormatHint && (
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-white/30">
+              <p className="mt-1 text-xs text-gray-400 dark:text-white/30">
                 Formatting for the script pane: <code># Heading</code>, <code>## Subheading</code>, <code>1. numbered</code>, <code>- bullet</code>, <code>&gt; tip</code>, and <code>[stage direction]</code> in italics.
               </p>
             )}
@@ -2036,18 +2084,18 @@ export function AddScriptModal({ onClose, onSave, showFormatHint = false }) {
 export function StatusPill({ status, statuses = STATUSES }) {
   const sMap = Object.fromEntries(statuses.map(s => [s.key, s]))
   const s    = sMap[status] ?? statuses[0]
-  return <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.pill}`}>{s.label}</span>
+  return <span className={`inline-flex text-xs font-bold px-2 py-0.5 rounded-full border ${s.pill}`}>{s.label}</span>
 }
 
 function SectionLabel({ children }) {
-  return <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-white/30 mb-2">{children}</p>
+  return <p className="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-white/30 mb-2">{children}</p>
 }
 
 function InfoItem({ label, value, small }) {
   return (
     <div>
-      <p className="text-[10px] text-gray-400 dark:text-white/30 mb-0.5">{label}</p>
-      <p className={`font-semibold text-gray-800 dark:text-white/80 ${small ? 'text-[11px] break-all' : 'text-xs'}`}>{value || '—'}</p>
+      <p className="text-xs text-gray-400 dark:text-white/30 mb-0.5">{label}</p>
+      <p className={`font-semibold text-gray-800 dark:text-white/80 ${small ? 'text-xs break-all' : 'text-xs'}`}>{value || '—'}</p>
     </div>
   )
 }
@@ -2065,7 +2113,7 @@ function LF({ label, span, children }) {
 function ModalSection({ label, children }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-accent/70 mb-2">{label}</p>
+      <p className="text-xs font-bold uppercase tracking-widest text-accent/70 mb-2">{label}</p>
       {children}
     </div>
   )

@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext'
 import { useViewing } from '../context/ViewingContext'
 import { supabase } from '../lib/supabaseClient'
 import HireMatchingModal from '../components/HireMatchingModal'
+import MoreMenu from '../components/ui/MoreMenu'
+import { useMinSm, useMinLg, useMinXl } from '../hooks/useMediaQuery'
 import {
   fmtDateTime,
   isCallbackDue,
@@ -89,6 +91,12 @@ export default function RecruitingPage() {
   const [noteText,     setNoteText]     = useState('')
   const [showNoteBox,  setShowNoteBox]  = useState(false)
   const [statusSaving, setStatusSaving] = useState(false)
+
+  // The list column is ~320–380px wide on a phone, or beside the docked lead pane (iPad landscape)
+  const isMinSm = useMinSm()
+  const isMinLg = useMinLg()
+  const isMinXl = useMinXl()
+  const compactList = !isMinSm || (isMinLg && !isMinXl && !!selected)
 
   // Modals
   const [showAddLead,   setShowAddLead]   = useState(false)
@@ -344,7 +352,7 @@ export default function RecruitingPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!permissions.recruiting.read) return (
-    <main className="max-w-4xl mx-auto px-6 py-8">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <p className="text-sm text-red-500">You don't have access to this section.</p>
     </main>
   )
@@ -356,41 +364,49 @@ export default function RecruitingPage() {
     )
   }
 
+  // Room kept for the lead pane so the header, tabs and list are never hidden under it
+  // (a docked 640px pane at 1024–1279px, 520px from 1280px up).
+  const paneMr = selected ? 'lg:mr-[640px] xl:mr-[520px]' : ''
+
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex flex-col h-full transition-[margin] duration-300 ${paneMr}`}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-6 pt-6 pb-3 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 shrink-0">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1">Recruiting</h1>
-        <button
-          onClick={() => setShowSetup(true)}
-          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-        >
-          ⚙️ Setup
-        </button>
+        {compactList ? (
+          <MoreMenu items={[{ label: '⚙️ Setup', onClick: () => setShowSetup(true) }]} />
+        ) : (
+          <button
+            onClick={() => setShowSetup(true)}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 touch:min-h-11 rounded-lg border border-gray-200 dark:border-white/15 text-gray-600 dark:text-white/60 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          >
+            ⚙️ Setup
+          </button>
+        )}
         <button
           onClick={() => setShowAddLead(true)}
-          className="flex items-center gap-1.5 text-sm px-4 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors"
+          className="flex items-center gap-1.5 text-sm px-4 py-1.5 h-11 sm:h-auto touch:sm:h-11 rounded-xl sm:rounded-lg border border-accent bg-primary text-white dark:bg-white dark:text-primary font-semibold hover:bg-primary/85 dark:hover:bg-white/90 transition-colors whitespace-nowrap"
         >
-          <span className="text-base leading-none">+</span> Add Lead
+          <span className="text-base leading-none">+</span> {compactList ? 'Add' : 'Add Lead'}
         </button>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
-      <div className="flex border-b border-gray-200 dark:border-white/10 px-6 shrink-0 overflow-x-auto">
+      <div className="flex border-b border-gray-200 dark:border-white/10 px-4 sm:px-6 shrink-0 overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 min-h-11 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors whitespace-nowrap ${
               tab === t.key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/60'
+                ? 'border-accent text-gray-900 dark:text-white'
+                : 'border-transparent text-gray-500 dark:text-white/60 hover:text-gray-700 dark:hover:text-white/80'
             }`}
           >
             {t.label}
             {t.key === 'callbacks' && callbackLeads.length > 0 && (
-              <span className="ml-1.5 text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold">
+              <span className="ml-1.5 text-xs border border-accent bg-primary text-white dark:bg-white dark:text-primary rounded-full px-1.5 py-0.5 font-bold">
                 {callbackLeads.filter(l => isCallbackDue(l)).length || ''}
               </span>
             )}
@@ -402,7 +418,7 @@ export default function RecruitingPage() {
       <div className="flex-1 overflow-hidden flex">
 
         {/* List area */}
-        <div className={`flex-1 overflow-y-auto transition-all duration-300 ${selected ? 'lg:mr-[520px]' : ''}`}>
+        <div className="flex-1 overflow-y-auto">
 
           {/* ── Leads tab ─────────────────────────────────────────────────── */}
           {tab === 'leads' && (
@@ -410,8 +426,8 @@ export default function RecruitingPage() {
 
               {/* Search */}
               <div className="flex gap-2 mb-3">
-                <div className="flex-1 flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/15 rounded-lg px-3 py-1.5">
-                  <svg className="w-3.5 h-3.5 text-gray-400 dark:text-white/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <div className={`flex-1 min-w-0 flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/15 px-3 ${compactList ? 'h-12 rounded-xl' : 'py-1.5 rounded-lg touch:h-11'}`}>
+                  <svg className="w-3.5 h-3.5 text-gray-500 dark:text-white/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="M21 21l-4.35-4.35" />
                   </svg>
                   <input
@@ -419,23 +435,25 @@ export default function RecruitingPage() {
                     placeholder="Search name, phone, state…"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/30 outline-none"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-white/50 outline-none"
                   />
                   {search && (
-                    <button onClick={() => setSearch('')} className="text-gray-300 dark:text-white/20 hover:text-gray-500 dark:hover:text-white/50 text-xs leading-none">✕</button>
+                    <button onClick={() => setSearch('')} aria-label="Clear search" className="w-8 h-8 -mr-2 flex items-center justify-center text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70 text-sm leading-none">✕</button>
                   )}
                 </div>
               </div>
 
               {/* Filters */}
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+              <div className={compactList
+                ? 'flex flex-nowrap items-center gap-x-2 overflow-x-auto -mx-4 px-4 pb-1 mb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+                : 'flex flex-wrap items-center gap-x-3 gap-y-2 mb-4'}>
                 <select
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value)}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none ${
+                  className={`shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
                     statusFilter !== 'all'
-                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
+                      ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                      : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
                   }`}
                 >
                   <option value="all">All Statuses</option>
@@ -446,10 +464,10 @@ export default function RecruitingPage() {
                 <select
                   value={sourceFilter}
                   onChange={e => setSourceFilter(e.target.value)}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none ${
+                  className={`shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors cursor-pointer focus:outline-none ${
                     sourceFilter !== 'all'
-                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
+                      ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                      : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
                   }`}
                 >
                   <option value="all">All Sources</option>
@@ -459,10 +477,10 @@ export default function RecruitingPage() {
                 </select>
                 <button
                   onClick={() => setHideTerminal(h => !h)}
-                  className={`whitespace-nowrap text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                  className={`whitespace-nowrap shrink-0 text-xs font-semibold px-3 py-1 max-sm:min-h-10 touch:min-h-10 rounded-full border transition-colors ${
                     hideTerminal
-                      ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15'
-                      : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/40 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
+                      ? 'border-accent bg-accent/10 text-gray-900 dark:text-white dark:bg-accent/15'
+                      : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 bg-transparent hover:border-gray-300 dark:hover:border-white/20'
                   }`}
                 >
                   Hide Hired / Contracted / Dead
@@ -621,7 +639,7 @@ export default function RecruitingPage() {
             onClick={closeDetail}
           />
         )}
-        <div className={`fixed top-14 right-0 bottom-0 z-30 w-full lg:w-[520px] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`fixed top-[var(--header-h)] right-0 bottom-0 z-30 w-full lg:w-[640px] xl:w-[520px] max-lg:pb-[env(safe-area-inset-bottom)] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out ${selected ? 'translate-x-0' : 'translate-x-full'}`}>
           {selected && (
             <LeadDetail
               lead={selected}

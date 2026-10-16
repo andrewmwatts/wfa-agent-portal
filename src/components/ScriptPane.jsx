@@ -112,7 +112,9 @@ function Block({ b }) {
 // personalScripts: the agent's own, [{ id, tab, heading, subtitle?, body }] — listed
 // after the built-in B.E.S.T and R.E.A.L. scripts.
 
-export default function ScriptPane({ personalScripts = [], activeId, onSelect, onClose, onManage, context }) {
+// embedded: sits in the flow (left column of the CQF screen) instead of fixed beside the lead card.
+// pane: fills the docked lead pane (the Scripts tab on iPad landscape).
+export default function ScriptPane({ personalScripts = [], activeId, onSelect, onClose, onManage, context, embedded = false, pane = false }) {
   const scripts = useMemo(() => [...DEFAULT_SCRIPTS, ...personalScripts], [personalScripts])
   const active  = scripts.find(s => s.id === activeId) ?? scripts[0]
   const blocks = useMemo(() => parseScript(active?.body), [active])
@@ -121,18 +123,22 @@ export default function ScriptPane({ personalScripts = [], activeId, onSelect, o
   const subtitle = [context, active.subtitle].filter(Boolean).join(' · ')
 
   return (
-    <div className="fixed top-14 right-0 bottom-0 z-40 lg:z-30 w-full lg:right-[520px] lg:w-[400px] xl:w-[520px] 2xl:w-[600px] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl">
+    <div className={pane
+      ? 'flex-1 min-h-0 w-full bg-white dark:bg-secondary flex flex-col'
+      : embedded
+      ? 'w-full max-lg:max-h-[45%] lg:w-[400px] xl:w-[460px] shrink-0 bg-white dark:bg-secondary border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-white/10 flex flex-col'
+      : 'fixed top-[var(--header-h)] right-0 bottom-0 z-40 xl:z-30 w-full xl:right-[520px] xl:w-[520px] 2xl:w-[600px] bg-white dark:bg-secondary border-l border-gray-200 dark:border-white/10 flex flex-col shadow-2xl !mt-0'}>
       <div className="px-4 pt-3 pb-2 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-base">{active.icon ?? '📄'}</span>
-          <h2 className="flex-1 min-w-0 text-sm font-extrabold uppercase tracking-wider text-accent truncate">{active.heading}</h2>
+          <h2 className="flex-1 min-w-0 text-sm font-extrabold uppercase tracking-wider text-gray-900 dark:text-white truncate">{active.heading}</h2>
           {onManage && (
-            <button onClick={onManage} className="text-[11px] font-medium text-gray-400 dark:text-white/40 hover:text-accent transition-colors whitespace-nowrap">Manage</button>
+            <button onClick={onManage} className="text-xs font-medium text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white underline decoration-accent underline-offset-2 transition-colors whitespace-nowrap px-2 min-h-11 touch:min-h-11">Manage</button>
           )}
-          <button onClick={onClose} aria-label="Close scripts" className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-white/50 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-sm">✕</button>
+          <button onClick={onClose} aria-label="Close scripts" className="w-11 h-11 sm:w-8 sm:h-8 touch:sm:w-11 touch:sm:h-11 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors text-sm">✕</button>
         </div>
         {subtitle && (
-          <p className="mt-0.5 text-[11px] uppercase tracking-wider text-gray-400 dark:text-white/40 truncate">{subtitle}</p>
+          <p className="mt-0.5 text-xs uppercase tracking-wider text-gray-500 dark:text-white/50 truncate">{subtitle}</p>
         )}
       </div>
 
@@ -142,10 +148,10 @@ export default function ScriptPane({ personalScripts = [], activeId, onSelect, o
           <button
             key={s.id}
             onClick={() => onSelect(s.id)}
-            className={`whitespace-nowrap text-xs font-semibold px-4 py-2 rounded-lg border transition-colors ${
+            className={`whitespace-nowrap text-xs font-semibold px-4 py-2 min-h-11 touch:min-h-11 sm:min-h-0 rounded-lg border transition-colors ${
               s.id === active.id
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-gray-200 dark:border-white/10 text-gray-500 dark:text-white/50 hover:border-gray-300 dark:hover:border-white/20'
+                ? 'border-accent bg-accent/10 text-gray-900 dark:text-white'
+                : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-white/60 hover:border-gray-300 dark:hover:border-white/20'
             } ${scripts.length <= 3 ? 'flex-1' : ''}`}
           >{s.tab}</button>
         ))}
