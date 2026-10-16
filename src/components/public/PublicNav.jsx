@@ -38,7 +38,7 @@ const NAV_LINKS = [
 export default function PublicNav() {
   const [session, setSession] = useState(undefined) // undefined = loading
   const [open, setOpen] = useState(false)
-  const isMobile = useIsMobile(720)
+  const isMobile = useIsMobile(900)
   const location = useLocation()
 
   useEffect(() => {
@@ -68,8 +68,8 @@ export default function PublicNav() {
   // ── Mobile: wordmark · portal CTA · hamburger; links live in a drawer ──────
   if (isMobile) {
     return (
-      <nav style={{ background: '#003539', position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
-        <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', boxSizing: 'border-box' }}>
+      <nav style={{ background: '#003539', position: 'sticky', top: 0, zIndex: 40, flexShrink: 0, paddingTop: 'env(safe-area-inset-top)' }}>
+        <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 12, padding: '0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left))', boxSizing: 'border-box' }}>
           {/* Wordmark — shrinks/truncates first so the bar never overflows */}
           <Link to="/" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
             <span style={{
@@ -89,7 +89,7 @@ export default function PublicNav() {
             onClick={() => setOpen(o => !o)}
             aria-label={open ? 'Close menu' : 'Open menu'}
             aria-expanded={open}
-            style={{ flexShrink: 0, background: 'none', border: 'none', color: '#fff', padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            style={{ flexShrink: 0, background: 'none', border: 'none', color: '#fff', width: 44, height: 44, margin: '0 -10px 0 -6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             {open ? <CloseIcon /> : <MenuIcon />}
           </button>
@@ -121,12 +121,12 @@ export default function PublicNav() {
 
   // ── Desktop: wordmark · centered links · portal CTA ────────────────────────
   return (
-    <nav style={{ background: '#003539', height: 52, position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
+    <nav style={{ background: '#003539', height: 'calc(52px + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)', boxSizing: 'border-box', position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 28px', height: '100%', display: 'flex', alignItems: 'center', gap: 32 }}>
         {/* Wordmark */}
         <Link to="/" style={{ display: 'flex', alignItems: 'baseline', gap: 4, textDecoration: 'none', flexShrink: 0 }}>
           <span style={{ color: '#fff', fontSize: 18, fontWeight: 500, fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>Watts Family Agency</span>
-          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif' }}>
+          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif' }}>
             Agent Resources
           </span>
         </Link>
