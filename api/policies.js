@@ -509,8 +509,23 @@ export default async function handler(req, res) {
         if (id) personLookup[id] = { name: p.preferred_name?.trim() || p.opt_name?.trim() || '' }
       }
 
+      // Earliest in-OPT submission per agent — queried without the 6-month filter
+      // so dormant-then-returning agents are not mistakenly counted as new writers,
+      // and not_in_opt policies are excluded from "first time writing" consideration.
+      // For unscoped super-admin requests fall back to allRows (acceptable: rare path).
+      let earliestBase = allRows.filter(p => !p.not_in_opt)
+      if (upperIds.length) {
+        const { data: atRows, error: atErr } = await supabase
+          .from('policies')
+          .select('sfg_id, submit_week, submit_date')
+          .in('sfg_id', upperIds)
+          .or('not_in_opt.is.null,not_in_opt.eq.false')
+        if (atErr) throw atErr
+        earliestBase = atRows ?? []
+      }
+
       const earliestSubmit = {}
-      for (const p of allRows) {
+      for (const p of earliestBase) {
         const id  = p.sfg_id?.trim().toLowerCase()
         const key = p.submit_week || p.submit_date
         if (!id || !key) continue
@@ -579,19 +594,23 @@ export default async function handler(req, res) {
             if (inOpt) {
               totalWriters.month.add(sfgLower)
               totalWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
-            }
-            if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
-              newWriters.month.add(sfgLower)
-              newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+              if (earliest && inPeriod(earliest, monthStart, monthEnd)) {
+                newWriters.month.add(sfgLower)
+                newWritersItems.set(sfgLower, { sfg_id: sfgId, agent: agentName })
+              }
             }
           }
           if (inPeriod(submitKey, weekStart)) {
-            if (inOpt) totalWriters.week.add(sfgLower)
-            if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
+            if (inOpt) {
+              totalWriters.week.add(sfgLower)
+              if (earliest && inPeriod(earliest, weekStart)) newWriters.week.add(sfgLower)
+            }
           }
           if (inPeriod(submitKey, lwStart, weekStart)) {
-            if (inOpt) totalWriters.lw.add(sfgLower)
-            if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
+            if (inOpt) {
+              totalWriters.lw.add(sfgLower)
+              if (earliest && inPeriod(earliest, lwStart, weekStart)) newWriters.lw.add(sfgLower)
+            }
           }
         }
 

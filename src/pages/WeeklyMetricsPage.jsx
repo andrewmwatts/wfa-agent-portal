@@ -50,10 +50,10 @@ function fmtWeekDate(str) {
 function buildWeekly(policies, scopeIds) {
   if (!policies.length) return []
 
-  // Compute each agent's earliest-ever submit_week (= the week they first wrote)
+  // Compute each agent's earliest-ever in-OPT submit_week (= the week they first wrote)
   const earliestWeek = {}
   for (const p of policies) {
-    if (!p.sfg_id || !p.submit_week) continue
+    if (!p.sfg_id || !p.submit_week || p.not_in_opt) continue
     const id = p.sfg_id.toLowerCase()
     if (!earliestWeek[id] || p.submit_week < earliestWeek[id]) earliestWeek[id] = p.submit_week
   }
@@ -73,10 +73,11 @@ function buildWeekly(policies, scopeIds) {
     if (p.sfg_id) {
       const id = p.sfg_id.toLowerCase()
       // An agent whose every submission this week is flagged "not in Opt"
-      // doesn't count toward Total Writers; one in-Opt app is enough.
-      if (!p.not_in_opt) b.agents.add(id)
-      // New writer = this is the agent's first-ever submission week
-      if (earliestWeek[id] === wk) b.newAgents.add(id)
+      // doesn't count toward Total Writers or New Writers; one in-Opt app is enough.
+      if (!p.not_in_opt) {
+        b.agents.add(id)
+        if (earliestWeek[id] === wk) b.newAgents.add(id)
+      }
     }
   }
 

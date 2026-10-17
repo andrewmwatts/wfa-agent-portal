@@ -212,7 +212,7 @@ export default async function handler(req, res) {
       const [dlPolRes, dlPromoRes] = await Promise.all([
         supabase
           .from('policies')
-          .select('id, sfg_id, issued_apv, submitted_apv, submit_date, issue_date, status, conservation_status')
+          .select('id, sfg_id, issued_apv, submitted_apv, submit_date, issue_date, status, conservation_status, not_in_opt')
           .in('sfg_id', dlSfgIds),
         supabase
           .from('agent_promotions')

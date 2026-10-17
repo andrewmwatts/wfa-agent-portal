@@ -84,11 +84,11 @@ function buildMonthly(policies, scopeIds) {
   const now      = new Date()
   const curYM    = toYearMonth(now.toISOString().slice(0, 10))
 
-  // First submission month per agent (for New Writers) — keyed by submit_week only
+  // First in-OPT submission month per agent (for New Writers) — keyed by submit_week only
   const agentFirst = {}
   for (const p of policies) {
     const ym = toYearMonth(p.submit_week)
-    if (!ym || !p.sfg_id) continue
+    if (!ym || !p.sfg_id || p.not_in_opt) continue
     const id = p.sfg_id.toLowerCase()
     if (!agentFirst[id] || ym < agentFirst[id]) agentFirst[id] = ym
   }

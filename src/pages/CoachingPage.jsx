@@ -1415,13 +1415,14 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
   // Per-agent rollups
   const agentProd = {}
   for (const pol of downlinePolicies) {
-    if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { submAPV: 0, issdAPV: 0, cntSubm: 0, cntIssd: 0, active: false }
+    if (!agentProd[pol.sfg_id]) agentProd[pol.sfg_id] = { submAPV: 0, issdAPV: 0, cntSubm: 0, inOptCntSubm: 0, cntIssd: 0, active: false }
     // APV is already this agent's credited share. Application counts belong to
     // the primary, so a secondary's split row adds APV but not a count.
     const counts = pol.is_primary !== false
     if (inPeriod(pol.submit_date, period)) {
       agentProd[pol.sfg_id].submAPV  += pol.submitted_apv ?? 0
       if (counts) agentProd[pol.sfg_id].cntSubm += 1
+      if (counts && !pol.not_in_opt) agentProd[pol.sfg_id].inOptCntSubm += 1
       if (isPlaced(pol)) {
         agentProd[pol.sfg_id].issdAPV += pol.issued_apv ?? 0
         if (counts) agentProd[pol.sfg_id].cntIssd += 1
@@ -1445,11 +1446,11 @@ function RecruitingDownline({ downline, downlinePolicies, agentPolicies = [], pe
 
   // Period-filtered roster stats
   const hiredInPeriod    = downline.filter(a => inPeriod(a.hire_date, period))
-  const writersInPeriod  = downline.filter(a => (agentProd[a.sfg_id]?.cntSubm ?? 0) > 0)
-  // "New writer" = wrote in period but had no prior production before the period start
+  const writersInPeriod  = downline.filter(a => (agentProd[a.sfg_id]?.inOptCntSubm ?? 0) > 0)
+  // "New writer" = wrote in-OPT in period but had no prior in-OPT production before the period start
   const agentsWithPrior  = new Set(
     period.preset === 'all' ? [] :
-    downlinePolicies.filter(p => p.submit_date < period.start).map(p => p.sfg_id)
+    downlinePolicies.filter(p => p.submit_date < period.start && !p.not_in_opt).map(p => p.sfg_id)
   )
   const newWriters       = writersInPeriod.filter(a => !agentsWithPrior.has(a.sfg_id))
   const returningWriters = writersInPeriod.filter(a =>  agentsWithPrior.has(a.sfg_id))
