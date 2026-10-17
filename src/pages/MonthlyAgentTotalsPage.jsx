@@ -1121,14 +1121,15 @@ function AgentDetail({ row: r, weekColumns, onCellClick }) {
   )
 
   return (
-    <div className="px-4 pt-3 pb-1">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50 mb-1">Agent</p>
-      <div className="grid grid-cols-4 gap-2 pb-2">
-        <FigureButton label="Submitted"  value={r.agentSubmitted}  config={mc.agentSubmitted}  onCellClick={onCellClick} />
-        <FigureButton label="Issued"     value={r.agentIssued}     config={mc.agentIssued}     onCellClick={onCellClick} />
-        <FigureButton label="Pending"    value={r.agentPending}    config={mc.agentPending}    onCellClick={onCellClick} />
-        <FigureButton label="Incomplete" value={r.agentIncomplete} config={mc.agentIncomplete} onCellClick={onCellClick} />
-      </div>
+    <div className="px-4 pb-1 [&>div:first-child]:border-t-0">
+      <CardAccordion title="Agent" summary={`Issued ${fmtAmt(r.agentIssued)}`}>
+        <div className="grid grid-cols-4 gap-2">
+          <FigureButton label="Submitted"  value={r.agentSubmitted}  config={mc.agentSubmitted}  onCellClick={onCellClick} />
+          <FigureButton label="Issued"     value={r.agentIssued}     config={mc.agentIssued}     onCellClick={onCellClick} />
+          <FigureButton label="Pending"    value={r.agentPending}    config={mc.agentPending}    onCellClick={onCellClick} />
+          <FigureButton label="Incomplete" value={r.agentIncomplete} config={mc.agentIncomplete} onCellClick={onCellClick} />
+        </div>
+      </CardAccordion>
 
       <CardAccordion title="Team" summary={`Issued ${fmtAmt(r.teamIssued)}`}>
         <div className="grid grid-cols-4 gap-2">
