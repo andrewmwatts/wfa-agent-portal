@@ -631,12 +631,12 @@ export default function MonthlyAgentTotalsPage() {
         </div>
       ) : (
         <>
-          {/* Phone: one card per agent */}
+          {/* Phone: compact table; each row expands in place */}
           <div className="md:hidden">
             <p className="text-sm text-gray-600 dark:text-white/60 mb-3">
               {agentRows.length} {agentRows.length === 1 ? 'agent' : 'agents'} with production · A–Z
             </p>
-            <AgentCards agentRows={agentRows} weekColumns={weekColumns} onCellClick={setModal} />
+            <AgentPhoneTable agentRows={agentRows} weekColumns={weekColumns} onCellClick={setModal} />
           </div>
 
           {/* Tablet / desktop: table (weekly columns hidden below xl unless switched on) */}
@@ -973,18 +973,82 @@ function modalConfigsFor(r) {
   }
 }
 
-// ─── Phone cards ───────────────────────────────────────────────────────────────
+// ─── Phone table ───────────────────────────────────────────────────────────────
+// Phone: a compact table (agent · team issued · next promotion target · weekly tally).
+// A row's caret expands it in place to everything the wide table shows.
 
-function AgentCards({ agentRows, weekColumns, onCellClick }) {
+function AgentPhoneTable({ agentRows, weekColumns, onCellClick }) {
   if (agentRows.length === 0) {
     return <p className="text-center py-14 text-gray-500 dark:text-white/50 text-sm">No submissions found for this month.</p>
   }
+  const thBase = 'text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50 py-2 whitespace-nowrap'
   return (
-    <ul className="space-y-3">
-      {agentRows.map(r => (
-        <li key={r.sfg_id}><AgentCard row={r} weekColumns={weekColumns} onCellClick={onCellClick} /></li>
-      ))}
-    </ul>
+    <div className="border border-gray-200 dark:border-white/10 rounded-2xl [overflow:clip] bg-white dark:bg-primary/30">
+      <table className="w-full table-fixed border-collapse">
+        <colgroup>
+          <col />
+          <col className="w-[76px]" />
+          <col className="w-[76px]" />
+          <col className="w-[64px]" />
+        </colgroup>
+        <thead>
+          <tr className="bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/10">
+            <th className={`${thBase} pl-3 text-left`}>Agent</th>
+            <th className={`${thBase} text-right`}>Issued</th>
+            <th className={`${thBase} text-right`}>Target</th>
+            <th className={`${thBase} pr-3 text-right`}>Weekly</th>
+          </tr>
+        </thead>
+        {agentRows.map(r => (
+          <PhoneAgentRow key={r.sfg_id} row={r} weekColumns={weekColumns} onCellClick={onCellClick} />
+        ))}
+      </table>
+    </div>
+  )
+}
+
+function PhoneAgentRow({ row: r, weekColumns, onCellClick }) {
+  const [open, setOpen] = useState(false)
+  const showWeekly = weekColumns.length > 0 && r.submissionStatus !== 'suppress'
+  const weeksDone  = weekColumns.filter(wk => r.agentWeekNums.has(wk.numStr)).length
+  // Met / near states keep their highlight; "not there yet" stays readable on a phone
+  // (the wide table's faint grey is too light at this size)
+  const tone       = status => (['green', 'yellow', 'orange'].includes(status) ? hlCls(status) : 'text-gray-600 dark:text-white/60')
+  const target     = r.promoQual?.regular
+  const dash       = <span className="text-gray-400 dark:text-white/35">—</span>
+
+  return (
+    <tbody className="border-b border-gray-100 dark:border-white/5 last:border-b-0">
+      {/* The whole row toggles; the button inside is the keyboard / screen-reader control (its click bubbles up) */}
+      <tr onClick={() => setOpen(o => !o)} className="cursor-pointer active:bg-gray-50 dark:active:bg-white/5">
+        <td className="pl-3 pr-1 py-0.5">
+          <button type="button" aria-expanded={open} aria-label={`${r.name || r.sfg_id}, ${open ? 'collapse' : 'expand'} details`}
+            className="flex items-center gap-1.5 w-full min-h-[44px] text-left">
+            <svg className={`w-3.5 h-3.5 shrink-0 transition-transform text-gray-500 dark:text-white/50 ${open ? '' : '-rotate-90'}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            <span className="min-w-0 break-words text-[13px] font-semibold leading-snug text-gray-900 dark:text-white">{r.name || r.sfg_id}</span>
+          </button>
+        </td>
+        <td className={`py-0.5 text-right text-[13px] tabular-nums ${r.teamIssued < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+          {r.teamIssued !== 0 ? fmtAmt(r.teamIssued) : dash}
+        </td>
+        <td className="py-0.5 text-right text-[13px] tabular-nums">
+          {target != null ? <span className={`px-1.5 py-0.5 ${tone(r.promoStat.apv)}`}>{fmtAmt(target)}</span> : dash}
+        </td>
+        <td className="pr-3 py-0.5 text-right text-[13px] tabular-nums">
+          {showWeekly ? <span className={`px-1.5 py-0.5 ${tone(r.submissionStatus)}`}>{weeksDone}/{weekColumns.length}</span> : dash}
+        </td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50/70 dark:bg-white/[0.03] border-t border-gray-100 dark:border-white/5">
+            <AgentDetail row={r} weekColumns={weekColumns} onCellClick={onCellClick} />
+          </td>
+        </tr>
+      )}
+    </tbody>
   )
 }
 
@@ -1040,7 +1104,7 @@ function CardAccordion({ title, summary, children }) {
   )
 }
 
-function AgentCard({ row: r, weekColumns, onCellClick }) {
+function AgentDetail({ row: r, weekColumns, onCellClick }) {
   const mc = modalConfigsFor(r)
   const showWeekly   = weekColumns.length > 0 && r.submissionStatus !== 'suppress'
   const weeksPresent = weekColumns.filter(wk => r.agentWeekNums.has(wk.numStr))
@@ -1057,14 +1121,8 @@ function AgentCard({ row: r, weekColumns, onCellClick }) {
   )
 
   return (
-    <div className="bg-white dark:bg-primary/30 border border-gray-200 dark:border-white/10 rounded-2xl px-4 pt-3 pb-1">
-      <div className="flex items-baseline justify-between gap-3 mb-1">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-white truncate">{r.name || r.sfg_id}</h2>
-        <span className="text-xs text-gray-600 dark:text-white/60 shrink-0">
-          Issued <span className={`ml-1 text-[15px] font-bold tabular-nums ${r.agentIssued < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{fmtAmt(r.agentIssued)}</span>
-        </span>
-      </div>
-
+    <div className="px-4 pt-3 pb-1">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50 mb-1">Agent</p>
       <div className="grid grid-cols-4 gap-2 pb-2">
         <FigureButton label="Submitted"  value={r.agentSubmitted}  config={mc.agentSubmitted}  onCellClick={onCellClick} />
         <FigureButton label="Issued"     value={r.agentIssued}     config={mc.agentIssued}     onCellClick={onCellClick} />
