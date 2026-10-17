@@ -51,6 +51,8 @@ lastChangeDate, producers.
 | Issued / Placed (never paid), not on Snapshot | approved 2026-10-07: status → `Incomplete`, `issue_date` → NULL, notes "Issued, not paid" | — |
 | Issued, first premium paid then a later premium bounced | `Lapse pending` (not FPNP) | paid-to + 60 |
 | Status "Issued" with a Potential Lapse event (Andrew, 2026-10-13: first premium paid, a later one bounced) | `Lapse pending` | paid-to blank → issue + 1 month, + 60 |
+| MOO "Not Taken" / Policy Cancelled on a DB-Issued policy, not on Snapshot, Snapshot dispute window closed | `Not Taken, On Snapshot`, event date (Andrew, 2026-10-17); if the dispute window is still open, ask first | event date |
+| Terminated/Lapsed status plus a Reinstatement event, paid-to in the future | Andrew: treat as plain `Lapsed` (event date, else paid-to + 60) when MOO still says Terminated; when MOO shows Inforce again (e.g. BU6486166) the system is catching up: no change | |
 | Contradictions (e.g. Lapsed right after a Reinstatement, paid-to in future, detail page says Inforce) | leave as is; recheck next run | — |
 
 Ignore: saved policies keep their lapse alerts after payment (the paid-to date decides);

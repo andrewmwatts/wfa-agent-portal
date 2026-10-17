@@ -55,6 +55,8 @@ are blocked; never return hrefs. Accumulate on `window`, read back in chunks.
 | Death Claim | `Death` | Pdto (backlog); `chargeback_exempt = true` |
 | Inf not taken, Not taken, Withdrawn, Declined, Iss not paid | Snapshot rule | TBD when first seen on an issued DB policy |
 
+**Reinstatements (Andrew, 2026-10-17):** a DB-`Lapsed` policy that the Client List now shows Active was reinstated: clear both conservation fields (leave chargeback_exempt). Also applies to Foresters/others.
+
 Ignore: "SEND POL.CANCEL REQ" (client asked to cancel; stays in force until paperwork is done),
 bank-draft-returned letters on policies the Client List shows as Active (payment caught up, or
 the system hasn't caught up yet; the status decides).

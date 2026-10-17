@@ -114,8 +114,9 @@ window.__aigScan = async (nums, { lettersSince = null } = {}) => {
         letters: [],
       }
       for (const d of (P.documentList || []).filter(d => d.documentCategory === 'Correspondence')) {
-        const [mm, dd, yy] = d.documentCreatedDate.split('/')
-        const iso = `${yy}-${mm}-${dd}`
+        const dc = String(d.documentCreatedDate)
+        // "MM/DD/YYYY" (policy list) or an ISO timestamp (seen 2026-10-17)
+        const iso = dc.includes('/') ? (([mm, dd, yy]) => `${yy}-${mm}-${dd}`)(dc.split('/')) : dc.slice(0, 10)
         if (lettersSince && iso < lettersSince) continue
         try {
           const t = await window.__aigLetterText(d.documentId)
