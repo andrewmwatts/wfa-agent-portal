@@ -5,6 +5,8 @@ export const SERIES_META = {
   'tpc':               { name: 'Top Producer Call',                  host: 'Michael Mathews' },
   'su':                { name: 'Skills + Underwriting',              host: 'Kristina Watts, Amber Pearson' },
   'live-dialing':      { name: 'Live Dialing',                       host: null },
+  'mastery-series':    { name: 'Mastery Series',                     host: 'Jim Larsen' },
+  'giant-leadership-tool-kit': { name: 'GiANT Leadership Toolkit',   host: null },
   'getting-unstuck':   { name: 'Getting Unstuck',                    host: null },
   'national-call':     { name: 'National Call',                      host: null },
   'corporate-overviews': { name: 'Corporate Overviews',              host: null },
@@ -12,7 +14,7 @@ export const SERIES_META = {
 }
 
 // Named strips rendered in order; everything else → additional strip
-export const STRIP_ORDER = ['wfh', 'tpc', 'babb', 'fif-reset-room', 'su']
+export const STRIP_ORDER = ['wfh', 'tpc', 'babb', 'fif-reset-room', 'su', 'mastery-series', 'giant-leadership-tool-kit']
 
 // Sentinel used by the Additional Training "See all →" link to enter flat
 // view showing all videos (activeSeries stays null but isFlatView = true)
@@ -26,6 +28,8 @@ export const SERIES_CHIP_COLORS = {
   'su':              { bg: '#FBEAF0', text: '#72243E' },
   'live-dialing':    { bg: '#E6F1FB', text: '#185FA5' },
   'getting-unstuck': { bg: '#E6EFF5', text: '#185FA5' },
+  'mastery-series':  { bg: '#FCEBEB', text: '#791F1F' },
+  'giant-leadership-tool-kit': { bg: '#EAF3EE', text: '#1F5B3A' },
 }
 
 export const NEUTRAL_CHIP = { bg: '#EEF1F2', text: '#4A6568' }
@@ -39,6 +43,8 @@ export const CHIPS = [
   { label: 'S+U',              slug: 'su'              },
   { label: 'Live Dialing',     slug: 'live-dialing'    },
   { label: 'Getting Unstuck',  slug: 'getting-unstuck' },
+  { label: 'Mastery',          slug: 'mastery-series'  },
+  { label: 'GiANT Toolkit',    slug: 'giant-leadership-tool-kit' },
 ]
 
 export function formatDate(dateStr) {
