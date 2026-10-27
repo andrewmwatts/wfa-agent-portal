@@ -5,6 +5,15 @@
       "schedule": "0 14 * * *"
     }
   ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ],
   "redirects": [
     { "source": "/dashboard",           "destination": "/portal/dashboard",           "permanent": true },
     { "source": "/policies",            "destination": "/portal/policies",            "permanent": true },

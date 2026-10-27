@@ -1,2 +1,33 @@
+# Agent portal: not for public listing.
+# Search engines and link unfurlers may fetch pages so they can read the
+# X-Robots-Tag: noindex header, then leave.
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slackbot-LinkExpanding
+Allow: /
+
+# These honour robots.txt but not noindex, so they are stopped here.
+User-agent: CCBot
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
 User-agent: *
 Disallow: /
