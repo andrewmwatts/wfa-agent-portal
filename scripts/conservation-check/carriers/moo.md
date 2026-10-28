@@ -49,6 +49,7 @@ lastChangeDate, producers.
 | Lapsed - Non payment + "Terminated by Customer Request" | `Cancelled` | event date |
 | Policy Cancelled / Cancelled-Surrendered | `Cancelled` | event date |
 | Issued / Placed (never paid), not on Snapshot | approved 2026-10-07: status → `Incomplete`, `issue_date` → NULL, notes "Issued, not paid" | — |
+| Placed / Issued, first premium not paid, on Snapshot (Andrew, 2026-10-28) | `First Premium Not Paid` | issue date + 45; if already passed, overdue rule (today + 7). MOO's own dates are inconsistent, so don't chase them |
 | Issued, first premium paid then a later premium bounced | `Lapse pending` (not FPNP) | paid-to + 60 |
 | Status "Issued" with a Potential Lapse event (Andrew, 2026-10-13: first premium paid, a later one bounced) | `Lapse pending` | paid-to blank → issue + 1 month, + 60 |
 | MOO "Not Taken" / Policy Cancelled on a DB-Issued policy, not on Snapshot, Snapshot dispute window closed | `Not Taken, On Snapshot`, event date (Andrew, 2026-10-17); if the dispute window is still open, ask first | event date |
