@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
+import { buildRecruitingLead } from '../shared/recruitingSheetLead.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -27,6 +28,10 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
  *   lookup_agent          { action, email }                        → { sfg_id }
  *   check_duplicate       { action, phone, sfg_id }               → { duplicate }
  *   insert_lead           { action, lead: {...} }                  → { success }
+ *   upsert_recruiting_lead{ action, row: { status, name, phone,
+ *                           email, state, apply_date, requisition,
+ *                           licensed, willing, commission_ok, tier,
+ *                           resume_url, agent_notes } }           → { success, duplicate, id }
  *   insert_error          { action, error: {...} }                 → { success }
  *   insert_contract_number{ action, contract: { sfg_id, carrier,
  *                           contract_number, effective_date,
@@ -48,6 +53,9 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
  * GRANT ALL ON public.parse_errors TO service_role;
  * GRANT USAGE, SELECT ON SEQUENCE parse_errors_id_seq TO service_role;
  */
+
+// Quility's recruiting sheet ("Watts Family Agency.xlsx") belongs to Kristina Watts.
+const RECRUITING_LEADS_OWNER = 'SFG0049415'
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -135,6 +143,41 @@ export default async function handler(req, res) {
     return res.status(201).json({ success: true })
   }
 
+  // ── upsert_recruiting_lead ────────────────────────────────────────────────
+  // One row of the Quility recruiting sheet, sent by a Power Automate flow. Inserts a
+  // recruiting lead for the owner unless one with the same phone (or requisition) exists;
+  // an existing lead is never overwritten, since it may have been worked in the portal.
+  if (action === 'upsert_recruiting_lead') {
+    const owner = (process.env.RECRUITING_LEADS_SFG_ID || RECRUITING_LEADS_OWNER).toUpperCase()
+    const lead = buildRecruitingLead(body.row ?? {}, owner, new Date().toISOString())
+    if (!lead) return res.status(400).json({ error: 'row.name and row.phone (or row.email) are required' })
+
+    const matches = []
+    if (lead.phone)          matches.push(`phone.eq.${lead.phone}`)
+    if (lead.vendor_lead_id) matches.push(`vendor_lead_id.eq.${lead.vendor_lead_id}`)
+    if (matches.length) {
+      const { data: dup, error: dupErr } = await sb
+        .from('leads').select('id')
+        .eq('sfg_id', owner).eq('category', 'recruiting')
+        .or(matches.join(','))
+        .limit(1).maybeSingle()
+      if (dupErr) return res.status(500).json({ success: false, error: dupErr.message })
+      if (dup) return res.status(200).json({ success: true, duplicate: true, id: dup.id })
+    }
+
+    const { data: created, error } = await sb.from('leads').insert(lead).select('id').single()
+    if (error) return res.status(500).json({ success: false, error: error.message })
+
+    if (lead.status === 'new') {
+      try {
+        await sendLeadPushNotification(sb, lead, { title: 'New Recruiting Lead', url: '/portal/recruiting' })
+      } catch (e) {
+        console.error('[push] notification error:', e.message)
+      }
+    }
+    return res.status(201).json({ success: true, duplicate: false, id: created.id })
+  }
+
   // ── insert_error ──────────────────────────────────────────────────────────
   if (action === 'insert_error') {
     const { error: errPayload } = body
@@ -183,7 +226,7 @@ export default async function handler(req, res) {
 
 // ── Push helper ───────────────────────────────────────────────────────────────
 
-async function sendLeadPushNotification(sb, lead) {
+async function sendLeadPushNotification(sb, lead, { title = 'New Lead', url = '/portal/leads' } = {}) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return
 
   const sfgId = lead.sfg_id?.toUpperCase()
@@ -203,9 +246,9 @@ async function sendLeadPushNotification(sb, lead) {
   ].filter(Boolean)
 
   const payload = JSON.stringify({
-    title: 'New Lead',
-    body:  bodyParts.join(' — '),
-    url:   '/portal/leads',
+    title,
+    body: bodyParts.join(' — '),
+    url,
   })
 
   const staleIds = []
