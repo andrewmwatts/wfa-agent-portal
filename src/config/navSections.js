@@ -27,9 +27,9 @@ export const NAV_SECTIONS = [
     ],
   },
   {
-    label: 'Owner',
+    label: 'Agency',
     items: [
-      { path: '/portal/monthly-agent-totals', label: 'Monthly Agent Totals', roles: LEADER_ROLES },
+      { path: '/portal/monthly-agent-totals', label: 'Monthly Agent Totals' },
       { path: '/portal/contracting',          label: 'Contracting',          roles: LEADER_ROLES },
       { path: '/portal/accountability',       label: 'Accountability',       roles: OWNER_ROLES  },
       { path: '/portal/coaching',             label: 'Coaching',             roles: LEADER_ROLES },

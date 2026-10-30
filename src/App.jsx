@@ -73,6 +73,7 @@ export default function App() {
                 <Route path="/portal/recruiting"      element={<RecruitingPage />} />
                 <Route path="/portal/project-100"     element={<Project100Page />} />
                 <Route path="/portal/ninety-day-plan" element={<NinetyDayPlanPage />} />
+                <Route path="/portal/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
               </Route>
             </Route>
 
@@ -80,7 +81,6 @@ export default function App() {
             <Route element={<ProtectedRoute allowedRoles={['leader', 'owner', 'director', 'super_admin']} />}>
               <Route element={<AppLayout />}>
                 <Route path="/portal/contracting"          element={<OnboardingPage />} />
-                <Route path="/portal/monthly-agent-totals" element={<MonthlyAgentTotalsPage />} />
                 <Route path="/portal/coaching"             element={<CoachingPage />} />
                 <Route path="/portal/agents"               element={<AgentsPage />} />
               </Route>
