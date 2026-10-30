@@ -28,6 +28,7 @@ const LeadEditView = lazy(() => import('../components/leads/LeadEditView'))
 
 export const REC_STATUSES = [
   { key: 'new',                label: 'New',                       pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20',                 bar: 'bg-blue-500'    },
+  { key: 'attempted',          label: 'Attempted Contact',         pill: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-500/10 dark:text-fuchsia-300 dark:border-fuchsia-500/20', bar: 'bg-fuchsia-500' },
   { key: 'noshow',             label: 'Interview No-Show',         pill: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20',                 bar: 'bg-rose-500'    },
   { key: 'interviewed',        label: 'Interviewed',               pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20',           bar: 'bg-amber-500'   },
   { key: 'pre_lic',            label: 'Enrolled in Pre-Licensing', pill: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20',                       bar: 'bg-sky-500'     },
@@ -45,7 +46,7 @@ export const REC_STATUSES = [
 const REC_STATUS_ORDER = [
   'fully_contracted', 'hired', 'app_submitted', 'app_sent',
   'licensed', 'exam_done', 'pre_lic_done', 'pre_lic',
-  'interviewed', 'noshow', 'new', 'dead',
+  'interviewed', 'noshow', 'attempted', 'new', 'dead',
 ]
 
 const TABS = [
