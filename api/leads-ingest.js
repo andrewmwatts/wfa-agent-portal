@@ -144,9 +144,11 @@ export default async function handler(req, res) {
   }
 
   // ── upsert_recruiting_lead ────────────────────────────────────────────────
-  // One row of the Quility recruiting sheet, sent by a Power Automate flow. Inserts a
-  // recruiting lead for the owner unless one with the same phone (or requisition) exists;
-  // an existing lead is never overwritten, since it may have been worked in the portal.
+  // One recruiting application, sent by the Gmail sync script (Appcast application emails
+  // and Quility allocation emails). Inserts a recruiting lead for the owner unless one with
+  // the same phone (or requisition) exists. An existing lead is never overwritten, since it
+  // may have been worked in the portal; it is only given what it lacks: the Quility order
+  // number and the resume link, which arrive in the allocation email after the Appcast one.
   if (action === 'upsert_recruiting_lead') {
     const owner = (process.env.RECRUITING_LEADS_SFG_ID || RECRUITING_LEADS_OWNER).toUpperCase()
     const lead = buildRecruitingLead(body.row ?? {}, owner, new Date().toISOString())
@@ -157,12 +159,22 @@ export default async function handler(req, res) {
     if (lead.vendor_lead_id) matches.push(`vendor_lead_id.eq.${lead.vendor_lead_id}`)
     if (matches.length) {
       const { data: dup, error: dupErr } = await sb
-        .from('leads').select('id')
+        .from('leads').select('id, vendor_lead_id, notes')
         .eq('sfg_id', owner).eq('category', 'recruiting')
         .or(matches.join(','))
         .limit(1).maybeSingle()
       if (dupErr) return res.status(500).json({ success: false, error: dupErr.message })
-      if (dup) return res.status(200).json({ success: true, duplicate: true, id: dup.id })
+      if (dup) {
+        const fill = {}
+        if (!dup.vendor_lead_id && lead.vendor_lead_id) fill.vendor_lead_id = lead.vendor_lead_id
+        const resume = (lead.notes ?? '').split('\n').find(l => l.startsWith('Resume'))
+        if (resume && !/^Resume/m.test(dup.notes ?? '')) fill.notes = [dup.notes, resume].filter(Boolean).join('\n')
+        if (Object.keys(fill).length) {
+          const { error: fillErr } = await sb.from('leads').update(fill).eq('id', dup.id)
+          if (fillErr) return res.status(500).json({ success: false, error: fillErr.message })
+        }
+        return res.status(200).json({ success: true, duplicate: true, id: dup.id, filled: Object.keys(fill) })
+      }
     }
 
     const { data: created, error } = await sb.from('leads').insert(lead).select('id').single()

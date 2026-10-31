@@ -1,10 +1,14 @@
 /**
  * Recruiting lead email -> portal sync (Google Apps Script).
  *
- * Runs inside kristina@wattsfamilyagency.com. Every minute it looks for Quility's
- * "New Lead Allocation" emails whose Lead Type is "Recruiting Lead", parses the
- * lead, and sends it to POST /api/leads-ingest (action upsert_recruiting_lead),
- * which creates the lead for SFG0049415 unless that phone/requisition already exists.
+ * Runs inside kristina@wattsfamilyagency.com. Every minute it looks for two kinds of email:
+ *   - Appcast "NEW APPLICATION" (no-reply@app-cast.com): one per application, the first
+ *     to arrive. Name, phone, email, state, licensing answers; the resume is an attachment.
+ *   - Quility "New Lead Allocation" (leads@quility.com), Lead Type Recruiting: arrives later.
+ *     Adds the ACRN order number and the resume link.
+ * Each is parsed and sent to POST /api/leads-ingest (action upsert_recruiting_lead), which
+ * creates the lead for SFG0049415, or, if that phone is already a lead, only fills in the
+ * ACRN number and resume link it was missing.
  *
  * Setup (once)
  *   1. script.google.com > New project, signed in as kristina@wattsfamilyagency.com.
@@ -19,10 +23,17 @@
  * "already in the portal"), wfa-recruiting-skipped (not a recruiting lead),
  * wfa-recruiting-error (could not parse; also logged to parse_errors).
  * A failed request (portal down) is left unlabeled and retried the next minute.
+ *
+ * Appcast puts every applicant for the same posting in one Gmail thread (same subject), so
+ * a thread can gain messages after it was labeled. A message in an already-labeled thread
+ * is picked up because the unlabeled new message still matches the search; messages older
+ * than the search window are ignored, and re-sending one that was already handled is harmless.
  */
 
 var DEFAULT_URL = 'https://agents.wattsfamilyagency.com/api/leads-ingest'
-var QUERY = 'from:leads@quility.com subject:"New Lead Allocation" newer_than:7d ' +
+var WINDOW_DAYS = 7
+var QUERY = '((from:leads@quility.com subject:"New Lead Allocation") OR ' +
+  '(from:no-reply@app-cast.com subject:"NEW APPLICATION")) newer_than:' + WINDOW_DAYS + 'd ' +
   '-label:wfa-recruiting-synced -label:wfa-recruiting-skipped -label:wfa-recruiting-error'
 var TZ = 'America/Los_Angeles'
 
@@ -38,15 +49,19 @@ function syncRecruitingLeads() {
     var synced = label_('wfa-recruiting-synced')
     var skipped = label_('wfa-recruiting-skipped')
     var failed = label_('wfa-recruiting-error')
+    var cutoff = new Date(Date.now() - WINDOW_DAYS * 86400000)
 
     GmailApp.search(QUERY, 0, 50).forEach(function (thread) {
+      var messages = thread.getMessages()
       var recruiting = 0
       var problem = '' // '' | 'error' | 'retry'
-      thread.getMessages().forEach(function (msg) {
+      messages.forEach(function (msg) {
+        if (msg.getDate() < cutoff) return
         var html = msg.getBody()
-        if (!/^recruiting/i.test(labelValues_(html)['Lead Type'] || '')) return
+        var appcast = /app-cast\.com/i.test(msg.getFrom())
+        if (!appcast && !/^recruiting/i.test(labelValues_(html)['Lead Type'] || '')) return
         recruiting++
-        var row = parseAllocationEmail_(html, msg.getDate())
+        var row = appcast ? parseAppcastEmail_(html, msg.getDate()) : parseAllocationEmail_(html, msg.getDate())
         if (!row) {
           post_(url, secret, { action: 'insert_error', error: {
             sender: msg.getFrom(), subject: msg.getSubject(),
@@ -61,6 +76,8 @@ function syncRecruitingLeads() {
         problem = code === 400 && problem !== 'retry' ? 'error' : 'retry'
       })
       if (problem === 'retry') return
+      // A message that arrived while we worked would be labeled unseen; leave the thread for the next run.
+      if (GmailApp.getThreadById(thread.getId()).getMessageCount() !== messages.length) return
       thread.addLabel(problem === 'error' ? failed : recruiting ? synced : skipped)
     })
   } finally {
@@ -90,7 +107,7 @@ function stripTags_(s) {
 }
 
 /**
- * The allocation email is an HTML table of label / value cell pairs
+ * Quility allocation emails are an HTML table of label / value cell pairs
  * (Lead Type | Recruiting, Lead Name | ..., Email | ..., Title1 | <question>, Answer1 | ...).
  * Returns { label: value }. Plain text is no use here: the email has no text/plain part,
  * and the text Gmail derives from it runs the cells together.
@@ -131,6 +148,45 @@ function parseAllocationEmail_(html, date) {
     willing: answerTo(/willing/i),
     commission_ok: answerTo(/1099|commission/i),
     resume_url: f['Resumelink'] || '',
+  }
+  return row.name && (row.phone || row.email) ? row : null
+}
+
+/**
+ * Appcast application emails:
+ *   <h2>Life Insurance Sales Agent In Vancouver, WA (req # 1234)</h2>
+ *   <li>Name: <b>Marco Rodriguez</b></li> ... Phone, Email ...
+ *   <li>Are you currently licensed to sell life insurance?: <b> No</b></li> ... five questions
+ * "req # 1234" is the job posting, shared by every applicant to it, so it is NOT sent as the
+ * requisition (the portal would treat different people as duplicates). The resume is an
+ * attachment; the later Quility allocation email supplies a link.
+ */
+function parseAppcastEmail_(html, date) {
+  var f = {}
+  var re = /<li[^>]*>((?:(?!<\/?li)[\s\S])*?)<b>((?:(?!<\/?li)[\s\S])*?)<\/b>\s*<\/li>/gi
+  var m
+  while ((m = re.exec(html))) {
+    var k = stripTags_(m[1]).replace(/:\s*$/, '')
+    if (k && !(k in f)) f[k] = stripTags_(m[2])
+  }
+  var answerTo = function (pattern) {
+    for (var q in f) if (pattern.test(q)) return f[q]
+    return ''
+  }
+  var h2 = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)
+  var job = h2 ? stripTags_(h2[1]).replace(/\s*\(req\s*#[^)]*\)\s*$/i, '') : ''
+
+  var row = {
+    status: 'New Recruit',
+    name: f['Name'] || '',
+    email: f['Email'] || '',
+    phone: f['Phone'] || '',
+    state: answerTo(/which u\.?s\.? state|reside/i),
+    apply_date: Utilities.formatDate(date, TZ, 'yyyy-MM-dd'),
+    job: job,
+    licensed: answerTo(/currently licensed/i),
+    willing: answerTo(/willing/i),
+    commission_ok: answerTo(/1099|commission/i),
   }
   return row.name && (row.phone || row.email) ? row : null
 }

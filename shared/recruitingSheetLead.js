@@ -57,8 +57,10 @@ const titleCase = n => n.split(/\s+/).map(w => w[0].toUpperCase() + w.slice(1)).
 
 /**
  * row keys (all optional strings except name + phone/email):
- *   status, name, phone, email, state, apply_date, requisition, licensed, willing,
+ *   status, name, phone, email, state, apply_date, requisition, job, licensed, willing,
  *   commission_ok, tier, resume_url, agent_notes
+ * `requisition` is the Quility order number (ACRN-...), unique per lead. Appcast's own
+ * "req # 1234" is shared by every applicant to a posting, so callers must not send it.
  * Returns the `leads` insert payload, or null when the row has no usable name or contact.
  */
 export function buildRecruitingLead(row, ownerSfgId, nowIso) {
@@ -70,6 +72,7 @@ export function buildRecruitingLead(row, ownerSfgId, nowIso) {
   const requisition = str(row.requisition)
   const resumeUrl = str(row.resume_url)
   const notes = [
+    str(row.job)           && `Applied for: ${str(row.job)}`,
     str(row.licensed)      && `Currently licensed: ${str(row.licensed)}`,
     str(row.willing)       && `Willing to license: ${str(row.willing)}`,
     str(row.commission_ok) && `1099 OK: ${str(row.commission_ok)}`,
