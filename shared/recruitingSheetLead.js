@@ -85,7 +85,7 @@ export function buildRecruitingLead(row, ownerSfgId, nowIso) {
     sfg_id: ownerSfgId,
     category: 'recruiting',
     lead_type: 'recruiting',
-    source: 'quility_recruiting',
+    source: 'hq',
     parse_source: 'sharepoint_sheet',
     lead_level: str(row.tier) || null,
     is_stub: false,

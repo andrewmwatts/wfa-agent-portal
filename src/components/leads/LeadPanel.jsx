@@ -81,17 +81,40 @@ export default function LeadPanel({
   // scroll position, edit mode and half-typed notes survive a tab switch.
   tabsNode = null, overrideBody = null, hideClose = false,
 }) {
-  const { userProfile } = useAuth()
+  const { userProfile, session } = useAuth()
   const calConnected = userProfile?.google_calendar_connected ?? false
   const [showCalModal, setShowCalModal] = useState(false)
   const [logging, setLogging] = useState(null)         // 'call' | 'text' while a log request is in flight
   const [noteEdit, setNoteEdit] = useState(null)       // { id, text } — adding or editing the note on a call/text entry
   const [notes, setNotes]       = useState('')         // lead notes draft
+  const [resumeBusy, setResumeBusy] = useState(false)
+  const [resumeErr, setResumeErr]   = useState('')
+  const hasResume = recruiting && /^Resume/m.test(l.notes ?? '')
+
+  // The signed link is minted on click (it lasts minutes); the tab opens first so the popup blocker allows it.
+  async function openResume() {
+    setResumeBusy(true); setResumeErr('')
+    const tab = window.open('', '_blank')
+    try {
+      const res = await fetch(`/api/leads?action=resume&id=${encodeURIComponent(l.id)}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok || !body.url) throw new Error(body.error || 'Could not load resume')
+      if (tab) tab.location.href = body.url; else window.location.href = body.url
+    } catch (e) {
+      tab?.close()
+      setResumeErr(e.message)
+    } finally {
+      setResumeBusy(false)
+    }
+  }
 
   // A different lead was opened: fresh notes draft, no note being edited
   useEffect(() => {
     setNotes(l.notes ?? '')
     setNoteEdit(null)
+    setResumeErr('')
   }, [l.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sections = recruiting ? REC_SECTIONS : LEAD_SECTIONS
@@ -353,7 +376,15 @@ export default function LeadPanel({
         })}
 
         {/* Notes */}
-        <Card title={recruiting ? 'Notes & pre-licensing progress' : 'Lead notes'}>
+        <Card
+          title={recruiting ? 'Notes & pre-licensing progress' : 'Lead notes'}
+          right={hasResume && (
+            <button type="button" onClick={openResume} disabled={resumeBusy}
+              className={`text-xs font-semibold px-3 py-1 rounded-lg disabled:opacity-60 ${BTN_OUTLINE}`}>
+              {resumeBusy ? 'Opening…' : 'View resume'}
+            </button>
+          )}
+        >
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
@@ -362,6 +393,7 @@ export default function LeadPanel({
             placeholder={recruiting ? 'e.g. Enrolled at Kaplan, chapter 5 of 15…' : 'Anything worth remembering about this lead…'}
             className={INPUT + ' resize-y'}
           />
+          {resumeErr && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{resumeErr}</p>}
         </Card>
 
         {/* Activity */}

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { getCaller, getAllowedSfgIds, scopeAllowed } from './_auth.js'
+import { resumeDownloadUrl } from '../shared/leadResume.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -15,6 +16,7 @@ loadEnv({ path: resolve(__dirname, '../.env.local') })
  *   GET    /api/leads?sfg_id=X
  *   GET    /api/leads?action=hire_candidates&upline_sfg_id=X  → recruiting leads eligible for matching
  *   GET    /api/leads?action=unlinked_hires&sfg_id=X          → personnel with no hired_sfg_id lead
+ *   GET    /api/leads?action=resume&id=X                      → { url } short-lived link to a recruiting lead's stored resume
  *   POST   /api/leads
  *   POST   /api/leads?action=create_stub                      → insert stub lead for unmatched hire
  *   PATCH  /api/leads?id=X
@@ -267,6 +269,22 @@ export default async function handler(req, res) {
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  // ── RECRUITING LEAD RESUME ────────────────────────────────────────────────
+  if (req.method === 'GET' && req.query.action === 'resume') {
+    const { id } = req.query
+    if (!id) return res.status(400).json({ error: 'id required' })
+    const { data: lead } = await sb.from('leads').select('id, sfg_id, notes').eq('id', id).maybeSingle()
+    if (!lead) return res.status(404).json({ error: 'Lead not found' })
+    if (!(await authorizeLeadSubject(req, res, lead.sfg_id))) return
+    try {
+      const url = await resumeDownloadUrl(sb, lead)
+      if (!url) return res.status(404).json({ error: 'No resume on file' })
+      return res.status(200).json({ url })
+    } catch (e) {
+      return res.status(500).json({ error: e.message })
+    }
   }
 
   // ── HIRE CANDIDATE LOOKUP ─────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 import { buildRecruitingLead } from '../shared/recruitingSheetLead.js'
+import { resumeUrlFromNotes, storeLeadResume } from '../shared/leadResume.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 loadEnv({ path: resolve(__dirname, '../.vercel/.env.development.local') })
@@ -173,6 +174,7 @@ export default async function handler(req, res) {
           const { error: fillErr } = await sb.from('leads').update(fill).eq('id', dup.id)
           if (fillErr) return res.status(500).json({ success: false, error: fillErr.message })
         }
+        if (fill.notes) await copyResume(dup.id, resumeUrlFromNotes(fill.notes))
         return res.status(200).json({ success: true, duplicate: true, id: dup.id, filled: Object.keys(fill) })
       }
     }
@@ -180,6 +182,7 @@ export default async function handler(req, res) {
     const { data: created, error } = await sb.from('leads').insert(lead).select('id').single()
     if (error) return res.status(500).json({ success: false, error: error.message })
 
+    await copyResume(created.id, resumeUrlFromNotes(lead.notes))
     if (lead.status === 'new') {
       try {
         await sendLeadPushNotification(sb, lead, { title: 'New Recruiting Lead', url: '/portal/recruiting' })
@@ -234,6 +237,17 @@ export default async function handler(req, res) {
 
   // ── Unknown action ────────────────────────────────────────────────────────
   return res.status(400).json({ error: `Unknown action: ${action}` })
+}
+
+// Best-effort copy of the lead's resume into storage (the Appcast link is tokenized and may
+// expire); the lead is already saved, and the download endpoint retries on demand.
+async function copyResume(leadId, url) {
+  if (!url) return
+  try {
+    await storeLeadResume(sb, leadId, url)
+  } catch (e) {
+    console.error('[resume] copy failed for lead', leadId, e.message)
+  }
 }
 
 // ── Push helper ───────────────────────────────────────────────────────────────

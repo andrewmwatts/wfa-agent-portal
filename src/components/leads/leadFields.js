@@ -74,7 +74,6 @@ export const REC_SOURCES = [
   { key: 'stan_store', label: 'Stan Store' },
   { key: 'referral',   label: 'Referral'   },
   { key: 'hq',         label: 'HQ'         },
-  { key: 'quility_recruiting', label: 'Quility Recruiting Leads' },
   { key: 'other',      label: 'Other'      },
 ]
 export const recSourceLabel = v => REC_SOURCES.find(s => s.key === v)?.label ?? SOURCE_DISPLAY[v] ?? v
